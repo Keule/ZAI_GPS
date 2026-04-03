@@ -6,7 +6,7 @@
  *   - MCU: ESP32-S3-WROOM-1
  *   - Ethernet: W5500 over SPI3_HOST (GPIO10/11/12/9) via ESP-IDF ETH driver
  *   - GNSS: 2x UM980 on UART1/UART2 (460800 baud)
- *   - Sensors: IMU (BNO085), Steer Angle, Actuator on SPI2_HOST (HSPI)
+ *   - Sensors: IMU (BNO085), Steer Angle, Actuator on SPI2_HOST (FSPI)
  *   - Safety: GPIO4 active LOW
  *
  * W5500 Ethernet uses the ESP-IDF ETH driver:
@@ -27,7 +27,7 @@
 // Arduino / ESP32 includes
 // ===================================================================
 #include <Arduino.h>
-#include <SPI.h>           // SPIClass for sensor bus (HSPI)
+#include <SPI.h>           // SPIClass for sensor bus (FSPI)
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <HardwareSerial.h>
@@ -78,9 +78,13 @@ static char s_gnss_heading_buf[256];
 static size_t s_gnss_heading_pos = 0;
 
 // ===================================================================
-// Sensor SPI bus 2 (HSPI / SPI2_HOST)
+// Sensor SPI bus 2 (FSPI / SPI2_HOST)
+//
+// CRITICAL: Must use FSPI, NOT HSPI!
+// On ESP32-S3 (Arduino Core 2.x):  HSPI = SPI3_HOST (occupied by W5500!)
+//                                  FSPI = SPI2_HOST (free for sensors)
 // ===================================================================
-static SPIClass sensorSPI(HSPI);
+static SPIClass sensorSPI(FSPI);
 
 // ===================================================================
 // Mutex (FreeRTOS recursive mutex)
@@ -202,12 +206,12 @@ bool hal_gnss_heading_read_line(char* buf, size_t max_len) {
 }
 
 // ===================================================================
-// SPI Sensors / Actuator – SPI Bus 2 (HSPI / SPI2_HOST)
+// SPI Sensors / Actuator – SPI Bus 2 (FSPI / SPI2_HOST)
 // ===================================================================
 void hal_sensor_spi_init(void) {
     sensorSPI.begin(SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI, -1);
-    hal_log("ESP32: sensor SPI initialised on HSPI (SCK=%d MOSI=%d MISO=%d)",
-            SENS_SPI_SCK, SENS_SPI_MOSI, SENS_SPI_MISO);
+    hal_log("ESP32: sensor SPI initialised on FSPI/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
+            SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
 }
 
 void hal_imu_begin(void) {
@@ -423,7 +427,7 @@ void hal_esp32_init_all(void) {
     // Safety pin
     pinMode(SAFETY_IN, INPUT_PULLUP);
 
-    // SPI sensor bus (HSPI / SPI2_HOST)
+    // SPI sensor bus (FSPI / SPI2_HOST)
     hal_sensor_spi_init();
 
     // GNSS
