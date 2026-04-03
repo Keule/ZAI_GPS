@@ -137,16 +137,11 @@ void setup() {
     // Network is already initialised by hal_esp32_init_all()
     // (hal_net_init was called there, ETH link should be established)
 
-    // Report initial hardware errors to AgIO
-    if (hal_net_is_connected()) {
-        // Small delay to ensure UDP socket is ready
-        hal_delay_ms(100);
-        modulesSendStartupErrors();
-    } else {
-        // Network not up yet – errors will be sent when network comes up
-        // via the periodic hwStatusUpdate() in commTask
-        hal_log("SETUP: network not up, startup errors deferred");
-    }
+    // Report initial hardware errors
+    // Always call – reportError() will use UDP if network is up,
+    // Serial-only if network is down.
+    hal_delay_ms(100);
+    modulesSendStartupErrors();
 
     // Create control task on Core 1
     xTaskCreatePinnedToCore(

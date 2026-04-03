@@ -193,94 +193,81 @@ void modulesSendSubnetReplies(void) {
 }
 
 // ===================================================================
+// Internal helper: send an error message via UDP if network is up,
+// otherwise log to Serial only.
+// ===================================================================
+static void reportError(const char* subsystem, const char* message,
+                         uint8_t src, uint8_t color) {
+    if (hal_net_is_connected()) {
+        uint8_t tx_buf[AOG_MAX_FRAME];
+        size_t len = encodeAogHardwareMessage(tx_buf, sizeof(tx_buf),
+                                               src,
+                                               AOG_HWMSG_DURATION_PERSIST,
+                                               color,
+                                               message);
+        if (len > 0) {
+            hal_net_send(tx_buf, len, AOG_PORT_AGIO);
+            hal_log("MODULES: UDP error sent – %s: %s", subsystem, message);
+            return;
+        }
+    }
+    // Fallback: Serial only
+    hal_log("MODULES: [SERIAL] %s: %s  (network not available)", subsystem, message);
+}
+
+// ===================================================================
 // Send startup error messages for failed hardware
 // ===================================================================
 void modulesSendStartupErrors(void) {
     if (s_startup_errors_sent) return;
     s_startup_errors_sent = true;
 
-    uint8_t tx_buf[AOG_MAX_FRAME];
-    uint32_t now = hal_millis();
+    hal_log("MODULES: === Startup Error Report ===");
 
-    hal_log("MODULES: === Sending Startup Error Report ===");
-
-    // --- Check each subsystem and send error if failed ---
+    // --- Check each subsystem and report if failed ---
+    // If network is up, errors go via UDP (PGN 0xDD) to AgIO.
+    // If network is down, errors go to Serial only.
 
     // Ethernet
     if (!s_hw.eth_detected) {
-        size_t len = encodeAogHardwareMessage(tx_buf, sizeof(tx_buf),
-                                               AOG_SRC_STEER,
-                                               AOG_HWMSG_DURATION_PERSIST,
-                                               AOG_HWMSG_COLOR_RED,
-                                               "ERR Ethernet: W5500 Not Detected");
-        if (len > 0) hal_net_send(tx_buf, len, AOG_PORT_AGIO);
-        hal_log("MODULES: error sent – Ethernet not detected");
+        reportError("Ethernet", "ERR Ethernet: W5500 Not Detected",
+                    AOG_SRC_STEER, AOG_HWMSG_COLOR_RED);
     }
 
     // GNSS Main
     if (!s_hw.gnss_main_detected) {
-        size_t len = encodeAogHardwareMessage(tx_buf, sizeof(tx_buf),
-                                               AOG_SRC_GPS,
-                                               AOG_HWMSG_DURATION_PERSIST,
-                                               AOG_HWMSG_COLOR_RED,
-                                               "ERR GNSS Main: No Data Received");
-        if (len > 0) hal_net_send(tx_buf, len, AOG_PORT_AGIO);
-        hal_log("MODULES: error sent – GNSS Main no data");
+        reportError("GNSS Main", "ERR GNSS Main: No Data Received",
+                    AOG_SRC_GPS, AOG_HWMSG_COLOR_RED);
     }
 
     // GNSS Heading (warning, not error – it's optional)
     if (!s_hw.gnss_head_detected) {
-        size_t len = encodeAogHardwareMessage(tx_buf, sizeof(tx_buf),
-                                               AOG_SRC_GPS,
-                                               AOG_HWMSG_DURATION_PERSIST,
-                                               AOG_HWMSG_COLOR_YELLOW,
-                                               "WARN GNSS Heading: No Data");
-        if (len > 0) hal_net_send(tx_buf, len, AOG_PORT_AGIO);
-        hal_log("MODULES: warning sent – GNSS Heading no data");
+        reportError("GNSS Heading", "WARN GNSS Heading: No Data",
+                    AOG_SRC_GPS, AOG_HWMSG_COLOR_YELLOW);
     }
 
     // IMU
     if (!s_hw.imu_detected) {
-        size_t len = encodeAogHardwareMessage(tx_buf, sizeof(tx_buf),
-                                               AOG_SRC_STEER,
-                                               AOG_HWMSG_DURATION_PERSIST,
-                                               AOG_HWMSG_COLOR_RED,
-                                               "ERR IMU (BNO085): Not Detected");
-        if (len > 0) hal_net_send(tx_buf, len, AOG_PORT_AGIO);
-        hal_log("MODULES: error sent – IMU not detected");
+        reportError("IMU", "ERR IMU (BNO085): Not Detected",
+                    AOG_SRC_STEER, AOG_HWMSG_COLOR_RED);
     }
 
     // Steer Angle Sensor
     if (!s_hw.was_detected) {
-        size_t len = encodeAogHardwareMessage(tx_buf, sizeof(tx_buf),
-                                               AOG_SRC_STEER,
-                                               AOG_HWMSG_DURATION_PERSIST,
-                                               AOG_HWMSG_COLOR_RED,
-                                               "ERR Steer Angle Sensor: Not Detected");
-        if (len > 0) hal_net_send(tx_buf, len, AOG_PORT_AGIO);
-        hal_log("MODULES: error sent – Steer Angle not detected");
+        reportError("SteerAngle", "ERR Steer Angle Sensor: Not Detected",
+                    AOG_SRC_STEER, AOG_HWMSG_COLOR_RED);
     }
 
     // Actuator
     if (!s_hw.actuator_detected) {
-        size_t len = encodeAogHardwareMessage(tx_buf, sizeof(tx_buf),
-                                               AOG_SRC_STEER,
-                                               AOG_HWMSG_DURATION_PERSIST,
-                                               AOG_HWMSG_COLOR_RED,
-                                               "ERR Actuator: Not Detected");
-        if (len > 0) hal_net_send(tx_buf, len, AOG_PORT_AGIO);
-        hal_log("MODULES: error sent – Actuator not detected");
+        reportError("Actuator", "ERR Actuator: Not Detected",
+                    AOG_SRC_STEER, AOG_HWMSG_COLOR_RED);
     }
 
     // Safety Circuit
     if (!s_hw.safety_ok) {
-        size_t len = encodeAogHardwareMessage(tx_buf, sizeof(tx_buf),
-                                               AOG_SRC_STEER,
-                                               AOG_HWMSG_DURATION_PERSIST,
-                                               AOG_HWMSG_COLOR_RED,
-                                               "ERR Safety Circuit: KICK Engaged");
-        if (len > 0) hal_net_send(tx_buf, len, AOG_PORT_AGIO);
-        hal_log("MODULES: error sent – Safety KICK");
+        reportError("Safety", "ERR Safety Circuit: KICK Engaged",
+                    AOG_SRC_STEER, AOG_HWMSG_COLOR_RED);
     }
 
     // --- Module-level summaries ---
@@ -288,16 +275,14 @@ void modulesSendStartupErrors(void) {
         if (!s_modules[i].enabled) continue;
         if (s_modules[i].hw_detected) continue;
 
-        size_t len = encodeAogHardwareMessage(tx_buf, sizeof(tx_buf),
-                                               s_modules[i].src_id,
-                                               AOG_HWMSG_DURATION_PERSIST,
-                                               AOG_HWMSG_COLOR_RED,
-                                               "ERR Module: Not Available");
-        if (len > 0) hal_net_send(tx_buf, len, AOG_PORT_AGIO);
-        hal_log("MODULES: module-level error sent for %s", s_modules[i].name);
+        char msg[64];
+        std::snprintf(msg, sizeof(msg), "ERR Module %s: Not Available", s_modules[i].name);
+        reportError(s_modules[i].name, msg,
+                    s_modules[i].src_id, AOG_HWMSG_COLOR_RED);
     }
 
-    hal_log("MODULES: === Startup Error Report Complete ===");
+    hal_log("MODULES: === Startup Error Report Complete (%s) ===",
+            hal_net_is_connected() ? "UDP" : "Serial only");
 }
 
 // ===================================================================
@@ -316,15 +301,8 @@ void modulesUpdateStatus(void) {
             hal_log("MODULES: GPS module now ACTIVE");
 
             // Send green "OK" message to clear the error in AgIO
-            uint8_t tx_buf[AOG_MAX_FRAME];
-            size_t len = encodeAogHardwareMessage(tx_buf, sizeof(tx_buf),
-                                                   AOG_SRC_GPS,
-                                                   3,  // 3 seconds display
-                                                   AOG_HWMSG_COLOR_GREEN,
-                                                   "GPS Module: Now Active");
-            if (len > 0) {
-                hal_net_send(tx_buf, len, AOG_PORT_AGIO);
-            }
+            reportError("GPS", "GPS Module: Now Active",
+                        AOG_SRC_GPS, AOG_HWMSG_COLOR_GREEN);
         }
     }
 
