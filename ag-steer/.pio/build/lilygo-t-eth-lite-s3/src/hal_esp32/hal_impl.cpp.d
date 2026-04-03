@@ -183,14 +183,27 @@
  /home/z/.platformio/packages/framework-arduinoespressif32/cores/esp32/Arduino.h \
  /home/z/.platformio/packages/framework-arduinoespressif32/libraries/SPI/src/SPI.h \
  /home/z/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-spi.h \
- .pio/libdeps/lilygo-t-eth-lite-s3/Ethernet3/src/Ethernet3.h \
- .pio/libdeps/lilygo-t-eth-lite-s3/Ethernet3/src/utility/w5500.h \
- .pio/libdeps/lilygo-t-eth-lite-s3/Ethernet3/src/EthernetClient.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFi.h \
  /home/z/.platformio/packages/framework-arduinoespressif32/cores/esp32/Print.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/cores/esp32/IPv6Address.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiType.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiSTA.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiGeneric.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_wifi/include/esp_smartconfig.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/wifi_provisioning/include/wifi_provisioning/manager.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/protocomm/include/common/protocomm.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/protocomm/include/security/protocomm_security.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/wifi_provisioning/include/wifi_provisioning/wifi_config.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiAP.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiScan.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiClient.h \
  /home/z/.platformio/packages/framework-arduinoespressif32/cores/esp32/Client.h \
- .pio/libdeps/lilygo-t-eth-lite-s3/Ethernet3/src/EthernetServer.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiServer.h \
  /home/z/.platformio/packages/framework-arduinoespressif32/cores/esp32/Server.h \
- .pio/libdeps/lilygo-t-eth-lite-s3/Ethernet3/src/EthernetUdp3.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiUdp.h \
  /home/z/.platformio/packages/framework-arduinoespressif32/cores/esp32/Udp.h \
- .pio/libdeps/lilygo-t-eth-lite-s3/Ethernet3/src/Dhcp.h \
- /home/z/.platformio/packages/framework-arduinoespressif32/cores/esp32/HardwareSerial.h
+ /home/z/.platformio/packages/framework-arduinoespressif32/cores/esp32/cbuf.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiUdp.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/cores/esp32/HardwareSerial.h \
+ lib/ETHClass2/ETHClass2.h \
+ /home/z/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/spi_types.h
