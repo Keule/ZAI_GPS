@@ -173,6 +173,9 @@ void netPollReceive(void) {
 // Send periodic AOG frames
 // ===================================================================
 void netSendAogFrames(void) {
+    // Skip if network not available
+    if (!hal_net_is_connected()) return;
+
     uint32_t now = hal_millis();
     if (now - s_last_send_ms < SEND_INTERVAL_MS) return;
     s_last_send_ms = now;

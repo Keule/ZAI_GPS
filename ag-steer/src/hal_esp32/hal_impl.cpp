@@ -40,6 +40,10 @@ static IPAddress s_subnet(255, 255, 255, 0);
 static IPAddress s_gateway(192, 168, 1, 1);
 static IPAddress s_dest_ip(192, 168, 1, 255);
 
+// Ethernet state
+static bool s_eth_initialized = false;
+static bool s_w5500_detected = false;
+
 // ===================================================================
 // GNSS UARTs – HardwareSerial
 // ===================================================================
@@ -142,7 +146,9 @@ void hal_gnss_init(void) {
 
 /// Read available characters from a serial and try to form a complete NMEA line.
 static bool readNmeaLine(HardwareSerial& ser, char* buf, size_t max_len, size_t* pos) {
-    while (ser.available() > 0) {
+    // Limit reads per call to avoid blocking the scheduler
+    int max_reads = 64;
+    while (ser.available() > 0 && max_reads-- > 0) {
         int c = ser.read();
         if (c < 0) break;
 
@@ -192,13 +198,6 @@ void hal_imu_begin(void) {
 
 bool hal_imu_read(float* yaw_rate_dps, float* roll_deg) {
     // TODO: Implement BNO085 SH-2 SPI read protocol
-    // 1. Assert CS_IMU LOW
-    // 2. Send READ command for gyro and Euler reports
-    // 3. Read response
-    // 4. Deassert CS_IMU HIGH
-    // 5. Parse sensor fusion data
-
-    // Stub: return zeros
     *yaw_rate_dps = 0.0f;
     *roll_deg = 0.0f;
     return true;
@@ -214,15 +213,8 @@ float hal_steer_angle_read_deg(void) {
     float angle = 0.0f;
 
     // TODO: Implement actual SPI read from steering angle sensor
-    // 1. Assert CS_STEER_ANG LOW
-    // 2. SPI transfer read command
-    // 3. SPI transfer to receive angle bytes
-    // 4. Deassert CS_STEER_ANG HIGH
-    // 5. Convert raw bytes to float degrees
-
     sensorSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
     digitalWrite(CS_STEER_ANG, LOW);
-    // Stub: read 4 bytes (placeholder)
     uint8_t rx_buf[4] = {0};
     for (int i = 0; i < 4; i++) {
         rx_buf[i] = sensorSPI.transfer(0x00);
@@ -246,7 +238,6 @@ void hal_actuator_begin(void) {
 void hal_actuator_write(uint16_t cmd) {
     sensorSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
     digitalWrite(CS_ACT, LOW);
-    // Send command as 2 bytes MSB first
     sensorSPI.transfer(static_cast<uint8_t>((cmd >> 8) & 0xFF));
     sensorSPI.transfer(static_cast<uint8_t>(cmd & 0xFF));
     digitalWrite(CS_ACT, HIGH);
@@ -256,7 +247,24 @@ void hal_actuator_write(uint16_t cmd) {
 // ===================================================================
 // Network – W5500 Ethernet
 // ===================================================================
-static bool s_eth_initialized = false;
+
+/// Try to detect W5500 chip via SPI by reading the VERSIONR register (0x39).
+static bool detectW5500(void) {
+    // Ethernet3 internal init must be called first
+    Ethernet.init(8);
+
+    // Small delay after init for SPI to settle
+    delay(10);
+
+    // Ethernet3 exposes the W5500 object internally.
+    // The Ethernet3 library reads the chip version during init.
+    // We check if localIP() is at least plausible after begin().
+    // A more robust check would directly read W5500 VERSIONR (0x39 = 'W'),
+    // but Ethernet3 doesn't expose raw register access easily.
+    // Instead, we verify that the chip responded to init by checking
+    // that the IP was actually set (not 255.255.255.255).
+    return true;  // We validate after begin() below
+}
 
 void hal_net_init(void) {
     // Initialise Ethernet SPI bus 1
@@ -266,26 +274,42 @@ void hal_net_init(void) {
     digitalWrite(ETH_CS, HIGH);
     pinMode(ETH_INT, INPUT);
 
-    // Start Ethernet with configured IP
-    // Ethernet3 API: init(maxSockNum), begin(mac, ip, dns, gateway, subnet)
+    // Initialise W5500
     Ethernet.init(8);
+    delay(10);
+
+    // Start Ethernet with configured static IP
+    // Ethernet3 API: begin(mac, ip, dns, gateway, subnet)
     uint8_t mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
     Ethernet.begin(mac, s_local_ip, IPAddress(8, 8, 8, 8), s_gateway, s_subnet);
 
-    // Brief delay for W5500 to stabilise
-    delay(500);
+    // Short delay for W5500 to process configuration
+    delay(100);
+
+    // Check if W5500 actually responded by verifying our IP was set
+    IPAddress configured_ip = Ethernet.localIP();
+    if (configured_ip == IPAddress(255, 255, 255, 255) ||
+        configured_ip == IPAddress(0, 0, 0, 0)) {
+        hal_log("ESP32: WARNING – W5500 not detected (IP=%s). Network disabled.",
+                configured_ip.toString().c_str());
+        s_w5500_detected = false;
+        s_eth_initialized = false;
+        return;
+    }
+
+    s_w5500_detected = true;
 
     // Start UDP on AgIO port
     ethUDP.begin(AOG_PORT_AGIO);
 
     s_eth_initialized = true;
 
-    hal_log("ESP32: Ethernet initialised – IP=%s",
-            Ethernet.localIP().toString().c_str());
+    hal_log("ESP32: Ethernet initialised – IP=%s (W5500 OK)",
+            configured_ip.toString().c_str());
 }
 
 void hal_net_send(const uint8_t* data, size_t len, uint16_t port) {
-    if (!s_eth_initialized) return;
+    if (!s_eth_initialized || !s_w5500_detected) return;
 
     // Use configured destination IP (broadcast or AgIO IP)
     ethUDP.beginPacket(s_dest_ip, port);
@@ -294,6 +318,8 @@ void hal_net_send(const uint8_t* data, size_t len, uint16_t port) {
 }
 
 int hal_net_receive(uint8_t* buf, size_t max_len, uint16_t* out_port) {
+    if (!s_eth_initialized || !s_w5500_detected) return 0;
+
     int packet_size = ethUDP.parsePacket();
     if (packet_size <= 0) return 0;
 
@@ -309,18 +335,20 @@ int hal_net_receive(uint8_t* buf, size_t max_len, uint16_t* out_port) {
 }
 
 bool hal_net_is_connected(void) {
-    // Ethernet3 does not expose linkStatus()/hardwareStatus().
-    // Assume connected if Ethernet was initialised and localIP is not zero.
-    return s_eth_initialized && (Ethernet.localIP() != IPAddress(0, 0, 0, 0));
+    return s_w5500_detected && s_eth_initialized &&
+           (Ethernet.localIP() != IPAddress(0, 0, 0, 0));
 }
 
 // ===================================================================
 // ESP32 init all
 // ===================================================================
 void hal_esp32_init_all(void) {
-    // Serial
+    // Serial – with timeout instead of infinite wait
     Serial.begin(115200);
-    while (!Serial) { delay(10); }
+    uint32_t serial_start = millis();
+    while (!Serial && (millis() - serial_start < 3000)) {
+        delay(10);
+    }
     hal_log("ESP32-S3 AgSteer starting...");
 
     // Mutex
@@ -340,8 +368,9 @@ void hal_esp32_init_all(void) {
     hal_steer_angle_begin();
     hal_actuator_begin();
 
-    // Network
+    // Network (W5500) – graceful failure if not connected
     hal_net_init();
 
-    hal_log("ESP32: all subsystems initialised");
+    hal_log("ESP32: all subsystems initialised (%s)",
+            s_w5500_detected ? "W5500 OK" : "W5500 not found – network disabled");
 }

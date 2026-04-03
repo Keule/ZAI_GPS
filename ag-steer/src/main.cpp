@@ -7,10 +7,14 @@
  * Two FreeRTOS tasks:
  *   - commTask  (Core 0): GNSS polling, Ethernet/UDP, AOG protocol
  *   - controlTask (Core 1): 200 Hz control loop, PID, safety, actuators
+ *
+ * NOTE: All hardware init is done in hal_esp32_init_all() during setup().
+ *       The tasks do NOT re-initialize anything.
  */
 
 #include <Arduino.h>
 #include <FreeRTOS.h>
+#include <esp_task_wdt.h>
 
 #include "hal/hal.h"
 #include "hal_esp32/hal_impl.h"
@@ -35,9 +39,6 @@ static void controlTaskFunc(void* param) {
     // Wait for network + sensors to stabilise
     vTaskDelay(pdMS_TO_TICKS(500));
 
-    // Init control subsystem
-    controlInit();
-
     const TickType_t interval = pdMS_TO_TICKS(5);  // 200 Hz = 5 ms
 
     for (;;) {
@@ -61,11 +62,8 @@ static void commTaskFunc(void* param) {
     (void)param;
     hal_log("Comm: task started on core %d", xPortGetCoreID());
 
-    // Wait for network to initialise
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    // Init GNSS
-    gnssInit();
+    // Wait for network to initialise (done in setup, but give time to settle)
+    vTaskDelay(pdMS_TO_TICKS(2000));
 
     const TickType_t poll_interval = pdMS_TO_TICKS(10);  // 100 Hz polling
 
@@ -80,6 +78,7 @@ static void commTaskFunc(void* param) {
         // Send periodic AOG frames (~10 Hz)
         netSendAogFrames();
 
+        // Yield to IDLE task – prevents watchdog trigger
         vTaskDelay(poll_interval);
     }
 }
@@ -88,10 +87,10 @@ static void commTaskFunc(void* param) {
 // Arduino setup()
 // ===================================================================
 void setup() {
-    // Initialise all hardware
+    // Initialise ALL hardware (mutex, safety, SPI, GNSS, sensors, W5500)
     hal_esp32_init_all();
 
-    // Create control task on Core 1 (PRO_CPU_NUM on ESP32-S3 = core 0 or 1)
+    // Create control task on Core 1
     xTaskCreatePinnedToCore(
         controlTaskFunc,
         "ctrl",
@@ -120,20 +119,26 @@ void setup() {
 // Arduino loop() – not used for real work (tasks handle everything)
 // ===================================================================
 void loop() {
-    // Monitor / watchdog / debug output
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    // Feed watchdog to prevent trigger from this task
+    esp_task_wdt_reset();
 
-    // Optional: periodic status output
-    {
+    // Periodic status output every 5 seconds
+    static uint32_t s_last_status = 0;
+    uint32_t now = hal_millis();
+    if (now - s_last_status >= 5000) {
+        s_last_status = now;
         StateLock lock;
         hal_log("STAT: lat=%.6f lon=%.6f fix=%u sog=%.1f heading=%.1f "
-                "steer=%.1f safety=%s pid_tgt=%.1f",
+                "steer=%.1f safety=%s pid_tgt=%.1f net=%s",
                 g_nav.lat_deg, g_nav.lon_deg,
                 (unsigned)g_nav.fix_quality,
                 g_nav.sog_mps,
                 g_nav.heading_deg,
                 g_nav.steer_angle_deg,
                 g_nav.safety_ok ? "OK" : "KICK",
-                desiredSteerAngleDeg);
+                desiredSteerAngleDeg,
+                hal_net_is_connected() ? "UP" : "DOWN");
     }
+
+    vTaskDelay(pdMS_TO_TICKS(100));
 }
