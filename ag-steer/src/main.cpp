@@ -133,7 +133,7 @@ void setup() {
         hal_log("  Build: %s %s", __DATE__, __TIME__);
         hal_log("  Partition: %s (0x%06X)", part ? part->label : "?",
                 part ? (unsigned)part->address : 0);
-        hal_log("  Flash: %d MB free", (int)(ESP.getFreeSketchSpace() / 1024));
+        hal_log("  Flash: %d KB free", (int)(ESP.getFreeSketchSpace() / 1024));
         hal_log("========================================");
     }
 
