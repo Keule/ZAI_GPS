@@ -26,6 +26,7 @@
 #include <SD.h>
 #include <Update.h>
 #include <esp_ota_ops.h>
+#include <esp_task_wdt.h>
 
 // ===================================================================
 // Constants
