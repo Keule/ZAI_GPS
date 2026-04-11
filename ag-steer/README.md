@@ -36,6 +36,7 @@ cd pc_sim && make run
 ```
 ag-steer/
 ├── platformio.ini                  # PlatformIO-Konfiguration (ESP32-S3)
+├── partitions_ota.csv              # OTA-Partitionstabelle (2 App-Slots + SPIFFS)
 ├── README.md                       # Diese Datei
 │
 ├── boards/                         # Custom Board-Definition
@@ -55,7 +56,8 @@ ag-steer/
 │   │   └── hal.h                   #     Alle HW-Funktionen als pure C-Deklarationen
 │   ├── hal_esp32/                  #   ESP32-S3 HAL-Implementierung
 │   │   ├── hal_impl.h
-│   │   └── hal_impl.cpp            #     UART, SPI, ETH (W5500), FreeRTOS
+│   │   ├── hal_impl.cpp            #     UART, SPI, ETH (W5500), FreeRTOS
+│   │   └── sd_ota_esp32.cpp        #     SD-Karte → OTA Firmware-Update
 │   └── logic/                      #   Reine C++ Logik (keine Arduino-Header)
 │       ├── global_state.h/.cpp     #     NavigationState, Mutex, StateLock
 │       ├── aog_udp_protocol.h/.cpp #     AOG-Frame-Strukturen, PGNs, Encoder/Decoder
@@ -65,7 +67,9 @@ ag-steer/
 │       ├── actuator.h/.cpp         #     Aktuator SPI
 │       ├── control.h/.cpp          #     PID-Regler + 200Hz-Control-Loop
 │       ├── net.h/.cpp              #     UDP-Kommunikation mit AgIO
-│       └── hw_status.h/.cpp        #     Hardware-Status-Monitoring + PGN 0xDD
+│       ├── hw_status.h/.cpp        #     Hardware-Status-Monitoring + PGN 0xDD
+│       ├── sd_ota.h                #     OTA Update – öffentliche API
+│       └── sd_ota_version.cpp      #     OTA – Versionsvergleich (plattformunabhängig)
 │
 └── pc_sim/                         # PC-Simulation (nicht von PlatformIO kompiliert)
     ├── Makefile                    #   g++ Build
@@ -157,8 +161,35 @@ GPIO  15  16  17  18                GNSS UARTs
 GPIO  35  36  37  38  39  40  41    Sensor-SPI + CS + INT
        SCK MISO MOSI CS1 CS2 CS3 INT
 
+GPIO   5   6   7   42                SD-Karte (OTA)
+       MISO MOSI SCK CS
+
 GPIO   4                            Safety (Pull-Up Input)
 ```
+
+### SD-Karte (OTA Firmware Update)
+
+Treiber: Arduino `SD.h` über `SPIClass(FSPI)` = ESP-IDF `SPI2_HOST`.
+**Wird nur beim Firmware-Update verwendet** – teilt sich den Bus temporär mit den Sensoren.
+
+| Signal | GPIO | Funktion |
+|--------|------|----------|
+| SD_SPI_MISO | 5 | Daten SD → MCU |
+| SD_SPI_MOSI | 6 | Daten MCU → SD |
+| SD_SPI_SCK | 7 | SPI-Takt SD-Karte |
+| SD_CS | 42 | Chip Select SD-Karte |
+
+> ⚠️ **GPIO 5/6/7:** Auf LilyGO T-ETH-Lite-S3 sind diese GPIOs frei verfügbar.
+> Falls deine Board-Revision hier Strapping-Pins oder USB verwendet, passe die
+> Pins in [`include/hardware_pins.h`](include/hardware_pins.h) an.
+
+#### SPI Bus 3 – SD-Karte (zeitweilig, teilt SPI2_HOST)
+
+Die SD-Karte nutzt den selben SPI2_HOST (FSPI) wie der Sensorbus.
+Während normaler Laufzeit gehört der Bus den Sensoren. Nur beim OTA-Update
+wird der Sensorbus per `hal_sensor_spi_deinit()` freigegeben, der Bus mit
+SD-Pins neu initialisiert, und nach dem Update (oder Fehler) per
+`hal_sensor_spi_reinit()` wiederhergestellt.
 
 ### Bus-Topologie
 
@@ -166,11 +197,13 @@ GPIO   4                            Safety (Pull-Up Input)
   ESP32-S3
 
   ┌─── SPI2_HOST (FSPI) ─────────────────────────────────┐
-  │  SCK=35  MISO=36  MOSI=37                             │
+  │  Normalbetrieb:  SCK=35  MISO=36  MOSI=37            │
+  │  OTA-Update:     SCK=7   MISO=5   MOSI=6             │
   │                                                        │
   │  CS=38 → BNO085 (IMU)                                 │
   │  CS=39 → Lenkwinkelsensor                              │
   │  CS=40 → Aktuator                                     │
+  │  CS=42 → SD-Karte (nur bei OTA)                       │
   └────────────────────────────────────────────────────────┘
 
   ┌─── SPI3_HOST (HSPI) ────┐
@@ -356,6 +389,90 @@ CRC = Low-Byte der Summe von Byte2 bis Byte(n-2)
 | **214** | **GPS Main Out** | **GPS → AgIO** | **51 B** | **Encoder ✓** |
 | **221** | **Hardware Message** | **bidirektional** | **variabel** | **Enc+Dec ✓** |
 
+### OTA Firmware-Update ([`src/logic/sd_ota.h`](src/logic/sd_ota.h))
+
+Firmware-Update von einer SD-Karte in die inaktive OTA-Partition des Flash.
+
+**Funktionsweise:**
+1. Beim Boot prüft die Firmware, ob `/firmware.bin` (oder `/update.bin`) auf der SD-Karte liegt.
+2. Optional: Version prüfen – nur updaten, wenn die neue Firmware neuer ist als die aktuelle.
+3. Die BIN-Datei wird blockweise (4 KB) von SD gelesen und per ESP32 `Update` API in den Flash geschrieben.
+4. Nach erfolgreichem Schreiben wird die OTA-Partition als Boot-Partition gesetzt und der ESP32 neu gestartet.
+5. Bei jedem Fehler bleibt die alte Firmware aktiv.
+
+**Voraussetzungen:**
+- SD-Karte per SPI angeschlossen (MISO=5, MOSI=6, SCLK=7, CS=42)
+- OTA-Partitionstabelle aktiv (`partitions_ota.csv`, zwei App-Slots)
+- Firmware-Datei (`firmware.bin`) ist eine gültige ESP32-Arduino BIN-Datei
+
+**Dateien auf der SD-Karte:**
+
+| Datei | Pflicht | Inhalt |
+|-------|---------|--------|
+| `/firmware.bin` | Ja¹ | ESP32 BIN-Datei (max 3 MB) |
+| `/update.bin` | Nein² | Alternative Firmware-Datei |
+| `/firmware.version` | Nein | Versionsstring, z.B. `1.2.3` |
+
+¹ Wird zuerst gesucht. Fehlt sie, wird `/update.bin` verwendet.² Nur wenn `/firmware.bin` nicht existiert.
+
+**Versionsprüfung (optional):**
+- `/firmware.version` enthält z.B. `1.2.3` (nur Text, mit oder ohne Zeilenumbruch)
+- Die aktuelle Firmware-Version ist über `FIRMWARE_VERSION` in `platformio.ini` definiert.
+- Das Update wird **nur** ausgeführt, wenn die SD-Version **neuer** ist als die aktuell laufende.
+- Fehlt die Datei, wird das Update ohne Versionsprüfung ausgeführt.
+
+**Serielles Log (Beispiel):**
+```
+[         0] Main: firmware v0.1.0
+[       150] OTA: checking for firmware update on SD card...
+[       160] OTA: running from partition 'ota_0' (0x20000, subtype=0x10)
+[       180] OTA: SD card mounted OK
+[       185] OTA: found /firmware.bin (1048576 bytes)
+[       190] OTA: SD version = 0.2.0, current version = 0.1.0  (NEWER)
+[       195] OTA: firmware update available on SD card
+[       200] Main: firmware update detected on SD card – starting update
+[       205] OTA: ===== STARTING FIRMWARE UPDATE FROM SD =====
+[       215] OTA: phase 1 – releasing sensor SPI bus...
+[       230] OTA: SD card mounted OK
+[       240] OTA: phase 2 – opening firmware file...
+[       250] OTA: /firmware.bin opened, size = 1048576 bytes
+[       260] OTA: phase 3 – starting OTA write to flash...
+[       270] OTA: OTA partition initialised (1048576 bytes)
+[       275] OTA: phase 4 – writing firmware to flash...
+[      1800] OTA:  10%  (104857 / 1048576 bytes, 543 KB/s)
+[      3200] OTA:  20%  (209714 / 1048576 bytes, 576 KB/s)
+[      ...  ]
+[      8200] OTA: 100%  (1048576 / 1048576 bytes, 589 KB/s)
+[      8250] OTA: phase 5 – validating and finalising...
+[      8400] OTA: ===== UPDATE SUCCESSFUL =====
+[      8400] OTA: wrote 1048576 bytes in 8150 ms (125 KB/s)
+[      8400] OTA: rebooting into new firmware in 2 seconds...
+[     10400] OTA: RESTARTING NOW
+```
+
+**Update-Ablauf deaktivieren:**
+Einfach die `firmware.bin` von der SD-Karte löschen oder die SD-Karte abziehen.
+Die Firmware bootet dann normal ohne Update-Versuch.
+
+---
+
+## Partitionstabelle (OTA)
+
+Die Datei [`partitions_ota.csv`](partitions_ota.csv) definiert die Flash-Aufteilung:
+
+| Partition | Typ | Offset | Größe | Beschreibung |
+|-----------|-----|--------|-------|--------------|
+| nvs | data/nvs | 0x9000 | 24 KB | Non-Volatile Storage (Kalibrierung etc.) |
+| otadata | data/ota | 0xF000 | 8 KB | Boot-Slot-Selektor |
+| phy_init | data/phy | 0x11000 | 4 KB | PHY-Kalibrierungsdaten |
+| **ota_0** | **app/ota_0** | **0x20000** | **3.75 MB** | **Erster App-Slot** |
+| **ota_1** | **app/ota_1** | **0x3E0000** | **3.75 MB** | **Zweiter App-Slot (OTA-Ziel)** |
+| spiffs | data/spiffs | 0x7A0000 | ~8.25 MB | Dateisystem (zukünftig) |
+
+Der ESP32-Bootloader liest `otadata` um zu entscheiden, ob von `ota_0` oder `ota_1` gebootet wird. Bei einem fehlgeschlagenen Update (Power-Loss, Crash während des Schreibens) bleibt der alte Slot aktiv – **eingebautes Rollback**.
+
+> ⚠️ **Wichtig:** Nach dem Wechsel auf `partitions_ota.csv` muss die Firmware einmalig per USB geflasht werden (es existiert noch kein OTA-Slot mit gültiger Firmware). Danach können weitere Updates über SD-Karte erfolgen.
+
 ---
 
 ## Bauen & Testen
@@ -443,4 +560,4 @@ pidInit(&s_steer_pid, 1.0f, 0.0f, 0.01f, 0.0f, 65535.0f);
 | SteerConfig In (PGN 251) empfangen | 🔲 TODO |
 | HDOP/Satelliten aus GGA | 🔲 TODO |
 | Subnet-Change aktualisiert auch die lokale IP | 🔲 TODO |
-| OTA-Update | 🔲 TODO |
+| OTA-Update (SD-Karte) | ✅ Implementiert |

@@ -24,6 +24,7 @@
 #include "logic/net.h"
 #include "logic/modules.h"
 #include "logic/hw_status.h"
+#include "logic/sd_ota.h"
 
 // ===================================================================
 // Task handles
@@ -119,6 +120,33 @@ static void commTaskFunc(void* param) {
 void setup() {
     // Initialise ALL hardware (mutex, safety, SPI, GNSS, sensors, W5500)
     hal_esp32_init_all();
+
+    // -----------------------------------------------------------------
+    // SD-Card OTA Firmware Update
+    // -----------------------------------------------------------------
+    // Check if a firmware update file is present on the SD card.
+    // This must happen BEFORE creating FreeRTOS tasks because the
+    // update temporarily re-uses the sensor SPI bus (SPI2_HOST).
+    //
+    // If /firmware.bin (or /update.bin) is found on the SD card and
+    // the version is newer than the current firmware, the update is
+    // performed automatically.  On success the ESP32 reboots into the
+    // new firmware.  On any error the old firmware continues to run.
+    //
+    // To skip the update check, simply remove the firmware file from
+    // the SD card before booting.
+    // -----------------------------------------------------------------
+    {
+        SdOtaVersion ver = sdOtaGetCurrentVersion();
+        hal_log("Main: firmware v%u.%u.%u", ver.major, ver.minor, ver.patch);
+
+        if (isFirmwareUpdateAvailableOnSD()) {
+            hal_log("Main: firmware update detected on SD card – starting update");
+            updateFirmwareFromSD();
+            // If we reach here the update failed – continue with old firmware
+            hal_log("Main: OTA update FAILED, continuing with current firmware");
+        }
+    }
 
     // Brief delay to let GNSS receivers send first NMEA sentences
     // (needed for hardware detection before module init)
