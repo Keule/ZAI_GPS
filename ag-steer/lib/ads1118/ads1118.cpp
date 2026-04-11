@@ -262,10 +262,10 @@ float ADS1118::readDifferential(uint8_t positive, uint8_t negative) {
     // Differential mux encoding:
     // 100: AIN0-AIN1, 101: AIN0-AIN3, 110: AIN1-AIN3, 111: AIN2-AIN3
     uint16_t mux;
-    if (positive == 0 && negative == 1) mux = ADS1118::MUX_AIN0_AIN1;
-    else if (positive == 0 && negative == 3) mux = ADS1118::MUX_AIN0_AIN3;
-    else if (positive == 1 && negative == 3) mux = ADS1118::MUX_AIN1_AIN3;
-    else if (positive == 2 && negative == 3) mux = ADS1118::MUX_AIN2_AIN3;
+    if (positive == 0 && negative == 1) mux = Ads1118Reg::MUX_AIN0_AIN1;
+    else if (positive == 0 && negative == 3) mux = Ads1118Reg::MUX_AIN0_AIN3;
+    else if (positive == 1 && negative == 3) mux = Ads1118Reg::MUX_AIN1_AIN3;
+    else if (positive == 2 && negative == 3) mux = Ads1118Reg::MUX_AIN2_AIN3;
     else return 0.0f;  // invalid differential pair
 
     deselectOthers();
@@ -423,10 +423,10 @@ uint16_t ADS1118::buildConfig(uint8_t channel) const {
     // Set MUX bits for single-ended channel
     uint16_t mux = 0;
     switch (channel & 0x03) {
-        case 0: mux = ADS1118::MUX_AIN0_GND; break;
-        case 1: mux = ADS1118::MUX_AIN1_GND; break;
-        case 2: mux = ADS1118::MUX_AIN2_GND; break;
-        case 3: mux = ADS1118::MUX_AIN3_GND; break;
+        case 0: mux = Ads1118Reg::MUX_AIN0_GND; break;
+        case 1: mux = Ads1118Reg::MUX_AIN1_GND; break;
+        case 2: mux = Ads1118Reg::MUX_AIN2_GND; break;
+        case 3: mux = Ads1118Reg::MUX_AIN3_GND; break;
     }
 
     cfg = (cfg & ~0x7000u) | mux;

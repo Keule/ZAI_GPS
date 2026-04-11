@@ -34,7 +34,7 @@
 // ADS1118 Register & Config constants
 // ===================================================================
 
-namespace ADS1118 {
+namespace Ads1118Reg {
 
     /// Input multiplexer configuration
     enum Mux : uint16_t {
@@ -82,7 +82,7 @@ namespace ADS1118 {
         STATUS_VALID   = 0x0000,    ///< Conversion complete
     };
 
-} // namespace ADS1118
+} // namespace Ads1118Reg
 
 
 class ADS1118 {
