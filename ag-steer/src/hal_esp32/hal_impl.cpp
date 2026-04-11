@@ -359,11 +359,20 @@ static uint8_t s_ads_spi_mode = SPI_MODE0;
 /// Whether ADS1118 was detected successfully
 static bool s_ads_detected = false;
 
+/// Whether DOUT data must be bit-inverted (some cheap modules use
+/// transistor level-shifters that invert the signal on DOUT).
+/// Detected automatically during hal_steer_angle_detect().
+static bool s_ads_invert_dout = false;
+
 /**
  * Perform one ADS1118 SPI transaction (16 bits).
  *
  * Sends config to DIN while reading previous conversion result from DOUT.
  * CS HIGH starts a new conversion.
+ *
+ * If s_ads_invert_dout is true, the received bytes are bit-inverted
+ * before interpretation (compensates for modules with inverting level
+ * shifters on the DOUT line).
  *
  * @return 16-bit raw ADC value (0xFFFF = conversion not ready)
  */
@@ -379,6 +388,12 @@ static int16_t ads1118Transaction(void) {
     sensorSPI.endTransaction();
 
     s_ads_last_conv_start = millis();
+
+    // Apply bit inversion if the module's DOUT line is inverted
+    if (s_ads_invert_dout) {
+        msb = ~msb;
+        lsb = ~lsb;
+    }
 
     return static_cast<int16_t>((static_cast<uint16_t>(msb) << 8) | lsb);
 }
@@ -474,7 +489,7 @@ bool hal_steer_angle_detect(void) {
         const char* name;
         int16_t raw;
         bool valid;
-        bool crosstalk;
+        bool inverted;
     };
 
     ModeResult results[2] = {
@@ -504,19 +519,43 @@ bool hal_steer_angle_detect(void) {
         digitalWrite(CS_STEER_ANG, HIGH);
         sensorSPI.endTransaction();
 
-        results[i].raw = static_cast<int16_t>((static_cast<uint16_t>(msb) << 8) | lsb);
-        results[i].crosstalk = ads1118IsCrosstalk(results[i].raw);
-        results[i].valid = (results[i].raw != static_cast<int16_t>(0xFFFF))
-                        && !results[i].crosstalk;
+        int16_t raw = static_cast<int16_t>((static_cast<uint16_t>(msb) << 8) | lsb);
+        int16_t raw_inv = static_cast<int16_t>(~raw);  // bit-inverted
+
+        // Choose: inverted or not?
+        // Some cheap modules have inverting level-shifters on DOUT.
+        // Heuristic: prefer the interpretation that gives a value within
+        // the ±4.096V range (0..32768 for unipolar poti on 0-3.3V)
+        // and does NOT look like crosstalk.
+        bool raw_crosstalk = ads1118IsCrosstalk(raw);
+        bool inv_crosstalk = ads1118IsCrosstalk(raw_inv);
+        bool raw_ok = (raw != static_cast<int16_t>(0xFFFF)) && !raw_crosstalk;
+        bool inv_ok = (raw_inv != static_cast<int16_t>(0xFFFF)) && !inv_crosstalk;
+
+        // Prefer inverted if raw is crosstalk but inverted is clean,
+        // OR if inverted gives a positive value while raw is negative
+        // (assuming poti input is 0-3.3V → positive ADC reading).
+        bool use_inverted = false;
+        if (inv_ok && !raw_ok) {
+            use_inverted = true;
+        } else if (raw_ok && inv_ok) {
+            // Both pass crosstalk check — prefer the one with
+            // a value in the expected 0-3.3V range
+            if (raw < 0 && raw_inv >= 0) use_inverted = true;
+        }
+
+        results[i].raw = use_inverted ? raw_inv : raw;
+        results[i].inverted = use_inverted;
+        results[i].valid = (results[i].raw != static_cast<int16_t>(0xFFFF));
 
         float voltage = static_cast<float>(results[i].raw) * ADS1118_LSB_V;
-        hal_log("ESP32: ADS1118 %s: raw=%d (0x%04X), voltage=%.4fV %s%s",
+        hal_log("ESP32: ADS1118 %s%s: raw=%d (0x%04X), voltage=%.4fV %s",
                 results[i].name,
+                use_inverted ? " (inv)" : "",
                 results[i].raw,
                 static_cast<uint16_t>(results[i].raw),
                 voltage,
-                results[i].valid ? "OK" : "BAD",
-                results[i].crosstalk ? " [CROSSTALK]" : "");
+                results[i].valid ? "OK" : "BAD");
     }
 
     // Pick the best result
@@ -538,9 +577,18 @@ bool hal_steer_angle_detect(void) {
         s_ads_last_raw = best_raw;
         s_ads_detected = true;
 
+        // Store the inversion flag from the winning mode
+        for (int i = 0; i < 2; i++) {
+            if (results[i].mode == best_mode) {
+                s_ads_invert_dout = results[i].inverted;
+                break;
+            }
+        }
+
         float voltage = static_cast<float>(best_raw) * ADS1118_LSB_V;
-        hal_log("ESP32: ADS1118 DETECTED OK (%s, raw=%d, %.4fV)",
+        hal_log("ESP32: ADS1118 DETECTED OK (%s%s, raw=%d, %.4fV)",
                 (best_mode == SPI_MODE0) ? "Mode0" : "Mode1",
+                s_ads_invert_dout ? ", invert-DOUT" : "",
                 best_raw, voltage);
         return true;
     }
@@ -548,9 +596,15 @@ bool hal_steer_angle_detect(void) {
     // === DETECTION FAILED ===
     s_ads_detected = false;
 
-    bool any_crosstalk = results[0].crosstalk || results[1].crosstalk;
-    bool any_floating = (results[0].raw == static_cast<int16_t>(0xFFFF))
-                     || (results[1].raw == static_cast<int16_t>(0xFFFF));
+    // For failure diagnostics, re-evaluate raw vs inverted
+    bool any_crosstalk = false;
+    bool any_floating = false;
+    for (int i = 0; i < 2; i++) {
+        uint16_t u = static_cast<uint16_t>(results[i].raw);
+        if (u == 0xFFFF) any_floating = true;
+        if (!results[i].inverted && ads1118IsCrosstalk(results[i].raw)) any_crosstalk = true;
+        if (results[i].inverted && ads1118IsCrosstalk(static_cast<int16_t>(~results[i].raw))) any_crosstalk = true;
+    }
 
     if (any_crosstalk) {
         hal_log("ESP32: ADS1118 DETECT FAILED – crosstalk in both modes");
