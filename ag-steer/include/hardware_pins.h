@@ -122,3 +122,17 @@
 
 // Version file on SD card (optional – contains e.g. "1.2.3")
 #define SD_FW_VERSION_FILE   "/firmware.version"
+
+// ---------------------------------------------------------------------------
+// Logging switch (active LOW, internal pull-up)
+//
+// GPIO 47 is a free GPIO on the LilyGO T-ETH-Lite-S3 header.
+// Connect a toggle switch between GPIO 47 and GND.
+//   Switch OFF (open)  → pin pulled HIGH → logging disabled
+//   Switch ON (closed) → pin pulled LOW  → logging enabled
+//
+// The logger checks this pin before each SD card flush.
+// When the switch is turned OFF during active logging, the current
+// log file is closed and the SD card is released immediately.
+// ---------------------------------------------------------------------------
+#define LOG_SWITCH_PIN   47

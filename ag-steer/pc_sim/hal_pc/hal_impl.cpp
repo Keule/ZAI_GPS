@@ -236,6 +236,13 @@ bool hal_net_detected(void) {
 }
 
 // ===================================================================
+// SD Logger – PC stubs (no-op)
+// ===================================================================
+bool sdLoggerReadSwitch(void) { return false; }
+uint32_t sdLoggerDrainBuffer(void) { return 0; }
+void sdLoggerCloseFile(void) {}
+
+// ===================================================================
 // PC init all
 // ===================================================================
 void hal_pc_init_all(void) {

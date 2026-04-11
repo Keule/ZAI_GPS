@@ -26,6 +26,7 @@
 #include "logic/modules.h"
 #include "logic/hw_status.h"
 #include "logic/sd_ota.h"
+#include "logic/sd_logger.h"
 
 // ===================================================================
 // Task handles
@@ -50,6 +51,9 @@ static void controlTaskFunc(void* param) {
 
         // Run one control step
         controlStep();
+
+        // Buffer one log record (subsampled to 10 Hz internally)
+        sdLoggerRecord();
 
         // Maintain 200 Hz timing
         uint32_t elapsed = hal_millis() - start;
@@ -177,6 +181,17 @@ void setup() {
 
     // Network is already initialised by hal_esp32_init_all()
     // (hal_net_init was called there, ETH link should be established)
+
+    // -----------------------------------------------------------------
+    // SD-Card Data Logger
+    // -----------------------------------------------------------------
+    // The logger is controlled by a hardware switch on GPIO 47.
+    // When the switch is ON (closed to GND), navigation/steering data
+    // is recorded to CSV files on the SD card at 10 Hz.
+    // The logger runs as a low-priority FreeRTOS task that periodically
+    // drains a ring buffer to the SD card (every 2 seconds).
+    // -----------------------------------------------------------------
+    sdLoggerInit();
 
     // Report initial hardware errors
     // Always call – reportError() will use UDP if network is up,
