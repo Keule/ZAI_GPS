@@ -14,6 +14,7 @@
  */
 
 #include "logic/sd_logger.h"
+#include "logic/global_state.h"
 #include <cstring>
 
 // ===================================================================
