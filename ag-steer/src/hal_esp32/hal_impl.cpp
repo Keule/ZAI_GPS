@@ -337,7 +337,7 @@ static const uint16_t ADS1118_CONFIG =
 // = 0x8383
 
 /// 1 LSB in volts (±4.096V over 32768 steps)
-static const float ADS1118_LSB_UV = 125.0f;  // 0.125 mV = 125 µV per LSB
+static const float ADS1118_LSB_V = 0.000125f;  // 4.096 / 32768 = 125 µV = 0.000125 V
 
 /// Minimum time between CS HIGH and next CS LOW (ms)
 /// 128 SPS = 7.8125 ms, use 9 ms for safety margin
@@ -397,14 +397,18 @@ bool hal_steer_angle_detect(void) {
     // Read the first conversion result (and start a second one)
     int16_t raw = ads1118Transaction();
 
-    float voltage = static_cast<float>(raw) * ADS1118_LSB_UV / 1000.0f;
+    float voltage = static_cast<float>(raw) * ADS1118_LSB_V;
 
     // 0xFFFF = conversion not ready (floating MISO or not connected)
     // 0x0000 = could be valid (0V) or shorted
     // For a poti at 3.3V, expect 0..26880 (never negative for AIN0 vs GND)
     bool detected = (raw != static_cast<int16_t>(0xFFFF) && raw != 0x0000);
 
-    hal_log("ESP32: ADS1118 detect: raw=%d (0x%04X), voltage=%.3fV %s",
+    if (detected) {
+        s_ads_last_raw = raw;  // seed first value for control loop
+    }
+
+    hal_log("ESP32: ADS1118 detect: raw=%d (0x%04X), voltage=%.4fV %s",
             raw, static_cast<uint16_t>(raw), voltage,
             detected ? "OK" : "FAIL");
 
@@ -429,7 +433,7 @@ float hal_steer_angle_read_deg(void) {
     int16_t raw = s_ads_last_raw;
 
     // Convert to voltage
-    float voltage = static_cast<float>(raw) * ADS1118_LSB_UV / 1000.0f;
+    float voltage = static_cast<float>(raw) * ADS1118_LSB_V;
 
     // Normalise to 0.0 .. 1.0 (3.3V poti supply)
     float normalised = voltage / 3.3f;
