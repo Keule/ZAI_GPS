@@ -273,14 +273,14 @@ bool hal_imu_detect(void) {
     digitalWrite(CS_IMU, HIGH);
     sensorSPI.endTransaction();
 
-    // If we got ANY response (even 0xFF from floating MISO), SPI bus works.
-    // A real BNO085 detection would check for specific chip ID (0xA0 etc.)
-    // but the stub sensor may not be connected. For now, return true if
-    // MISO is not stuck LOW (which would mean bus fault).
+    // 0xFF = floating MISO (no device pulling it down)
+    // 0x00 = MISO stuck LOW (bus fault)
+    // A real BNO085 would respond with its chip ID.
+    // For now: detect as OK if response is NOT 0xFF (floating) and NOT 0x00 (fault).
     // TODO: When real BNO085 is connected, check actual chip ID.
-    bool detected = (response != 0x00 || true);  // Stub: assume detected
+    bool detected = (response != 0xFF && response != 0x00);
     hal_log("ESP32: IMU detect: SPI response=0x%02X %s",
-            response, detected ? "OK" : "FAIL");
+            response, detected ? "OK" : "FAIL (no device)");
     return detected;
 }
 
@@ -289,129 +289,152 @@ bool hal_imu_detect(void) {
 // ===================================================================
 // Connected via SPI Bus 2 (FSPI / SPI2_HOST), CS = GPIO 39.
 //
-// ADS1118 SPI protocol (not standard SPI slave!):
-//   - CS LOW → send 16-bit config, read 16-bit result
-//   - CS HIGH → starts conversion (in single-shot mode)
-//   - Next CS LOW → read previous conversion result, send new config
+// ADS1118 SPI protocol (NOT standard SPI slave!):
+//   The ADS1118 uses a fixed 16-bit frame per CS cycle.
+//   Config and data are transmitted SIMULTANEOUSLY:
+//     - While DIN receives config (16 bits), DOUT outputs the
+//       previous conversion result (16 bits).
+//     - CS HIGH → starts new conversion (if OS bit = 1)
+//
+//   IMPORTANT: Only 16 bits per CS cycle! Sending more bytes
+//   overwrites the config register with garbage.
+//
+// Timing (single-shot mode, 128 SPS):
+//   Conversion time = 1/128 = 7.8 ms
+//   Must wait >= 8 ms after CS HIGH before next CS LOW.
+//   Control loop at 200 Hz (5 ms) → read every other cycle.
 //
 // Config register (16 bit, MSB first):
 //   Bit 15    : OS  = 1 (start single-shot conversion)
 //   Bits 14-12: MUX = 000 (AIN0 vs GND)
 //   Bits 11-9 : PGA = 001 (±4.096V range)
 //   Bit 8     : MODE = 1 (single-shot, not continuous)
-//   Bits 7-5  : DR  = 100 (128 SPS – more than enough for steering)
+//   Bits 7-5  : DR  = 100 (128 SPS)
 //   Bit 4     : CM  = 0 (standard mode)
-//   Bit 3     : TS  = 0 (ADC mode, not temperature sensor)
+//   Bit 3     : TS  = 0 (ADC mode, not temp sensor)
 //   Bit 2     : POL = 0 (MSB first)
 //   Bits 1-0  : CQ  = 11 (comparator disabled)
 //
-// Config value = 0x8583 (binary: 1000 0101 1000 0011)
+// Config = 0x8383  (1000 0011 1000 0011)
 //
 // ADC result: 16-bit signed, MSB first.
-//   ±4.096V range → 1 LSB = 0.125 mV = 8.192 µV per step
-//   0-3.3V poti → raw value ~0 to ~26880 (of ±32768)
+//   0xFFFF = conversion not ready / busy
+//   ±4.096V → 1 LSB = 0.125 mV
+//   0-3.3V poti → raw 0 to ~26880
 // ===================================================================
 
-/// ADS1118 configuration for AIN0 vs GND, ±4.096V, single-shot, 128 SPS
+/// ADS1118 config: AIN0, ±4.096V, single-shot, 128 SPS
 static const uint16_t ADS1118_CONFIG =
-    (1u << 15) |  // OS: start single-shot conversion
+    (1u << 15) |  // OS: start single-shot
     (0u << 12) |  // MUX: AIN0 vs GND
     (1u <<  9) |  // PGA: ±4.096V
     (1u <<  8) |  // MODE: single-shot
     (4u <<  5) |  // DR: 128 SPS
-    (0u <<  4) |  // CM: standard mode
-    (0u <<  3) |  // TS: ADC mode (not temp sensor)
+    (0u <<  4) |  // CM: standard
+    (0u <<  3) |  // TS: ADC mode
     (0u <<  2) |  // POL: MSB first
     (3u <<  0);   // CQ: comparator disabled
+// = 0x8383
 
-/// ADC resolution in bits
-static const float ADS1118_LSB = 4.096f / 32768.0f;  // 0.125 mV per LSB
+/// 1 LSB in volts (±4.096V over 32768 steps)
+static const float ADS1118_LSB_UV = 125.0f;  // 0.125 mV = 125 µV per LSB
 
-/// Potentiometer voltage range (3.3V supply)
-static const float POT_VCC = 3.3f;
+/// Minimum time between CS HIGH and next CS LOW (ms)
+/// 128 SPS = 7.8125 ms, use 9 ms for safety margin
+static const uint32_t ADS1118_CONV_MS = 9;
+
+/// Timestamp of last CS HIGH (start of conversion)
+static uint32_t s_ads_last_conv_start = 0;
+
+/// Last valid raw ADC reading
+static int16_t s_ads_last_raw = 0;
+
+/**
+ * Perform one ADS1118 SPI transaction (16 bits).
+ *
+ * Sends config to DIN while reading previous conversion result from DOUT.
+ * CS HIGH starts a new conversion.
+ *
+ * @return 16-bit raw ADC value (0xFFFF = conversion not ready)
+ */
+static int16_t ads1118Transaction(void) {
+    sensorSPI.beginTransaction(SPISettings(2000000, MSBFIRST, SPI_MODE0));
+    digitalWrite(CS_STEER_ANG, LOW);
+
+    // 16-bit simultaneous transfer: config OUT, result IN
+    uint8_t msb = sensorSPI.transfer(static_cast<uint8_t>((ADS1118_CONFIG >> 8) & 0xFF));
+    uint8_t lsb = sensorSPI.transfer(static_cast<uint8_t>(ADS1118_CONFIG & 0xFF));
+
+    digitalWrite(CS_STEER_ANG, HIGH);
+    sensorSPI.endTransaction();
+
+    s_ads_last_conv_start = millis();
+
+    return static_cast<int16_t>((static_cast<uint16_t>(msb) << 8) | lsb);
+}
 
 void hal_steer_angle_begin(void) {
     pinMode(CS_STEER_ANG, OUTPUT);
     digitalWrite(CS_STEER_ANG, HIGH);
+    hal_delay_ms(1);
 
-    // Perform first read to initialise the ADC
-    // (first CS cycle only starts conversion, result is garbage)
-    sensorSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
-    digitalWrite(CS_STEER_ANG, LOW);
-    // Send config (2 bytes MSB first)
-    sensorSPI.transfer(static_cast<uint8_t>((ADS1118_CONFIG >> 8) & 0xFF));
-    sensorSPI.transfer(static_cast<uint8_t>(ADS1118_CONFIG & 0xFF));
-    // Read 2 dummy bytes (conversion not ready yet)
-    sensorSPI.transfer(0x00);
-    sensorSPI.transfer(0x00);
-    digitalWrite(CS_STEER_ANG, HIGH);
-    sensorSPI.endTransaction();
+    // First transaction: send config, read garbage (no previous conversion)
+    // This starts the first real conversion.
+    ads1118Transaction();
 
-    hal_log("ESP32: ADS1118 ADC on CS=%d initialised (AIN0, +/-4.096V, 128 SPS)",
+    hal_log("ESP32: ADS1118 on CS=%d (AIN0, +/4.096V, 128 SPS, SPI Mode 0)",
             CS_STEER_ANG);
 }
 
 bool hal_steer_angle_detect(void) {
-    // Read one conversion to verify the ADC responds.
-    // We've already sent a config in hal_steer_angle_begin(),
-    // so the first real conversion should be ready now.
-    sensorSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
-    digitalWrite(CS_STEER_ANG, LOW);
+    // The first conversion was started in hal_steer_angle_begin().
+    // Wait for it to complete (128 SPS = 7.8 ms).
+    uint32_t elapsed = millis() - s_ads_last_conv_start;
+    if (elapsed < ADS1118_CONV_MS) {
+        hal_delay_ms(ADS1118_CONV_MS - elapsed + 1);
+    }
 
-    // Send config for next conversion (2 bytes)
-    sensorSPI.transfer(static_cast<uint8_t>((ADS1118_CONFIG >> 8) & 0xFF));
-    sensorSPI.transfer(static_cast<uint8_t>(ADS1118_CONFIG & 0xFF));
+    // Read the first conversion result (and start a second one)
+    int16_t raw = ads1118Transaction();
 
-    // Read previous conversion result (2 bytes)
-    uint8_t msb = sensorSPI.transfer(0x00);
-    uint8_t lsb = sensorSPI.transfer(0x00);
+    float voltage = static_cast<float>(raw) * ADS1118_LSB_UV / 1000.0f;
 
-    digitalWrite(CS_STEER_ANG, HIGH);
-    sensorSPI.endTransaction();
+    // 0xFFFF = conversion not ready (floating MISO or not connected)
+    // 0x0000 = could be valid (0V) or shorted
+    // For a poti at 3.3V, expect 0..26880 (never negative for AIN0 vs GND)
+    bool detected = (raw != static_cast<int16_t>(0xFFFF) && raw != 0x0000);
 
-    int16_t raw = static_cast<int16_t>((msb << 8) | lsb);
-
-    // A disconnected / floating input will read close to 0 or 32767
-    // A connected poti should be somewhere in between
-    // For AIN0 vs GND with poti, expect 0 to ~26880 (0 to 3.3V)
-    float voltage = raw * ADS1118_LSB;
-
-    bool detected = (raw != 0x7FFF && raw != 0x8000 && raw != 0x0000);
-
-    hal_log("ESP32: ADS1118 detect: raw=%d, voltage=%.3fV %s",
-            raw, voltage,
-            detected ? "OK" : "FAIL (no ADC response)");
+    hal_log("ESP32: ADS1118 detect: raw=%d (0x%04X), voltage=%.3fV %s",
+            raw, static_cast<uint16_t>(raw), voltage,
+            detected ? "OK" : "FAIL");
 
     return detected;
 }
 
 float hal_steer_angle_read_deg(void) {
-    // Read ADC value from ADS1118
-    sensorSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
-    digitalWrite(CS_STEER_ANG, LOW);
+    // Check if enough time has passed for the conversion to complete
+    uint32_t elapsed = millis() - s_ads_last_conv_start;
+    if (elapsed >= ADS1118_CONV_MS) {
+        // Conversion ready – read result and start next conversion
+        int16_t raw = ads1118Transaction();
 
-    // Send config for next conversion (2 bytes)
-    sensorSPI.transfer(static_cast<uint8_t>((ADS1118_CONFIG >> 8) & 0xFF));
-    sensorSPI.transfer(static_cast<uint8_t>(ADS1118_CONFIG & 0xFF));
+        // 0xFFFF means conversion not ready or bus error
+        if (raw != static_cast<int16_t>(0xFFFF)) {
+            s_ads_last_raw = raw;
+        }
+        // else: keep previous value
+    }
+    // else: not enough time, return last known value
 
-    // Read previous conversion result (2 bytes)
-    uint8_t msb = sensorSPI.transfer(0x00);
-    uint8_t lsb = sensorSPI.transfer(0x00);
+    int16_t raw = s_ads_last_raw;
 
-    digitalWrite(CS_STEER_ANG, HIGH);
-    sensorSPI.endTransaction();
+    // Convert to voltage
+    float voltage = static_cast<float>(raw) * ADS1118_LSB_UV / 1000.0f;
 
-    int16_t raw = static_cast<int16_t>((msb << 8) | lsb);
+    // Normalise to 0.0 .. 1.0 (3.3V poti supply)
+    float normalised = voltage / 3.3f;
 
-    // Convert ADC value to voltage, then to angle
-    // Poti: 0V = one end, 3.3V = other end
-    // Map to angle range: -45° to +45° (90° total travel)
-    float voltage = raw * ADS1118_LSB;
-
-    // Normalise voltage to 0.0 .. 1.0 range
-    float normalised = voltage / POT_VCC;
-
-    // Clamp to valid range (protect against noise spikes)
+    // Clamp
     if (normalised < 0.0f) normalised = 0.0f;
     if (normalised > 1.0f) normalised = 1.0f;
 
