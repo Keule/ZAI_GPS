@@ -4,11 +4,11 @@
 # These settings are merged into the sdkconfig at build time.
 # PlatformIO picks up this file automatically.
 
-# === PSRAM (Octal SPI) ===
-CONFIG_SPIRAM=y
-CONFIG_SPIRAM_MODE_OCT=y
-CONFIG_SPIRAM_SPEED_80M=y
-CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+# === PSRAM: DISABLED ===
+# We don't need PSRAM for AgSteer (firmware is small, no large buffers).
+# Disabling avoids PSRAM init errors that crash the ESP32-S3 during boot.
+# The T-ETH-Lite-S3 has Octal PSRAM on board but we explicitly disable it.
+CONFIG_SPIRAM=n
 
 # === Flash & App Settings ===
 CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
