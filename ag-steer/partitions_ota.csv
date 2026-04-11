@@ -1,24 +1,27 @@
 # AgSteer OTA Partition Table for LilyGO T-ETH-Lite-S3 (16 MB Flash)
 #
+# IMPORTANT – ESP32-S3 specifics:
+#   - NO phy_init partition! On ESP32-S3 the PHY init data is compiled
+#     into the second-stage bootloader. A separate phy_init partition
+#     causes the bootloader to crash immediately (infinite boot loop).
+#   - otadata is initialised by the flash tool on first upload.
+#     If the board was previously flashed with a non-OTA partition
+#     table, you MUST erase the flash first:  pio run -t erase
+#
 # Layout:
-#   0x0000..0x7FFF   Bootloader + partition table   (32 KB)
-#   0x8000           Partition table                 (4 KB, embedded)
+#   0x0000..0x8FFF   Bootloader + partition table   (36 KB)
 #   0x9000..0xEFFF   NVS                             (24 KB)
 #   0xF000..0x10FFF  OTA data (boot slot selector)   (8 KB)
-#   0x11000..0x11FFF PHY init data                   (4 KB)
+#   0x10000..0x10FFF (unused gap)                    (4 KB – required!)
 #   0x20000..0x3DFFFF ota_0 (first app slot)         (~3.75 MB)
-#   0x3E0000..0x7BFFFF ota_1 (second app slot)       (~3.75 MB)
-#   0x7C0000..0xFFFFFF spiffs / fatfs                (~8.25 MB)
+#   0x3E0000..0x79FFFF ota_1 (second app slot)       (~3.75 MB)
+#   0x7A0000..0xFFFFFF spiffs / fatfs                (~8.25 MB)
 #
-# After a successful OTA update the bootloader reads otadata to decide
-# which slot (ota_0 or ota_1) to boot.  If the new firmware does not
-# call ESP.restart() or Update.end(true) is never reached (power loss,
-# crash) the old slot is kept – built-in rollback safety.
+# Total: 0x1000000 = 16 MB
 
 # Name,    Type, SubType,  Offset,   Size,      Flags
 nvs,       data, nvs,      0x9000,   0x6000,
 otadata,   data, ota,      0xF000,   0x2000,
-phy_init,  data, phy,      0x11000,  0x1000,
 ota_0,     app,  ota_0,    0x20000,  0x3C0000,
 ota_1,     app,  ota_1,    0x3E0000, 0x3C0000,
 spiffs,    data, spiffs,   0x7A0000, 0x860000,
