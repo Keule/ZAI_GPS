@@ -364,6 +364,98 @@ static bool s_ads_detected = false;
 /// Detected automatically during hal_steer_angle_detect().
 static bool s_ads_invert_dout = false;
 
+// ===================================================================
+// Optional: Isolated ADS1118 test on separate pins (debug only)
+//
+// Uncomment the following line to run an isolated ADS1118 test
+// on GPIO 44/45/46/48 at boot, BEFORE any other SPI device is touched.
+// This tests the ADS1118 module on a completely clean, dedicated bus
+// with no SD card, IMU, or actuator to interfere.
+//
+// Wiring for this test:
+//   ADS1118 DOUT  -> GPIO 44
+//   ADS1118 DIN   -> GPIO 45
+//   ADS1118 SCLK  -> GPIO 46
+//   ADS1118 CS    -> GPIO 48
+//   ADS1118 VDD   -> 3.3V
+//   ADS1118 GND   -> GND
+//   ADS1118 AIN0  -> poti wiper
+// ===================================================================
+// #define ADS1118_ISOLATED_TEST
+
+#ifdef ADS1118_ISOLATED_TEST
+static void ads1118IsolatedTest(void) {
+    hal_log(\"=== ADS1118 ISOLATED TEST (GPIO 44/45/46/48) ===\");
+
+    // Deselect all shared-bus devices to prevent interference
+    pinMode(SD_CS, OUTPUT);        digitalWrite(SD_CS, HIGH);
+    pinMode(CS_IMU, OUTPUT);       digitalWrite(CS_IMU, HIGH);
+    pinMode(CS_STEER_ANG, OUTPUT); digitalWrite(CS_STEER_ANG, HIGH);
+    pinMode(CS_ACT, OUTPUT);       digitalWrite(CS_ACT, HIGH);
+
+    // Set up isolated SPI on test pins
+    SPIClass testSPI(FSPI);
+    testSPI.begin(ADS_TEST_SCK, ADS_TEST_MISO, ADS_TEST_MOSI, ADS_TEST_CS);
+    hal_log(\"Test SPI started (SCK=%d MISO=%d MOSI=%d CS=%d)\",
+            ADS_TEST_SCK, ADS_TEST_MISO, ADS_TEST_MOSI, ADS_TEST_CS);
+
+    // DOUT connectivity test (send 0x55, check if MISO echoes it)
+    testSPI.beginTransaction(SPISettings(200000, MSBFIRST, SPI_MODE0));
+    digitalWrite(ADS_TEST_CS, LOW);
+    uint8_t tb1 = testSPI.transfer(0x55);
+    uint8_t tb2 = testSPI.transfer(0x55);
+    digitalWrite(ADS_TEST_CS, HIGH);
+    testSPI.endTransaction();
+
+    if (tb1 == 0x55 && tb2 == 0x55) {
+        hal_log(\"Test DOUT: CROSSTALK - DIN/DOUT swapped (read 0x%02X 0x%02X)\", tb1, tb2);
+    } else if (tb1 == 0xFF && tb2 == 0xFF) {
+        hal_log(\"Test DOUT: FLOATING - no device on GPIO%d\", ADS_TEST_MISO);
+    } else {
+        hal_log(\"Test DOUT: OK (read 0x%02X 0x%02X)\", tb1, tb2);
+    }
+
+    // Full detection cycle on both SPI modes, with and without inversion
+    for (int mode_idx = 0; mode_idx < 2; mode_idx++) {
+        uint8_t mode = (mode_idx == 0) ? SPI_MODE0 : SPI_MODE1;
+        const char* mname = (mode_idx == 0) ? \"Mode0\" : \"Mode1\";
+
+        // Send config, start conversion
+        testSPI.beginTransaction(SPISettings(200000, MSBFIRST, mode));
+        digitalWrite(ADS_TEST_CS, LOW);
+        testSPI.transfer(static_cast<uint8_t>((ADS1118_CONFIG >> 8) & 0xFF));
+        testSPI.transfer(static_cast<uint8_t>(ADS1118_CONFIG & 0xFF));
+        digitalWrite(ADS_TEST_CS, HIGH);
+        testSPI.endTransaction();
+
+        // Wait for conversion
+        hal_delay_ms(ADS1118_CONV_MS + 3);
+
+        // Read result
+        testSPI.beginTransaction(SPISettings(200000, MSBFIRST, mode));
+        digitalWrite(ADS_TEST_CS, LOW);
+        uint8_t msb = testSPI.transfer(static_cast<uint8_t>((ADS1118_CONFIG >> 8) & 0xFF));
+        uint8_t lsb = testSPI.transfer(static_cast<uint8_t>(ADS1118_CONFIG & 0xFF));
+        digitalWrite(ADS_TEST_CS, HIGH);
+        testSPI.endTransaction();
+
+        int16_t raw      = static_cast<int16_t>((static_cast<uint16_t>(msb) << 8) | lsb);
+        int16_t raw_inv  = static_cast<int16_t>(~raw);
+
+        float v_raw = static_cast<float>(raw) * ADS1118_LSB_V;
+        float v_inv = static_cast<float>(raw_inv) * ADS1118_LSB_V;
+
+        hal_log(\"Test %s: raw=%d (0x%04X) = %.4fV  |  inv=%d (0x%04X) = %.4fV\",
+                mname, raw, static_cast<uint16_t>(raw), v_raw,
+                raw_inv, static_cast<uint16_t>(raw_inv), v_inv);
+    }
+
+    // Clean up isolated SPI
+    testSPI.end();
+    hal_log(\"=== ISOLATED TEST COMPLETE ===\");
+}
+#endif // ADS1118_ISOLATED_TEST
+
 /**
  * Perform one ADS1118 SPI transaction (16 bits).
  *
@@ -468,6 +560,16 @@ static bool ads1118IsCrosstalk(int16_t raw) {
 void hal_steer_angle_begin(void) {
     pinMode(CS_STEER_ANG, OUTPUT);
     digitalWrite(CS_STEER_ANG, HIGH);
+
+    // Deselect SD card slot and other SPI devices to prevent bus interference.
+    // The SD library may leave SD_CS floating after SD.end().
+    pinMode(SD_CS, OUTPUT);
+    digitalWrite(SD_CS, HIGH);
+    pinMode(CS_IMU, OUTPUT);
+    digitalWrite(CS_IMU, HIGH);
+    pinMode(CS_ACT, OUTPUT);
+    digitalWrite(CS_ACT, HIGH);
+
     hal_delay_ms(1);
 
     hal_log("ESP32: ADS1118 on CS=%d (AIN0, +/-4.096V, 128 SPS)", CS_STEER_ANG);
@@ -479,6 +581,12 @@ void hal_steer_angle_begin(void) {
 }
 
 bool hal_steer_angle_detect(void) {
+    // Ensure SD card and other SPI devices are deselected before detection.
+    // Prevents residual pull from interfering with MISO.
+    digitalWrite(SD_CS, HIGH);
+    digitalWrite(CS_IMU, HIGH);
+    digitalWrite(CS_ACT, HIGH);
+
     // === ADS1118 DETECTION ===
     // Strategy: try both SPI modes, pick the one that returns valid data.
     // Use slow clock (200 kHz) for reliable detection.
@@ -853,6 +961,12 @@ void hal_esp32_init_all(void) {
 
     // Safety pin
     pinMode(SAFETY_IN, INPUT_PULLUP);
+
+#ifdef ADS1118_ISOLATED_TEST
+    // Isolated test runs BEFORE shared-bus SPI is initialised.
+    // This gives it exclusive use of the FSPI peripheral.
+    ads1118IsolatedTest();
+#endif
 
     // SPI sensor bus (FSPI / SPI2_HOST)
     hal_sensor_spi_init();

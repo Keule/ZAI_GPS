@@ -123,3 +123,21 @@
 //   Switch ON (closed) -> pin pulled LOW  -> logging enabled
 // ---------------------------------------------------------------------------
 #define LOG_SWITCH_PIN   47
+
+// ---------------------------------------------------------------------------
+// Isolated ADS1118 test pins (debug only)
+//
+// GPIOs 44, 45, 46, 48 are free bidirectional GPIOs.
+// Enable with #define ADS1118_ISOLATED_TEST in hal_impl.cpp.
+// Then connect the ADS1118 module directly to these pins:
+//   ADS1118 DOUT  -> GPIO 44 (MISO)
+//   ADS1118 DIN   -> GPIO 45 (MOSI)
+//   ADS1118 SCLK  -> GPIO 46 (SCK)
+//   ADS1118 CS    -> GPIO 48 (CS)
+// This uses a separate SPIClass on FSPI to test the ADS1118 without
+// any interference from the shared bus (SD card, IMU, actuator).
+// ---------------------------------------------------------------------------
+#define ADS_TEST_MISO  44
+#define ADS_TEST_MOSI  45
+#define ADS_TEST_SCK   46
+#define ADS_TEST_CS    48
