@@ -280,52 +280,139 @@ bool hal_imu_detect(void) {
     return detected;
 }
 
+// ===================================================================
+// ADS1118 – 16-Bit ADC for steering angle potentiometer
+// ===================================================================
+// Connected via SPI Bus 2 (FSPI / SPI2_HOST), CS = GPIO 39.
+//
+// ADS1118 SPI protocol (not standard SPI slave!):
+//   - CS LOW → send 16-bit config, read 16-bit result
+//   - CS HIGH → starts conversion (in single-shot mode)
+//   - Next CS LOW → read previous conversion result, send new config
+//
+// Config register (16 bit, MSB first):
+//   Bit 15    : OS  = 1 (start single-shot conversion)
+//   Bits 14-12: MUX = 000 (AIN0 vs GND)
+//   Bits 11-9 : PGA = 001 (±4.096V range)
+//   Bit 8     : MODE = 1 (single-shot, not continuous)
+//   Bits 7-5  : DR  = 100 (128 SPS – more than enough for steering)
+//   Bit 4     : CM  = 0 (standard mode)
+//   Bit 3     : TS  = 0 (ADC mode, not temperature sensor)
+//   Bit 2     : POL = 0 (MSB first)
+//   Bits 1-0  : CQ  = 11 (comparator disabled)
+//
+// Config value = 0x8583 (binary: 1000 0101 1000 0011)
+//
+// ADC result: 16-bit signed, MSB first.
+//   ±4.096V range → 1 LSB = 0.125 mV = 8.192 µV per step
+//   0-3.3V poti → raw value ~0 to ~26880 (of ±32768)
+// ===================================================================
+
+/// ADS1118 configuration for AIN0 vs GND, ±4.096V, single-shot, 128 SPS
+static const uint16_t ADS1118_CONFIG =
+    (1u << 15) |  // OS: start single-shot conversion
+    (0u << 12) |  // MUX: AIN0 vs GND
+    (1u <<  9) |  // PGA: ±4.096V
+    (1u <<  8) |  // MODE: single-shot
+    (4u <<  5) |  // DR: 128 SPS
+    (0u <<  4) |  // CM: standard mode
+    (0u <<  3) |  // TS: ADC mode (not temp sensor)
+    (0u <<  2) |  // POL: MSB first
+    (3u <<  0);   // CQ: comparator disabled
+
+/// ADC resolution in bits
+static const float ADS1118_LSB = 4.096f / 32768.0f;  // 0.125 mV per LSB
+
+/// Potentiometer voltage range (3.3V supply)
+static const float POT_VCC = 3.3f;
+
 void hal_steer_angle_begin(void) {
     pinMode(CS_STEER_ANG, OUTPUT);
     digitalWrite(CS_STEER_ANG, HIGH);
-    hal_log("ESP32: Steer angle sensor begun on CS=%d (stub)", CS_STEER_ANG);
-}
 
-bool hal_steer_angle_detect(void) {
-    // Try SPI read to verify the sensor responds on the bus.
-    // A real sensor would return a valid angle (int16 in first 2 bytes).
-    // With no sensor, MISO floats high (0xFF) or low (0x00).
+    // Perform first read to initialise the ADC
+    // (first CS cycle only starts conversion, result is garbage)
     sensorSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
     digitalWrite(CS_STEER_ANG, LOW);
-    uint8_t rx_buf[4] = {0};
-    for (int i = 0; i < 4; i++) {
-        rx_buf[i] = sensorSPI.transfer(0x00);
-    }
+    // Send config (2 bytes MSB first)
+    sensorSPI.transfer(static_cast<uint8_t>((ADS1118_CONFIG >> 8) & 0xFF));
+    sensorSPI.transfer(static_cast<uint8_t>(ADS1118_CONFIG & 0xFF));
+    // Read 2 dummy bytes (conversion not ready yet)
+    sensorSPI.transfer(0x00);
+    sensorSPI.transfer(0x00);
     digitalWrite(CS_STEER_ANG, HIGH);
     sensorSPI.endTransaction();
 
-    // If all bytes are 0x00 or all 0xFF, sensor might not be connected.
-    // But 0x0000 could also be a valid angle reading (0 degrees).
-    // TODO: When real sensor is connected, implement proper detection.
-    bool all_ff = (rx_buf[0] == 0xFF && rx_buf[1] == 0xFF);
-    bool detected = !all_ff;  // Floating MISO = all 0xFF means no sensor
-    hal_log("ESP32: SteerAngle detect: SPI [0x%02X 0x%02X 0x%02X 0x%02X] %s",
-            rx_buf[0], rx_buf[1], rx_buf[2], rx_buf[3],
-            detected ? "OK" : "FAIL (no pull-down on MISO?)");
+    hal_log("ESP32: ADS1118 ADC on CS=%d initialised (AIN0, +/-4.096V, 128 SPS)",
+            CS_STEER_ANG);
+}
+
+bool hal_steer_angle_detect(void) {
+    // Read one conversion to verify the ADC responds.
+    // We've already sent a config in hal_steer_angle_begin(),
+    // so the first real conversion should be ready now.
+    sensorSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+    digitalWrite(CS_STEER_ANG, LOW);
+
+    // Send config for next conversion (2 bytes)
+    sensorSPI.transfer(static_cast<uint8_t>((ADS1118_CONFIG >> 8) & 0xFF));
+    sensorSPI.transfer(static_cast<uint8_t>(ADS1118_CONFIG & 0xFF));
+
+    // Read previous conversion result (2 bytes)
+    uint8_t msb = sensorSPI.transfer(0x00);
+    uint8_t lsb = sensorSPI.transfer(0x00);
+
+    digitalWrite(CS_STEER_ANG, HIGH);
+    sensorSPI.endTransaction();
+
+    int16_t raw = static_cast<int16_t>((msb << 8) | lsb);
+
+    // A disconnected / floating input will read close to 0 or 32767
+    // A connected poti should be somewhere in between
+    // For AIN0 vs GND with poti, expect 0 to ~26880 (0 to 3.3V)
+    float voltage = raw * ADS1118_LSB;
+
+    bool detected = (raw != 0x7FFF && raw != 0x8000 && raw != 0x0000);
+
+    hal_log("ESP32: ADS1118 detect: raw=%d, voltage=%.3fV %s",
+            raw, voltage,
+            detected ? "OK" : "FAIL (no ADC response)");
+
     return detected;
 }
 
 float hal_steer_angle_read_deg(void) {
-    float angle = 0.0f;
-
-    // TODO: Implement actual SPI read from steering angle sensor
+    // Read ADC value from ADS1118
     sensorSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
     digitalWrite(CS_STEER_ANG, LOW);
-    uint8_t rx_buf[4] = {0};
-    for (int i = 0; i < 4; i++) {
-        rx_buf[i] = sensorSPI.transfer(0x00);
-    }
+
+    // Send config for next conversion (2 bytes)
+    sensorSPI.transfer(static_cast<uint8_t>((ADS1118_CONFIG >> 8) & 0xFF));
+    sensorSPI.transfer(static_cast<uint8_t>(ADS1118_CONFIG & 0xFF));
+
+    // Read previous conversion result (2 bytes)
+    uint8_t msb = sensorSPI.transfer(0x00);
+    uint8_t lsb = sensorSPI.transfer(0x00);
+
     digitalWrite(CS_STEER_ANG, HIGH);
     sensorSPI.endTransaction();
 
-    // Stub: interpret first 2 bytes as angle * 100
-    int16_t raw = (rx_buf[0] << 8) | rx_buf[1];
-    angle = raw / 100.0f;
+    int16_t raw = static_cast<int16_t>((msb << 8) | lsb);
+
+    // Convert ADC value to voltage, then to angle
+    // Poti: 0V = one end, 3.3V = other end
+    // Map to angle range: -45° to +45° (90° total travel)
+    float voltage = raw * ADS1118_LSB;
+
+    // Normalise voltage to 0.0 .. 1.0 range
+    float normalised = voltage / POT_VCC;
+
+    // Clamp to valid range (protect against noise spikes)
+    if (normalised < 0.0f) normalised = 0.0f;
+    if (normalised > 1.0f) normalised = 1.0f;
+
+    // Map 0..1 → -45°..+45°
+    float angle = (normalised * 90.0f) - 45.0f;
 
     return angle;
 }
