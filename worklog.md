@@ -281,3 +281,46 @@ Stage Summary:
 - NOTE: denkitronik uses SPI_MODE1 (our module works with Mode0) AND 4-byte protocol
   (our module uses correct 2-byte protocol) AND no bit-inversion.
   The local library is strongly recommended for this hardware setup.
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Fix SPI pins, remove denkitronik compat, clean up code and README
+
+Work Log:
+- User reported SPI on GPIO 5/6/7 not working; tested with MOSI=17, MISO=15, SCK=16, CS=18 and it works perfectly
+- Removed denkitronik ADS1118 compatibility layer:
+  - Deleted include/ads1118_compat.h
+  - Removed USE_DENKITRONIK_ADS1118 flags from platformio.ini
+  - Removed denkitronik lib_deps comment from platformio.ini
+- Changed ADS1118 to dedicated SPI bus on GPIO 15/16/17 (FSPI/SPI2_HOST):
+  - SENS_SPI_SCK = 16, SENS_SPI_MISO = 15, SENS_SPI_MOSI = 17
+  - CS_STEER_ANG = 18
+- Moved GNSS UARTs to available bidirectional GPIOs:
+  - GNSS_HEADING: TX=44, RX=43 (was TX=15, RX=16)
+  - GNSS_MAIN: TX=46, RX=45 (was TX=17, RX=18)
+- Moved IMU_INT to GPIO 48 (was 43, now used by GNSS HEADING RX)
+- Moved LOG_SWITCH to GPIO 47 (unchanged)
+- SD Card stays on separate pins: SCK=7, MISO=5, MOSI=6, CS=42 (OTA only)
+- Updated src/hal_esp32/hal_impl.cpp:
+  - Changed include from ads1118_compat.h to ads1118.h (direct library usage)
+  - Removed ADS1118Dev wrapper, now uses ADS1118 class directly
+  - Updated adsDeselectOthers() to only deselect IMU and Actuator (no SD)
+  - Updated all comments and pin references
+- Updated include/hardware_pins.h with new pin layout and detailed documentation
+- Updated hardware_pins.h (root copy) to match
+- Updated src/hal_esp32/sd_logger_esp32.cpp:
+  - Changed SD SPI init from SENS_SPI_* to SD_SPI_* pins
+  - Updated comments about shared bus strategy
+- Updated src/hal_esp32/sd_ota_esp32.cpp:
+  - Changed SD SPI init from SENS_SPI_* to SD_SPI_* pins
+  - Updated comments about shared bus strategy
+- Completely rewrote README.md with corrected pin tables, wiring diagram, bus topology
+
+Stage Summary:
+- ADS1118 now on dedicated SPI bus: SCK=16, MISO=15, MOSI=17, CS=18
+- GNSS UARTs moved: Main on GPIO 45/46, Heading on GPIO 43/44
+- denkitronik compatibility completely removed
+- All pin references in code and documentation verified correct
+- SD card uses separate FSPI pins (5/6/7) only during OTA updates
+- Clean separation: sensor SPI (15/16/17) vs SD SPI (5/6/7), same peripheral

@@ -2,7 +2,7 @@
 
 > Embedded-Firmware für ein landwirtschaftliches Autosteer-Lenksteuergerät auf Basis des **LilyGO T-ETH-Lite-S3** (ESP32-S3-WROOM-1 + W5500 Ethernet).
 
-Das Steuergerät verbindet sich über Ethernet/UDP mit **AgOpenGPS** (bzw. AgIO auf dem Tablet) und steuert einen hydraulischen oder elektrischen Lenkaktuator. Es liest zwei GNSS-Module (Hauptposition + Heading), eine IMU, einen Lenkwinkelsensor und überwacht einen Safety-Eingang.
+Das Steuergerät verbindet sich über Ethernet/UDP mit **AgOpenGPS** (bzw. AgIO auf dem Tablet) und steuert einen hydraulischen oder elektrischen Lenkaktuator. Es liest zwei GNSS-Module (Hauptposition + Heading), eine IMU, einen Lenkwinkelsensor (ADS1118 ADC) und überwacht einen Safety-Eingang.
 
 ---
 
@@ -43,6 +43,10 @@ ag-steer/
 │   └── lilygo_t_eth_lite_s3.json   #   LilyGO T-ETH-Lite-S3
 │
 ├── lib/                            # Lokale Bibliotheken
+│   ├── ads1118/                    #   ADS1118 16-Bit ADC Treiber
+│   │   ├── ads1118.h
+│   │   ├── ads1118.cpp
+│   │   └── library.json
 │   └── ETHClass2/                  #   LilyGO W5500 SPI-Treiber (Arduino Core < 3.x)
 │       ├── ETHClass2.h
 │       └── ETHClass2.cpp
@@ -57,6 +61,7 @@ ag-steer/
 │   ├── hal_esp32/                  #   ESP32-S3 HAL-Implementierung
 │   │   ├── hal_impl.h
 │   │   ├── hal_impl.cpp            #     UART, SPI, ETH (W5500), FreeRTOS
+│   │   ├── sd_logger_esp32.cpp     #     SD-Karte Datenlogger
 │   │   └── sd_ota_esp32.cpp        #     SD-Karte → OTA Firmware-Update
 │   └── logic/                      #   Reine C++ Logik (keine Arduino-Header)
 │       ├── global_state.h/.cpp     #     NavigationState, Mutex, StateLock
@@ -85,12 +90,12 @@ ag-steer/
 
 | Bauteil | Beschreibung |
 |---------|-------------|
-| **MCU** | ESP32-S3-WROOM-1 (dual-core, 240 MHz, 16 MB Flash) |
+| **MCU** | ESP32-S3-WROOM-1 (dual-core, 240 MHz, 16 MB Flash, 8 MB PSRAM) |
 | **Board** | LilyGO T-ETH-Lite-S3 |
 | **Ethernet** | W5500 via SPI (onboard, SPI3_HOST) |
 | **GNSS** | 2× UM980 (RTK-Rover, 460800 baud, 8N1) |
 | **IMU** | BNO085 (oder kompatibel, SPI) |
-| **Lenkwinkelsensor** | SPI-basiert |
+| **Lenkwinkelsensor** | ADS1118 16-Bit ADC + Potentiometer (SPI) |
 | **Aktuator** | SPI-basiert (0–65535 Kommandowert) |
 | **Safety** | GPIO4, active LOW (Pull-Up intern) |
 
@@ -103,43 +108,55 @@ Alle Pins sind zentral in [`include/hardware_pins.h`](include/hardware_pins.h) d
 Treiber: ESP-IDF `ETH`-Klasse (oder LilyGO `ETHClass2` bei Arduino Core < 3.x).
 Verwaltet den SPI-Bus intern – kein manueller SPI-Code nötig.
 
-| Signal | GPIO | Arduino-Bus | ESP-IDF | Funktion |
-|--------|------|-------------|---------|----------|
-| ETH_CS | 9 | — | — | Chip Select W5500 |
-| ETH_SCK | 10 | HSPI | SPI3_HOST | SPI-Takt |
-| ETH_MISO | 11 | HSPI | SPI3_HOST | Daten W5500 → MCU |
-| ETH_MOSI | 12 | HSPI | SPI3_HOST | Daten MCU → W5500 |
-| ETH_INT | 13 | — | — | Interrupt W5500 |
-| ETH_RST | 14 | — | — | Reset W5500 |
+| Signal | GPIO | ESP-IDF | Funktion |
+|--------|------|---------|----------|
+| ETH_CS | 9 | — | Chip Select W5500 |
+| ETH_SCK | 10 | SPI3_HOST | SPI-Takt |
+| ETH_MISO | 11 | SPI3_HOST | Daten W5500 → MCU |
+| ETH_MOSI | 12 | SPI3_HOST | Daten MCU → W5500 |
+| ETH_INT | 13 | — | Interrupt W5500 |
+| ETH_RST | 14 | — | Reset W5500 |
 
 > ⚠️ Diese Pins sind durch das Board-Design festgelegt. **Nicht ändern!**
 
-#### SPI Bus 2 – Sensoren / Aktuator
+#### SPI Bus 2 – Sensoren / Aktuator (FSPI = SPI2_HOST)
 
 Treiber: Arduino `SPIClass(FSPI)` = ESP-IDF `SPI2_HOST`.
+Dedizierter SPI-Bus für ADS1118, IMU und Aktuator.
 
 | Signal | GPIO | Funktion |
 |--------|------|----------|
-| SENS_SPI_SCK | 35 | SPI-Takt Sensorbus |
-| SENS_SPI_MISO | 36 | Daten Sensor → MCU |
-| SENS_SPI_MOSI | 37 | Daten MCU → Sensor |
+| SENS_SPI_SCK | 16 | SPI-Takt Sensorbus |
+| SENS_SPI_MISO | 15 | Daten Sensor → MCU |
+| SENS_SPI_MOSI | 17 | Daten MCU → Sensor |
+| CS_STEER_ANG | 18 | Chip Select ADS1118 (Lenkwinkel) |
 | CS_IMU | 38 | Chip Select IMU (BNO085) |
-| CS_STEER_ANG | 39 | Chip Select Lenkwinkelsensor |
 | CS_ACT | 40 | Chip Select Aktuator |
-| IMU_INT | 41 | Interrupt IMU (BNO085) |
+
+#### ADS1118 Lenkwinkelsensor – Verdrahtung
+
+```
+ADS1118 Modul          ESP32-S3 (T-ETH-Lite-S3)
+─────────────          ────────────────────────
+VDD            →       3.3V
+GND            →       GND
+DOUT           →       GPIO 15  (MISO)
+DIN            →       GPIO 17  (MOSI)
+SCLK           →       GPIO 16  (SCK)
+CS             →       GPIO 18
+```
 
 > ⚠️ **Wichtig:** FSPI (= SPI2_HOST) verwenden, NICHT HSPI!
 > Auf ESP32-S3 (Arduino Core 2.x) ist HSPI = SPI3_HOST, was vom W5500 belegt wird.
-> Gleichzeitiger Zugriff führt zum Absturz (`spi_hal_setup_trans` assert).
 
 #### UARTs – GNSS
 
 | Signal | GPIO | Funktion |
 |--------|------|----------|
-| GNSS_HEADING_TX | 15 | Heading-GNSS senden |
-| GNSS_HEADING_RX | 16 | Heading-GNSS empfangen |
-| GNSS_MAIN_TX | 17 | Haupt-GNSS senden |
-| GNSS_MAIN_RX | 18 | Haupt-GNSS empfangen |
+| GNSS_HEADING_TX | 44 | Heading-GNSS senden |
+| GNSS_HEADING_RX | 43 | Heading-GNSS empfangen |
+| GNSS_MAIN_TX | 46 | Haupt-GNSS senden |
+| GNSS_MAIN_RX | 45 | Haupt-GNSS empfangen |
 
 Beide UARTs: **460800 Baud, 8N1**
 
@@ -148,65 +165,59 @@ Beide UARTs: **460800 Baud, 8N1**
 | Signal | GPIO | Funktion |
 |--------|------|----------|
 | SAFETY_IN | 4 | Safety-Eingang, **active LOW** (Pull-Up intern) |
+| IMU_INT | 48 | IMU Interrupt (BNO085) |
+| LOG_SWITCH_PIN | 47 | Logging-Schalter, **active LOW** |
 
-### GPIO-Übersicht am Header (physisch gruppiert)
+### GPIO-Übersicht am Header (nach Funktion gruppiert)
 
 ```
 GPIO   9  10  11  12  13  14        W5500 Ethernet (onboard, fest)
        CS  SCK MISO MOSI INT RST
 
-GPIO  15  16  17  18                GNSS UARTs
-       TX2 RX2 TX1 RX1
+GPIO  15  16  17  18  38  40        Sensor-SPI (FSPI/SPI2_HOST) + CS
+       MISO SCK MOSI CS  CS1 CS2         ADS1118  IMU    Aktuator
 
-GPIO  35  36  37  38  39  40  41    Sensor-SPI + CS + INT
-       SCK MISO MOSI CS1 CS2 CS3 INT
+GPIO  43  44  45  46                 GNSS UARTs
+       RX2 TX2 RX1 TX1                  Heading   Main
 
-GPIO   5   6   7   42                SD-Karte (OTA)
+GPIO   5   6   7   42                SD-Karte (OTA only, FSPI)
        MISO MOSI SCK CS
 
-GPIO   4                            Safety (Pull-Up Input)
+GPIO   4   47  48                     Sonstige
+       Safety  LogSw  IMU_INT
 ```
 
 ### SD-Karte (OTA Firmware Update)
 
 Treiber: Arduino `SD.h` über `SPIClass(FSPI)` = ESP-IDF `SPI2_HOST`.
-**Wird nur beim Firmware-Update verwendet** – teilt sich den Bus temporär mit den Sensoren.
+**Wird nur beim Firmware-Update verwendet** – eigene Pins, FSPI wird temporär umkonfiguriert.
 
 | Signal | GPIO | Funktion |
 |--------|------|----------|
+| SD_SPI_SCK | 7 | SPI-Takt SD-Karte |
 | SD_SPI_MISO | 5 | Daten SD → MCU |
 | SD_SPI_MOSI | 6 | Daten MCU → SD |
-| SD_SPI_SCK | 7 | SPI-Takt SD-Karte |
 | SD_CS | 42 | Chip Select SD-Karte |
 
-> ⚠️ **GPIO 5/6/7:** Auf LilyGO T-ETH-Lite-S3 sind diese GPIOs frei verfügbar.
-> Falls deine Board-Revision hier Strapping-Pins oder USB verwendet, passe die
-> Pins in [`include/hardware_pins.h`](include/hardware_pins.h) an.
-
-#### SPI Bus 3 – SD-Karte (zeitweilig, teilt SPI2_HOST)
-
-Die SD-Karte nutzt den selben SPI2_HOST (FSPI) wie der Sensorbus.
-Während normaler Laufzeit gehört der Bus den Sensoren. Nur beim OTA-Update
-wird der Sensorbus per `hal_sensor_spi_deinit()` freigegeben, der Bus mit
-SD-Pins neu initialisiert, und nach dem Update (oder Fehler) per
-`hal_sensor_spi_reinit()` wiederhergestellt.
+Die SD-Karte nutzt den **gleichen** SPI-Peripher (FSPI/SPI2_HOST) wie der Sensorbus, aber mit **anderen Pins**. Während normaler Laufzeit gehört FSPI den Sensoren (GPIO 15/16/17). Nur beim OTA-Update wird FSPI per `hal_sensor_spi_deinit()` freigegeben, mit SD-Pins (5/6/7) neu initialisiert, und nach dem Update per `hal_sensor_spi_reinit()` wiederhergestellt.
 
 ### Bus-Topologie
 
 ```
   ESP32-S3
 
-  ┌─── SPI2_HOST (FSPI) ─────────────────────────────────┐
-  │  Normalbetrieb:  SCK=35  MISO=36  MOSI=37            │
-  │  OTA-Update:     SCK=7   MISO=5   MOSI=6             │
-  │                                                        │
-  │  CS=38 → BNO085 (IMU)                                 │
-  │  CS=39 → Lenkwinkelsensor                              │
-  │  CS=40 → Aktuator                                     │
-  │  CS=42 → SD-Karte (nur bei OTA)                       │
-  └────────────────────────────────────────────────────────┘
+  ┌─── FSPI (SPI2_HOST) ───────────────────────────┐
+  │  Sensorbus:  SCK=16  MISO=15  MOSI=17           │
+  │                                                 │
+  │  CS=18 → ADS1118 (Lenkwinkel ADC)               │
+  │  CS=38 → BNO085 (IMU)                           │
+  │  CS=40 → Aktuator                               │
+  │                                                 │
+  │  SD-Karte (OTA only, gleicher Bus, andere Pins): │
+  │         SCK=7  MISO=5  MOSI=6  CS=42            │
+  └─────────────────────────────────────────────────┘
 
-  ┌─── SPI3_HOST (HSPI) ────┐
+  ┌─── SPI3_HOST ────────────┐
   │  SCK=10  MISO=11  MOSI=12 │   (managed by ETH driver)
   │  CS=9   INT=13   RST=14   │
   └──────────┬────────────────┘
@@ -218,12 +229,14 @@ SD-Pins neu initialisiert, und nach dem Update (oder Fehler) per
            ───┴─── Netzwerk (AgIO Tablet)
 
   ┌─── UART1 ──┐   ┌─── UART2 ───┐
-  │ RX=18 TX=17│   │ RX=16 TX=15 │
+  │ RX=45 TX=46│   │ RX=43 TX=44 │
   └─────┬──────┘   └──────┬──────┘
    UM980 #1            UM980 #2
    (Position)          (Heading)
 
   Safety: GPIO4 (active LOW, Pull-Up)
+  IMU_INT: GPIO48
+  LogSwitch: GPIO47 (active LOW)
 ```
 
 ---
@@ -251,6 +264,20 @@ SD-Pins neu initialisiert, und nach dem Update (oder Fehler) per
 └─────────────────────────────────────────────────┘
 ```
 
+### ADS1118 Library ([`lib/ads1118/`](lib/ads1118/))
+
+Lokale ADS1118 Treiberbibliothek mit folgenden Features:
+
+| Feature | Beschreibung |
+|---------|-------------|
+| SPI-Protokoll | 16-Bit simultan Config+Data (korrekt lt. Datasheet SLASB73) |
+| SPI-Mode | Auto-Detection (probiert Mode0 und Mode1) |
+| Bit-Inversion | Auto-Detection für Module mit invertierenden Level-Shiftern |
+| DOUT-Test | Crosstalk- und Floating-Erkennung |
+| Shared-Bus | Deselect-Callback für andere CS-Pins am selben Bus |
+| Non-blocking | `readLoop()` für 200 Hz Control-Loop (128 SPS = 7.8ms Konvertierung) |
+| Temperatur | Interner Temperatursensor auslesbar |
+
 ### Ethernet-Treiber
 
 Der W5500 wird über den ESP-IDF `ETH`-Treiber angesteuert (kein Arduino Ethernet/Ethernet3!).
@@ -275,7 +302,7 @@ Link-Status wird über `WiFi.onEvent()` (ARDUINO_EVENT_ETH_CONNECTED / GOT_IP) t
 ```
 1. Safety prüfen (GPIO4)  → bei LOW: PID reset, Aktuator=0
 2. IMU lesen (SPI2/FSPI, CS=GPIO38)  → yaw_rate_dps, roll_deg
-3. Lenkwinkel lesen (SPI2/FSPI, CS=GPIO39)  → steer_angle_deg
+3. Lenkwinkel lesen (SPI2/FSPI, CS=GPIO18)  → ADS1118 AIN0 → steer_angle_deg
 4. PID berechnen  Fehler = desiredSteerAngleDeg − g_nav.steer_angle_deg
 5. Aktuator ansteuern (SPI2/FSPI, CS=GPIO40)  → uint16_t Kommandowert
 ```
@@ -283,8 +310,8 @@ Link-Status wird über `WiFi.onEvent()` (ARDUINO_EVENT_ETH_CONNECTED / GOT_IP) t
 #### commTask – Core 0 – 100 Hz (10 ms)
 
 ```
-1. GNSS MAIN pollen (UART1, RX=18)  → GGA, RMC → lat, lon, alt, sog, cog, fix
-2. GNSS HEADING pollen (UART2, RX=16)  → RMC → heading_deg
+1. GNSS MAIN pollen (UART1, RX=45)  → GGA, RMC → lat, lon, alt, sog, cog, fix
+2. GNSS HEADING pollen (UART2, RX=43)  → RMC → heading_deg
 3. Netzwerk empfangen (UDP)  → Hello, Scan, SubnetChange, SteerDataIn
 4. AOG-Frames senden (@ 10 Hz)  → GPS Main Out + Steer Status Out
 5. HW-Status überwachen (@ 1 Hz)  → PGN 0xDD Hardware Messages
@@ -317,18 +344,20 @@ extern volatile float desiredSteerAngleDeg;  // Sollwinkel von AgIO
 
 | Rolle | UART | Pins | Funktion |
 |-------|------|------|----------|
-| GNSS_MAIN | UART1 | RX=18, TX=17 | Hauptposition, RTK-Rover |
-| GNSS_HEADING | UART2 | RX=16, TX=15 | Heading-Quelle |
+| GNSS_MAIN | UART1 | RX=45, TX=46 | Hauptposition, RTK-Rover |
+| GNSS_HEADING | UART2 | RX=43, TX=44 | Heading-Quelle |
 
 NMEA-Parser: **GGA** (lat, lon, alt, fix), **RMC** (sog, cog). 460800 Baud.
 
 ### IMU ([`src/logic/imu.h`](src/logic/imu.h))
 
-BNO085 über SPI2/FSPI (CS=GPIO38, INT=GPIO41). Liest `yaw_rate_dps` und `roll_deg`. SH-2 Protokoll TODO.
+BNO085 über SPI2/FSPI (CS=GPIO38, INT=GPIO48). Liest `yaw_rate_dps` und `roll_deg`. SH-2 Protokoll TODO.
 
 ### Lenkwinkelsensor ([`src/logic/steer_angle.h`](src/logic/steer_angle.h))
 
-SPI2/FSPI (CS=GPIO39). `steerAngleReadDeg()` → Winkel in Grad. Sensorprotokoll TODO.
+ADS1118 16-Bit ADC über SPI2/FSPI (CS=GPIO18). Potentiometer an AIN0.
+0-3.3V → 0 bis ~26880 raw → -45° bis +45°.
+Automatische SPI-Mode und Bit-Inversion Detection.
 
 ### Aktuator ([`src/logic/actuator.h`](src/logic/actuator.h))
 
@@ -415,41 +444,6 @@ Firmware-Update von einer SD-Karte in die inaktive OTA-Partition des Flash.
 
 ¹ Wird zuerst gesucht. Fehlt sie, wird `/update.bin` verwendet.² Nur wenn `/firmware.bin` nicht existiert.
 
-**Versionsprüfung (optional):**
-- `/firmware.version` enthält z.B. `1.2.3` (nur Text, mit oder ohne Zeilenumbruch)
-- Die aktuelle Firmware-Version ist über `FIRMWARE_VERSION` in `platformio.ini` definiert.
-- Das Update wird **nur** ausgeführt, wenn die SD-Version **neuer** ist als die aktuell laufende.
-- Fehlt die Datei, wird das Update ohne Versionsprüfung ausgeführt.
-
-**Serielles Log (Beispiel):**
-```
-[         0] Main: firmware v0.1.0
-[       150] OTA: checking for firmware update on SD card...
-[       160] OTA: running from partition 'ota_0' (0x20000, subtype=0x10)
-[       180] OTA: SD card mounted OK
-[       185] OTA: found /firmware.bin (1048576 bytes)
-[       190] OTA: SD version = 0.2.0, current version = 0.1.0  (NEWER)
-[       195] OTA: firmware update available on SD card
-[       200] Main: firmware update detected on SD card – starting update
-[       205] OTA: ===== STARTING FIRMWARE UPDATE FROM SD =====
-[       215] OTA: phase 1 – releasing sensor SPI bus...
-[       230] OTA: SD card mounted OK
-[       240] OTA: phase 2 – opening firmware file...
-[       250] OTA: /firmware.bin opened, size = 1048576 bytes
-[       260] OTA: phase 3 – starting OTA write to flash...
-[       270] OTA: OTA partition initialised (1048576 bytes)
-[       275] OTA: phase 4 – writing firmware to flash...
-[      1800] OTA:  10%  (104857 / 1048576 bytes, 543 KB/s)
-[      3200] OTA:  20%  (209714 / 1048576 bytes, 576 KB/s)
-[      ...  ]
-[      8200] OTA: 100%  (1048576 / 1048576 bytes, 589 KB/s)
-[      8250] OTA: phase 5 – validating and finalising...
-[      8400] OTA: ===== UPDATE SUCCESSFUL =====
-[      8400] OTA: wrote 1048576 bytes in 8150 ms (125 KB/s)
-[      8400] OTA: rebooting into new firmware in 2 seconds...
-[     10400] OTA: RESTARTING NOW
-```
-
 **Update-Ablauf deaktivieren:**
 Einfach die `firmware.bin` von der SD-Karte löschen oder die SD-Karte abziehen.
 Die Firmware bootet dann normal ohne Update-Versuch.
@@ -469,9 +463,7 @@ Die Datei [`partitions_ota.csv`](partitions_ota.csv) definiert die Flash-Aufteil
 | **ota_1** | **app/ota_1** | **0x3E0000** | **3.75 MB** | **Zweiter App-Slot (OTA-Ziel)** |
 | spiffs | data/spiffs | 0x7A0000 | ~8.25 MB | Dateisystem (zukünftig) |
 
-Der ESP32-Bootloader liest `otadata` um zu entscheiden, ob von `ota_0` oder `ota_1` gebootet wird. Bei einem fehlgeschlagenen Update (Power-Loss, Crash während des Schreibens) bleibt der alte Slot aktiv – **eingebautes Rollback**.
-
-> ⚠️ **Wichtig:** Nach dem Wechsel auf `partitions_ota.csv` muss die Firmware einmalig per USB geflasht werden (es existiert noch kein OTA-Slot mit gültiger Firmware). Danach können weitere Updates über SD-Karte erfolgen.
+> ⚠️ **Wichtig:** Nach dem Wechsel auf `partitions_ota.csv` muss die Firmware einmalig per USB geflasht werden.
 
 ---
 
@@ -480,20 +472,10 @@ Der ESP32-Bootloader liest `otadata` um zu entscheiden, ob von `ota_0` oder `ota
 ### ESP32-Firmware (PlatformIO)
 
 ```bash
-# Kompilieren
-pio run
-
-# Flashen (ESP32-S3 per USB)
-pio run --target upload
-
-# Serieller Monitor
-pio device monitor -b 115200
+pio run                          # Kompilieren
+pio run --target upload          # Flashen
+pio device monitor -b 115200     # Serieller Monitor
 ```
-
-**Voraussetzungen:**
-- VS Code mit PlatformIO Extension
-- ESP32-S3 per USB verbunden
-- Keine externe Ethernet-Bibliothek nötig (ESP-IDF ETH-Treiber wird verwendet)
 
 ### PC-Simulation
 
@@ -502,13 +484,6 @@ cd pc_sim
 make          # kompilieren
 make run      # ausführen (1s Simulation mit Frame-Verifikation)
 make clean    # aufräumen
-```
-
-**Erwartete Ergebnisse:**
-```
-GPS Main Out (PGN 0xD6):  57 bytes  CRC: OK ✓
-Steer Status (PGN 0xFD):  14 bytes  CRC: OK ✓
-Hello Reply Steer:         8 bytes  CRC: OK ✓
 ```
 
 ---
@@ -527,8 +502,6 @@ Standard-Werte in [`src/hal_esp32/hal_impl.cpp`](src/hal_esp32/hal_impl.cpp):
 | DNS | 8.8.8.8 |
 | Ziel-IP | 192.168.1.255 (Broadcast) |
 
-Wird automatisch durch **Subnet Change** (PGN 201) von AgIO aktualisiert.
-
 ### PID-Parameter
 
 In [`src/logic/control.cpp`](src/logic/control.cpp) – `controlInit()`:
@@ -543,8 +516,9 @@ pidInit(&s_steer_pid, 1.0f, 0.0f, 0.01f, 0.0f, 65535.0f);
 
 | Problem | Status | Lösung |
 |---------|--------|--------|
-| PSRAM ID read error | ⚠️ Nicht kritisch | Board-Typvariante; `CONFIG_SPIRAM_IGNORE_NOTFOUND=y` unterdrückt die Meldung. System läuft trotzdem. |
+| PSRAM ID read error | ⚠️ Nicht kritisch | Board-Typvariante; `CONFIG_SPIRAM_IGNORE_NOTFOUND=y` unterdrückt die Meldung. |
 | GNSS Main Warnung | ℹ️ Normal ohne GNSS | Verschwindet sobald ein GNSS-Modul an UART1 angeschlossen ist. |
+| ADS1118 Bit-Inversion | ℹ️ Automatisch | Cheap Module mit Transistor-Level-Shiftern invertieren DOUT. Wird auto-kompensiert. |
 
 ---
 
@@ -553,7 +527,6 @@ pidInit(&s_steer_pid, 1.0f, 0.0f, 0.01f, 0.0f, 65535.0f);
 | Bereich | Status |
 |---------|--------|
 | BNO085 SH-2 SPI-Protokoll | 🔲 TODO |
-| Echtes Lenkwinkelsensor-Protokoll | 🔲 TODO |
 | Echtes Aktuator-Protokoll | 🔲 TODO |
 | Dual-Antenna Heading-Fusion | 🔲 TODO |
 | SteerSettings In (PGN 252) empfangen | 🔲 TODO |
@@ -561,3 +534,4 @@ pidInit(&s_steer_pid, 1.0f, 0.0f, 0.01f, 0.0f, 65535.0f);
 | HDOP/Satelliten aus GGA | 🔲 TODO |
 | Subnet-Change aktualisiert auch die lokale IP | 🔲 TODO |
 | OTA-Update (SD-Karte) | ✅ Implementiert |
+| ADS1118 Auto-Detection | ✅ Implementiert |

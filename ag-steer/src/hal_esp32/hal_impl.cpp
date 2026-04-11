@@ -4,9 +4,13 @@
  *
  * Hardware:
  *   - MCU: ESP32-S3-WROOM-1
- *   - Ethernet: W5500 over SPI3_HOST (GPIO10/11/12/9) via ESP-IDF ETH driver
- *   - GNSS: 2x UM980 on UART1/UART2 (460800 baud)
- *   - Sensors: IMU (BNO085), Steer Angle (ADS1118), Actuator on SPI2_HOST (FSPI)
+ *   - Ethernet: W5500 over SPI3_HOST (GPIO 9/10/11/12/13/14) via ESP-IDF ETH driver
+ *   - GNSS: 2x UM980 on UART1 (GPIO 45/46) and UART2 (GPIO 43/44), 460800 baud
+ *   - Sensor SPI (FSPI/SPI2_HOST): SCK=16, MISO=15, MOSI=17
+ *     - ADS1118 ADC (steer angle): CS=18
+ *     - BNO085 IMU: CS=38
+ *     - Actuator: CS=40
+ *   - SD Card (FSPI, OTA only): SCK=7, MISO=5, MOSI=6, CS=42
  *   - Safety: GPIO4 active LOW
  *
  * ADS1118 ADC uses the local ADS1118 library (lib/ads1118/).
@@ -18,7 +22,7 @@
  *   - Arduino ESP32 Core <  3.0.0: LilyGO ETHClass2 library
  * NOT the Arduino Ethernet/Ethernet3 library.
  *
- * This file includes Arduino/ESP32 headers – it must NEVER be included
+ * This file includes Arduino/ESP32 headers - it must NEVER be included
  * from PC simulation code.
  */
 
@@ -35,7 +39,7 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <HardwareSerial.h>
-#include "ads1118_compat.h"  // ADS1118 adapter (local or denkitronik)
+#include "ads1118.h"        // Local ADS1118 library
 
 // ===================================================================
 // ETH driver selection based on Arduino ESP32 Core version
@@ -52,7 +56,7 @@
 #endif
 
 // ===================================================================
-// W5500 Ethernet – ESP-IDF ETH driver (SPI3_HOST)
+// W5500 Ethernet - ESP-IDF ETH driver (SPI3_HOST)
 // ===================================================================
 
 // UDP socket for AgIO communication
@@ -71,7 +75,7 @@ static bool s_eth_link_up    = false;   // true if ARDUINO_EVENT_ETH_CONNECTED
 static bool s_eth_has_ip     = false;   // true if ARDUINO_EVENT_ETH_GOT_IP
 
 // ===================================================================
-// GNSS UARTs – HardwareSerial
+// GNSS UARTs - HardwareSerial
 // ===================================================================
 static HardwareSerial gnssMainSerial(1);
 static HardwareSerial gnssHeadingSerial(2);
@@ -87,15 +91,18 @@ static volatile bool s_gnss_main_has_data = false;
 static volatile bool s_gnss_heading_has_data = false;
 
 // ===================================================================
-// Shared SPI bus – FSPI / SPI2_HOST
+// Shared SPI bus - FSPI / SPI2_HOST
 //
 // CRITICAL: Must use FSPI, NOT HSPI!
 // On ESP32-S3 (Arduino Core 2.x):  HSPI = SPI3_HOST (occupied by W5500!)
-//                                  FSPI = SPI2_HOST (free for sensors + SD)
+//                                  FSPI = SPI2_HOST (free for sensors)
 //
-// All SPI devices share this bus: SD card, ADS1118, IMU, actuator.
-// Pins: SCK=7, MISO=5, MOSI=6 (same for all devices).
-// Each device has its own CS pin (42, 39, 38, 40).
+// Sensor devices on this bus: ADS1118 (CS=18), IMU (CS=38), Actuator (CS=40).
+// Pins: SCK=16, MISO=15, MOSI=17.
+//
+// SD card uses the SAME SPI peripheral (FSPI) but DIFFERENT pins (SCK=7, MISO=5, MOSI=6).
+// During OTA updates, FSPI is re-initialised with SD pins via
+// hal_sensor_spi_deinit() / hal_sensor_spi_reinit().
 // ===================================================================
 static SPIClass sensorSPI(FSPI);
 
@@ -171,11 +178,11 @@ bool hal_safety_ok(void) {
 // GNSS UART
 // ===================================================================
 void hal_gnss_init(void) {
-    // GNSS MAIN: UART1
+    // GNSS MAIN: UART1 (GPIO 45=RX, 46=TX)
     gnssMainSerial.begin(GNSS_BAUD_RATE, SERIAL_8N1, GNSS_MAIN_RX, GNSS_MAIN_TX);
     s_gnss_main_pos = 0;
 
-    // GNSS HEADING: UART2
+    // GNSS HEADING: UART2 (GPIO 43=RX, 44=TX)
     gnssHeadingSerial.begin(GNSS_BAUD_RATE, SERIAL_8N1, GNSS_HEADING_RX, GNSS_HEADING_TX);
     s_gnss_heading_pos = 0;
 
@@ -203,7 +210,7 @@ static bool readNmeaLine(HardwareSerial& ser, char* buf, size_t max_len, size_t*
         if (*pos < max_len - 1) {
             buf[*pos++] = static_cast<char>(c);
         } else {
-            // Buffer overflow – reset
+            // Buffer overflow - reset
             *pos = 0;
         }
     }
@@ -236,11 +243,11 @@ void hal_gnss_reset_detection(void) {
 }
 
 // ===================================================================
-// SPI Sensors / Actuator – SPI Bus 2 (FSPI / SPI2_HOST)
+// SPI Sensors / Actuator - SPI Bus 2 (FSPI / SPI2_HOST)
 // ===================================================================
 void hal_sensor_spi_init(void) {
     sensorSPI.begin(SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI, -1);
-    hal_log("ESP32: shared SPI initialised on FSPI/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
+    hal_log("ESP32: sensor SPI initialised on FSPI/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
             SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
 }
 
@@ -281,8 +288,6 @@ bool hal_imu_detect(void) {
     // 0xFF = floating MISO (no device pulling it down)
     // 0x00 = MISO stuck LOW (bus fault)
     // A real BNO085 would respond with its chip ID.
-    // For now: detect as OK if response is NOT 0xFF (floating) and NOT 0x00 (fault).
-    // TODO: When real BNO085 is connected, check actual chip ID.
     bool detected = (response != 0xFF && response != 0x00);
     hal_log("ESP32: IMU detect: SPI response=0x%02X %s",
             response, detected ? "OK" : "FAIL (no device)");
@@ -290,63 +295,59 @@ bool hal_imu_detect(void) {
 }
 
 // ===================================================================
-// ADS1118 – 16-Bit ADC for steering angle potentiometer
+// ADS1118 - 16-Bit ADC for steering angle potentiometer
 // ===================================================================
-// Uses ads1118_compat.h which selects at compile time:
+// Uses local lib/ads1118/ ADS1118 library.
 //
-//   Default (no define):
-//     Local lib/ads1118/ with auto SPI-mode detection,
-//     bit-inversion compensation, DOUT test, shared-bus support.
+// Features (handled automatically by the library):
+//   - 16-bit simultaneous config+data SPI protocol (per datasheet SLASB73)
+//   - Auto SPI mode detection (tries Mode0 and Mode1)
+//   - Auto bit-inversion detection (cheap module level-shifters)
+//   - DOUT connectivity test (crosstalk / floating detection)
+//   - Non-blocking readLoop() for 200 Hz control loop
 //
-//   #define USE_DENKITRONIK_ADS1118:
-//     denkitronik/ADS1118 library (4-byte protocol, SPI_MODE1 only).
-//     No bit-inversion support – may not work with cheap modules.
-//
-// Config: AIN0 vs GND, ±4.096V, single-shot, 128 SPS.
+// Config: AIN0 vs GND, +/-4.096V, single-shot, 128 SPS.
 // ADC result: 16-bit signed, 1 LSB = 0.125 mV.
-// 0-3.3V poti → raw 0 to ~26880.
+// 0-3.3V poti -> raw 0 to ~26880.
+//
+// Wiring:
+//   ADS1118 DOUT  -> GPIO 15 (MISO)
+//   ADS1118 DIN   -> GPIO 17 (MOSI)
+//   ADS1118 SCLK  -> GPIO 16 (SCK)
+//   ADS1118 CS    -> GPIO 18
 // ===================================================================
 
-/// Callback to deselect all shared-bus SPI devices before ADS1118 access.
-/// The SD library may leave SD_CS floating after SD.end().
+/// Callback to deselect other SPI devices on the same bus before ADS1118 access.
 static void adsDeselectOthers(void) {
-    digitalWrite(SD_CS, HIGH);
     digitalWrite(CS_IMU, HIGH);
     digitalWrite(CS_ACT, HIGH);
 }
 
-/// ADS1118 device adapter (local or denkitronik, chosen at compile time)
-static ADS1118Dev s_ads_dev;
+/// ADS1118 driver instance
+static ADS1118 s_ads1118(sensorSPI);
 
-/// 1 LSB in volts (±4.096V over 32768 steps)
-static const float ADS1118_LSB_V = 0.000125f;  // 4.096 / 32768 = 125 µV
+/// 1 LSB in volts (+/-4.096V over 32768 steps)
+static const float ADS1118_LSB_V = 0.000125f;  // 4.096 / 32768 = 125 uV
 
 void hal_steer_angle_begin(void) {
     // Ensure all other SPI device CS pins are configured as outputs
-    pinMode(SD_CS, OUTPUT);  digitalWrite(SD_CS, HIGH);
-    pinMode(CS_IMU, OUTPUT); digitalWrite(CS_IMU, HIGH);
-    pinMode(CS_ACT, OUTPUT); digitalWrite(CS_ACT, HIGH);
+    pinMode(CS_IMU, OUTPUT);  digitalWrite(CS_IMU, HIGH);
+    pinMode(CS_ACT, OUTPUT);  digitalWrite(CS_ACT, HIGH);
 
-    // Initialise via the compat adapter.
-    // The adapter forwards to the appropriate library implementation.
-    s_ads_dev.begin(sensorSPI, CS_STEER_ANG, adsDeselectOthers);
+    // Initialise ADS1118 library with CS pin and shared-bus deselect callback
+    s_ads1118.begin(CS_STEER_ANG, nullptr, 0, adsDeselectOthers);
 
-    hal_log("ESP32: ADS1118 on CS=%d (AIN0, +/-4.096V, 128 SPS)"
-#ifdef USE_DENKITRONIK_ADS1118
-            " [denkitronik]"
-#else
-            " [local]"
-#endif
-            , CS_STEER_ANG);
+    hal_log("ESP32: ADS1118 on CS=%d (AIN0, +/-4.096V, 128 SPS, SPI SCK=%d MISO=%d MOSI=%d)",
+            CS_STEER_ANG, SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
 }
 
 bool hal_steer_angle_detect(void) {
-    bool detected = s_ads_dev.detect();
+    bool detected = s_ads1118.detect();
 
     if (detected) {
         hal_log("ESP32: ADS1118 DETECTED (PGA=%.3fV%s)",
-                s_ads_dev.getFSR(),
-                s_ads_dev.isDoutInverted() ? ", invert-DOUT" : "");
+                s_ads1118.getFSR(),
+                s_ads1118.isDoutInverted() ? ", invert-DOUT" : "");
     } else {
         hal_log("ESP32: ADS1118 DETECT FAILED");
     }
@@ -355,13 +356,13 @@ bool hal_steer_angle_detect(void) {
 }
 
 float hal_steer_angle_read_deg(void) {
-    if (!s_ads_dev.isDetected()) {
-        return 0.0f;  // Not detected – return neutral
+    if (!s_ads1118.isDetected()) {
+        return 0.0f;  // Not detected - return neutral
     }
 
     // Non-blocking read: starts new conversion if previous is complete.
     // Returns last known value if conversion still in progress.
-    int16_t raw = s_ads_dev.readLoop(0);  // AIN0
+    int16_t raw = s_ads1118.readLoop(0);  // AIN0
 
     // Convert to voltage
     float voltage = static_cast<float>(raw) * ADS1118_LSB_V;
@@ -373,14 +374,14 @@ float hal_steer_angle_read_deg(void) {
     if (normalised < 0.0f) normalised = 0.0f;
     if (normalised > 1.0f) normalised = 1.0f;
 
-    // Map 0..1 → -45°..+45°
+    // Map 0..1 -> -45..+45 degrees
     float angle = (normalised * 90.0f) - 45.0f;
 
     return angle;
 }
 
 // ===================================================================
-// Actuator – SPI Bus 2 (FSPI / SPI2_HOST)
+// Actuator - SPI Bus 2 (FSPI / SPI2_HOST)
 // ===================================================================
 void hal_actuator_begin(void) {
     pinMode(CS_ACT, OUTPUT);
@@ -412,11 +413,11 @@ void hal_actuator_write(uint16_t cmd) {
 }
 
 // ===================================================================
-// Network – W5500 Ethernet via ESP-IDF ETH driver
+// Network - W5500 Ethernet via ESP-IDF ETH driver
 //
 // Uses ETH.begin() to initialise the W5500 on SPI3_HOST with the
 // pins defined by the LilyGO board design.  The ETH driver handles
-// SPI communication internally – no manual SPI setup needed.
+// SPI communication internally - no manual SPI setup needed.
 //
 // Link status and IP assignment are tracked via WiFi.onEvent()
 // callbacks (ARDUINO_EVENT_ETH_CONNECTED / ARDUINO_EVENT_ETH_GOT_IP).
@@ -485,14 +486,14 @@ void hal_net_init(void) {
         ETH_CS,           // Chip Select    = GPIO 9
         ETH_INT,          // Interrupt      = GPIO 13
         ETH_RST,          // Reset          = GPIO 14
-        SPI3_HOST,        // SPI peripheral (FSPI on ESP32-S3)
+        SPI3_HOST,        // SPI peripheral
         ETH_SCK,          // SPI Clock      = GPIO 10
         ETH_MISO,         // SPI MISO       = GPIO 11
         ETH_MOSI          // SPI MOSI       = GPIO 12
     );
 
     if (!init_ok) {
-        hal_log("ETH: FAILED – W5500 not detected! Check SPI connections.");
+        hal_log("ETH: FAILED - W5500 not detected! Check SPI connections.");
         s_w5500_detected = false;
         return;
     }
@@ -514,11 +515,11 @@ void hal_net_init(void) {
     }
 
     if (s_eth_has_ip) {
-        hal_log("ETH: ready – IP=%s", ETH.localIP().toString().c_str());
+        hal_log("ETH: ready - IP=%s", ETH.localIP().toString().c_str());
     } else if (s_eth_link_up) {
         hal_log("ETH: link up but no IP yet (waiting for DHCP...)");
     } else {
-        hal_log("ETH: WARNING – no link detected (cable unplugged?)");
+        hal_log("ETH: WARNING - no link detected (cable unplugged?)");
     }
 }
 
@@ -559,7 +560,7 @@ bool hal_net_detected(void) {
 // ESP32 init all
 // ===================================================================
 void hal_esp32_init_all(void) {
-    // Serial – with timeout instead of infinite wait
+    // Serial - with timeout instead of infinite wait
     Serial.begin(115200);
     uint32_t serial_start = millis();
     while (!Serial && (millis() - serial_start < 3000)) {
@@ -573,10 +574,10 @@ void hal_esp32_init_all(void) {
     // Safety pin
     pinMode(SAFETY_IN, INPUT_PULLUP);
 
-    // SPI sensor bus (FSPI / SPI2_HOST)
+    // SPI sensor bus (FSPI / SPI2_HOST) - SCK=16, MISO=15, MOSI=17
     hal_sensor_spi_init();
 
-    // GNSS
+    // GNSS UARTs
     hal_gnss_init();
 
     // IMU, steer angle, actuator

@@ -9,18 +9,14 @@
  *   - CSV file creation and writing
  *
  * SPI bus strategy:
- *   SD card, ADS1118, IMU, and actuator all share SPI2_HOST (FSPI)
- *   on pins 5/6/7. Each device has its own CS pin (42 for SD, 39 for
- *   ADS1118, 38 for IMU, 40 for actuator).
+ *   The SD card uses SPI2_HOST (FSPI) with pins SCK=7, MISO=5, MOSI=6.
+ *   The sensor bus also uses FSPI but with DIFFERENT pins (SCK=16, MISO=15, MOSI=17).
+ *   During SD card access, the sensor SPI is released via hal_sensor_spi_deinit(),
+ *   then FSPI is re-initialised with SD pins. After SD access, the sensor SPI
+ *   is restored via hal_sensor_spi_reinit().
  *
- *   Since all devices are on the SAME physical bus with the SAME pins,
- *   the SD library and sensor code both use beginTransaction()/endTransaction()
- *   for exclusive access.  However, the Arduino SPIClass does NOT provide
- *   built-in mutex protection between tasks.
- *
- *   To prevent concurrent access between the control loop (which reads
- *   sensors) and the logger task (which writes to SD), we use a simple
- *   s_spi_busy flag:
+ *   To prevent the control loop from accessing the bus while SD is active,
+ *   a s_spi_busy flag is used:
  *     - Logger sets flag before SD access, clears after
  *     - Control loop should check hal_spi_busy() and skip sensor reads
  *       when the flag is set (use last known values)
@@ -214,11 +210,10 @@ static uint32_t flushBufferToSD(void) {
 /**
  * Claim the SPI bus for SD card access.
  *
- * All devices share SPI2_HOST (FSPI) on the same pins (5/6/7).
+ * The SD card uses FSPI with pins SCK=7, MISO=5, MOSI=6 (CS=42).
+ * The sensor bus uses FSPI with pins SCK=16, MISO=15, MOSI=17.
  * We must release the sensor SPIClass before the SD library can
- * claim the FSPI peripheral, even though the physical pins are
- * identical – two SPIClass instances cannot own the same peripheral
- * simultaneously.
+ * claim the FSPI peripheral with its own pins.
  */
 static void sdBusClaim(void) {
     s_spi_busy = true;
@@ -249,7 +244,7 @@ static void sdBusRelease(void) {
  *
  * For each flush cycle:
  *   1. Claim SPI bus (set s_spi_busy flag)
- *   2. Init SD card on shared SPI2_HOST
+ *   2. Init SD card on FSPI with SD pins
  *   3. Open/append log file, write records
  *   4. Close file, release SD
  *   5. Release SPI bus (clear s_spi_busy flag)
@@ -287,7 +282,7 @@ static void loggerTaskFunc(void* param) {
 
             // Init SD card on shared SPI2_HOST
             SPIClass sdSPI(FSPI);
-            sdSPI.begin(SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI, SD_CS);
+            sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
 
             if (SD.begin(SD_CS, sdSPI, 4000000, "/sd", 5)) {
                 hal_log("LOGGER: SD card mounted OK");
@@ -325,7 +320,7 @@ static void loggerTaskFunc(void* param) {
 
             // Re-init SD (we close it after each flush)
             SPIClass sdSPI(FSPI);
-            sdSPI.begin(SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI, SD_CS);
+            sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
 
             if (SD.begin(SD_CS, sdSPI, 4000000, "/sd", 5)) {
                 // Re-open the log file in append mode
