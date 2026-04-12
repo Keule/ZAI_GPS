@@ -565,7 +565,7 @@ void preinit() {
     Serial.begin(115200);
     delay(100);
     Serial.println();
-    Serial.println("=== PREINIT OK ===");
+    Serial.println("=== PREINIT v5efdbf0 ===");
     Serial.flush();
 }
 
