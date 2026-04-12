@@ -479,18 +479,32 @@ static void steer_cal_save(void) {
 }
 
 /// Wait for user to press Enter on Serial monitor.
-static void wait_for_enter(void) {
+/// While waiting, shows live ADC voltage at 20 Hz (every 50ms).
+static void wait_for_enter_live_adc(void) {
+    uint32_t last_print = 0;
     while (true) {
+        // Check for Enter key
         if (Serial.available()) {
             int c = Serial.read();
             if (c == '\n' || c == '\r') {
-                // Drain any remaining newline chars
                 while (Serial.available()) Serial.read();
+                // Print one final value + newline to cleanly end the live line
+                int16_t raw = ads1118_read_raw();
+                float voltage = raw * 4.096f / 32768.0f;
+                Serial.printf("   -> %7.3f V  (raw=%d)\n", voltage, raw);
                 delay(50);
                 return;
             }
         }
-        delay(10);
+        // Print live ADC value every 50ms using \r to overwrite line
+        uint32_t now = millis();
+        if (now - last_print >= 50) {
+            last_print = now;
+            int16_t raw = ads1118_read_raw();
+            float voltage = raw * 4.096f / 32768.0f;
+            Serial.printf("   -> %7.3f V  (raw=%d)  \r", voltage, raw);
+        }
+        delay(2);
     }
 }
 
@@ -576,25 +590,27 @@ void hal_steer_angle_calibrate(void) {
 
     // --- LEFT STOP ---
     Serial.println("1) Lenkung ganz nach LINKS fahren (linker Anschlag)");
-    Serial.println("   Dann ENTER druecken...");
+    Serial.println("   ENTER druecken zum Speichern des Wertes:");
     Serial.flush();
-    wait_for_enter();
+    wait_for_enter_live_adc();
 
     // Read 11 samples, take median
     int16_t left_val = ads1118_read_raw_median(11, 8);
-    hal_log("SteerCal: left stop  -> raw = %d", left_val);
-    Serial.printf("   Wert: %d\n", left_val);
+    float v_left = left_val * 4.096f / 32768.0f;
+    hal_log("SteerCal: left stop  -> raw=%d, %.3f V", left_val, v_left);
+    Serial.printf("   Gespeichert: %7.3f V  (raw=%d)\n", v_left, left_val);
     Serial.println();
 
     // --- RIGHT STOP ---
     Serial.println("2) Lenkung ganz nach RECHTS fahren (rechter Anschlag)");
-    Serial.println("   Dann ENTER druecken...");
+    Serial.println("   ENTER druecken zum Speichern des Wertes:");
     Serial.flush();
-    wait_for_enter();
+    wait_for_enter_live_adc();
 
     int16_t right_val = ads1118_read_raw_median(11, 8);
-    hal_log("SteerCal: right stop -> raw = %d", right_val);
-    Serial.printf("   Wert: %d\n", right_val);
+    float v_right = right_val * 4.096f / 32768.0f;
+    hal_log("SteerCal: right stop -> raw=%d, %.3f V", right_val, v_right);
+    Serial.printf("   Gespeichert: %7.3f V  (raw=%d)\n", v_right, right_val);
     Serial.println();
 
     // --- Validate ---
