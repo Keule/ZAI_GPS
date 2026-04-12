@@ -8,6 +8,7 @@
     "extra_flags": [
       "-DARDUINO_LILYGO_T_ETH_LITE_S3",
       "-DARDUINO_USB_MODE=1",
+      "-DARDUINO_USB_CDC_ON_BOOT=1",
       "-DARDUINO_RUNNING_CORE=1",
       "-DARDUINO_EVENT_RUNNING_CORE=1",
       "-DBOARD_HAS_PSRAM",
