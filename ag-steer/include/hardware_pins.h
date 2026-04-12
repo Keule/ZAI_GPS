@@ -34,14 +34,15 @@
  *   GPIOs 26-37 are INTERNALLY occupied by the Octal PSRAM interface.
  *   They are NOT available as general-purpose GPIOs.
  *   GPIOs 38-42 are OUTPUT-ONLY (no input capability).
- *   GPIOs 43-48 are full bidirectional GPIOs.
+ *   GPIOs 43/44 are UART0 default pins - AVOID for external UARTs!
+ *   GPIOs 45-48 are full bidirectional GPIOs.
  * ========================================================================
  *
  * GPIO assignment - by function:
  *
  *   W5500 Ethernet (SPI3_HOST):  9  10  11  12  13  14  (fixed by board)
- *   ADS1118 + Sensors (FSPI):    15  16  17  18  38  40
- *   GNSS UARTs:                 43  44  45  46
+ *   ADS1118 + Sensors (FSPI):    15  16  17  18  19  20  38  40
+ *   GNSS UARTs:                 19  20  45  46
  *   SD Card (FSPI, OTA only):    5   6   7  42
  *   Misc:                        4  47  48
  */
@@ -89,10 +90,11 @@
 
 // ---------------------------------------------------------------------------
 // UART: GNSS Heading (second antenna / heading source)
-// GPIOs 43/44 - bidirectional, available on T-ETH-Lite-S3 header.
+// GPIO 19/20 - bidirectional, free on T-ETH-Lite-S3 header.
+// NOTE: GPIO 43/44 are UART0 default pins and conflict with Serial!
 // ---------------------------------------------------------------------------
-#define GNSS_HEADING_TX  44
-#define GNSS_HEADING_RX  43
+#define GNSS_HEADING_TX  20
+#define GNSS_HEADING_RX  19
 
 // ---------------------------------------------------------------------------
 // UART: GNSS Main (primary RTK rover)

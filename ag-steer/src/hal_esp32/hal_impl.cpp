@@ -5,7 +5,7 @@
  * Hardware:
  *   - MCU: ESP32-S3-WROOM-1
  *   - Ethernet: W5500 over SPI3_HOST (GPIO 9/10/11/12/13/14) via ESP-IDF ETH driver
- *   - GNSS: 2x UM980 on UART1 (GPIO 45/46) and UART2 (GPIO 43/44), 460800 baud
+ *   - GNSS: 2x UM980 on UART1 (GPIO 45/46) and UART2 (GPIO 19/20), 460800 baud
  *   - Sensor SPI (FSPI/SPI2_HOST): SCK=16, MISO=15, MOSI=17
  *     - ADS1118 ADC (steer angle): CS=18
  *     - BNO085 IMU: CS=38
@@ -182,7 +182,7 @@ void hal_gnss_init(void) {
     gnssMainSerial.begin(GNSS_BAUD_RATE, SERIAL_8N1, GNSS_MAIN_RX, GNSS_MAIN_TX);
     s_gnss_main_pos = 0;
 
-    // GNSS HEADING: UART2 (GPIO 43=RX, 44=TX)
+    // GNSS HEADING: UART2 (GPIO 19=RX, 20=TX)
     gnssHeadingSerial.begin(GNSS_BAUD_RATE, SERIAL_8N1, GNSS_HEADING_RX, GNSS_HEADING_TX);
     s_gnss_heading_pos = 0;
 
@@ -559,65 +559,37 @@ bool hal_net_detected(void) {
 // ===================================================================
 // ESP32 init all
 // ===================================================================
-/// preinit() runs before setup() and before C++ global constructors.
-/// Use this for earliest possible debug output.
-void preinit() {
-    Serial.begin(115200);
-    delay(100);
-    Serial.println();
-    Serial.println("=== PREINIT v5efdbf0 ===");
-    Serial.flush();
-}
-
 void hal_esp32_init_all(void) {
-    // Serial already started in preinit()
-    Serial.println();
-    Serial.println("=== SETUP START ===");
-    Serial.flush();
+    // Serial
+    Serial.begin(115200);
+    uint32_t serial_start = millis();
+    while (!Serial && (millis() - serial_start < 3000)) {
+        delay(10);
+    }
     hal_log("ESP32-S3 AgSteer starting...");
-    Serial.flush();
 
     // Mutex
-    Serial.print("[1] mutex... "); Serial.flush();
     hal_mutex_init();
-    Serial.println("OK"); Serial.flush();
 
     // Safety pin
-    Serial.print("[2] safety... "); Serial.flush();
     pinMode(SAFETY_IN, INPUT_PULLUP);
-    Serial.println("OK"); Serial.flush();
 
     // SPI sensor bus (FSPI / SPI2_HOST) - SCK=16, MISO=15, MOSI=17
-    Serial.print("[3] sensor SPI... "); Serial.flush();
     hal_sensor_spi_init();
-    Serial.println("OK"); Serial.flush();
 
     // GNSS UARTs
-    Serial.print("[4] GNSS UARTs... "); Serial.flush();
     hal_gnss_init();
-    Serial.println("OK"); Serial.flush();
 
     // IMU, steer angle, actuator
-    Serial.print("[5] IMU... "); Serial.flush();
     hal_imu_begin();
-    Serial.println("OK"); Serial.flush();
-
-    Serial.print("[6] steer angle... "); Serial.flush();
     hal_steer_angle_begin();
-    Serial.println("OK"); Serial.flush();
-
-    Serial.print("[7] actuator... "); Serial.flush();
     hal_actuator_begin();
-    Serial.println("OK"); Serial.flush();
 
     // Network (W5500 via ETH driver)
-    Serial.print("[8] ETH... "); Serial.flush();
     hal_net_init();
-    Serial.println("OK"); Serial.flush();
 
     hal_log("ESP32: all subsystems initialised (%s)",
             s_eth_has_ip ? "ETH UP" :
             s_w5500_detected ? "ETH no link" :
             "W5500 not found");
-    Serial.flush();
 }
