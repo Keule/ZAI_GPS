@@ -172,8 +172,17 @@ void hal_sensor_spi_deinit(void) {
 }
 
 void hal_sensor_spi_reinit(void) {
+    // Ensure the bus is fully released before re-initialising.
+    // The OTA code creates a LOCAL SPIClass(FSPI) which can leave
+    // the FSPI peripheral in an inconsistent state.  Calling end()
+    // again on our sensorSPI forces a clean release, then we re-init
+    // with a settling delay.
+    sensorSPI.end();
+    delay(50);   // let SPI peripheral fully settle
     sensorSPI.begin(SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI, -1);
-    hal_log("ESP32: shared SPI re-initialised on FSPI/SPI2_HOST");
+    delay(10);   // let GPIO matrix reconfigure
+    hal_log("ESP32: shared SPI re-initialised on FSPI/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
+            SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
 }
 
 void hal_imu_begin(void) {
@@ -459,14 +468,50 @@ bool hal_steer_angle_detect(void) {
     // Detection: try a direct raw read. If the value is not stuck at
     // 0x0000 or 0xFFFF (floating MISO), the ADS1118 is present.
     // Also discard 0x7FFF (all 1s in data, possible bus issue).
-    int16_t raw1 = ads1118_read_raw();
-    delay(10);
-    int16_t raw2 = ads1118_read_raw();
+    //
+    // After the OTA SD card check, the FSPI bus was deinitialised and
+    // reinitialised by sd_ota_esp32.cpp.  The ADS1118 may need time to
+    // recover, or the bus may not be fully functional yet.
+    // Strategy: try up to 3 times with increasing delays.
 
-    // A real ADC should return different values on successive reads
-    // (noise) or at least a plausible value.
-    bool looks_valid = (raw1 != 0 && raw1 != -1 && raw1 != 0x7FFF &&
-                        raw2 != 0 && raw2 != -1 && raw2 != 0x7FFF);
+    int16_t raw1 = 0;
+    int16_t raw2 = 0;
+    bool looks_valid = false;
+
+    for (int attempt = 0; attempt < 3 && !looks_valid; attempt++) {
+        if (attempt > 0) {
+            hal_log("ESP32: ADS1118 detect retry %d/2...", attempt);
+            delay(100);  // give ADS1118 and SPI bus more time
+        }
+
+        raw1 = ads1118_read_raw();
+        delay(20);
+        raw2 = ads1118_read_raw();
+
+        looks_valid = (raw1 != 0 && raw1 != -1 && raw1 != 0x7FFF &&
+                       raw2 != 0 && raw2 != -1 && raw2 != 0x7FFF);
+    }
+
+    // If still failing, try a full ADS1118 re-init (write config register)
+    if (!looks_valid) {
+        hal_log("ESP32: ADS1118 still 0x%04X after retries, re-initialising chip...", raw1);
+        // Re-init: set CS pin, write config word to start continuous conversion
+        // The ADS1118 config word: 0001 MUX PGA RATE MODE TS Reserved
+        // MUX=100 (AIN0-GND), PGA=001 (4.096V), RATE=101 (250SPS), MODE=0 (continuous)
+        uint8_t tx[4] = {0x84, 0xC3, 0xFF, 0xFF};  // config + 2 dummy bytes for data
+        uint8_t rx[4];
+        ads1118_if_spi_transmit(tx, rx, 4);
+        delay(50);  // wait for first conversion at 250 SPS = 4ms, use 50ms margin
+
+        raw1 = ads1118_read_raw();
+        delay(20);
+        raw2 = ads1118_read_raw();
+        looks_valid = (raw1 != 0 && raw1 != -1 && raw1 != 0x7FFF &&
+                       raw2 != 0 && raw2 != -1 && raw2 != 0x7FFF);
+        hal_log("ESP32: ADS1118 after re-init: raw1=%d (0x%04X) raw2=%d (0x%04X) %s",
+                raw1, (unsigned)raw1 & 0xFFFF, raw2, (unsigned)raw2 & 0xFFFF,
+                looks_valid ? "OK" : "STILL FAIL");
+    }
 
     s_ads1118_detected = looks_valid;
 
