@@ -37,6 +37,10 @@ constexpr uint8_t STATUS_BIT_STEER_ON      = 0x04;  // bit 2
 static uint32_t s_last_send_ms = 0;
 static const uint32_t SEND_INTERVAL_MS = 100;  // 10 Hz
 
+// Rate-limit log messages to avoid serial spam from broadcast echo
+static uint32_t s_last_invalid_log_ms = 0;
+static uint32_t s_last_unhandled_log_ms = 0;
+
 // ===================================================================
 // Initialise network
 // ===================================================================
@@ -53,6 +57,9 @@ void netInit(void) {
 // ===================================================================
 void netProcessFrame(uint8_t src, uint8_t pgn,
                      const uint8_t* payload, size_t payload_len) {
+    // Ignore our own frames echoed back via UDP broadcast
+    if (src == AOG_SRC_STEER) return;
+
     switch (pgn) {
         case PGN_HELLO_FROM_AGIO: {
             AogHelloFromAgio msg;
@@ -157,10 +164,16 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
             hal_log("NET: SteerConfig received (len=%zu) – TODO: implement", payload_len);
             break;
 
-        default:
-            hal_log("NET: unhandled PGN 0x%02X from Src 0x%02X (len=%zu)",
-                    pgn, src, payload_len);
+        default: {
+            // Rate-limit unhandled PGN logs (max once per 10s)
+            uint32_t now = hal_millis();
+            if (now - s_last_unhandled_log_ms >= 10000) {
+                s_last_unhandled_log_ms = now;
+                hal_log("NET: unhandled PGN 0x%02X from Src 0x%02X (len=%zu)",
+                        pgn, src, payload_len);
+            }
             break;
+        }
     }
 }
 
@@ -185,11 +198,15 @@ void netPollReceive(void) {
         if (aogValidateFrame(rx_buf, static_cast<size_t>(rx_len),
                               &frame_src, &frame_pgn,
                               &payload, &payload_len)) {
-            aogHexDump("NET: rx frame", rx_buf, static_cast<size_t>(rx_len));
             netProcessFrame(frame_src, frame_pgn, payload, payload_len);
         } else {
-            hal_log("NET: invalid frame received (%d bytes from port %u)",
-                    rx_len, src_port);
+            // Rate-limit invalid frame logs (max once per 10s)
+            uint32_t now = hal_millis();
+            if (now - s_last_invalid_log_ms >= 10000) {
+                s_last_invalid_log_ms = now;
+                hal_log("NET: invalid frame (%d bytes from port %u, first=0x%02X)",
+                        rx_len, src_port, rx_buf[0]);
+            }
         }
     }
 }
