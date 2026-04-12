@@ -13,9 +13,9 @@
  *   - SD Card (FSPI, OTA only): SCK=7, MISO=5, MOSI=6, CS=42
  *   - Safety: GPIO4 active LOW
  *
- * ADS1118 ADC uses the local ADS1118 library (lib/ads1118/).
- * The library handles SPI mode auto-detection, bit-inversion compensation,
- * DOUT connectivity testing, and shared-bus CS management.
+ * ADS1118 ADC uses the libdriver/ads1118 library (lib/ads1118/).
+ * Interface functions (SPI transmit, init, deinit, delay, debug) are
+ * implemented inline in this file to access the shared sensorSPI bus.
  *
  * W5500 Ethernet uses the ESP-IDF ETH driver:
  *   - Arduino ESP32 Core >= 3.0.0: native <ETH.h>
@@ -39,7 +39,7 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <HardwareSerial.h>
-#include "ads1118.h"        // Local ADS1118 library
+#include "driver_ads1118.h"  // libdriver ADS1118
 
 // ===================================================================
 // ETH driver selection based on Arduino ESP32 Core version
@@ -297,16 +297,13 @@ bool hal_imu_detect(void) {
 // ===================================================================
 // ADS1118 - 16-Bit ADC for steering angle potentiometer
 // ===================================================================
-// Uses local lib/ads1118/ ADS1118 library.
+// Uses libdriver/ads1118 (lib/ads1118/src/).
 //
-// Features (handled automatically by the library):
-//   - 16-bit simultaneous config+data SPI protocol (per datasheet SLASB73)
-//   - Auto SPI mode detection (tries Mode0 and Mode1)
-//   - Auto bit-inversion detection (cheap module level-shifters)
-//   - DOUT connectivity test (crosstalk / floating detection)
-//   - Non-blocking readLoop() for 200 Hz control loop
+// The libdriver uses a function-pointer interface for platform abstraction.
+// SPI interface functions are implemented here to access the shared sensorSPI
+// bus (FSPI/SPI2_HOST) and manage CS for other devices.
 //
-// Config: AIN0 vs GND, +/-4.096V, single-shot, 128 SPS.
+// Config: AIN0 vs GND, +/-4.096V, continuous conversion, 250 SPS.
 // ADC result: 16-bit signed, 1 LSB = 0.125 mV.
 // 0-3.3V poti -> raw 0 to ~26880.
 //
@@ -317,55 +314,128 @@ bool hal_imu_detect(void) {
 //   ADS1118 CS    -> GPIO 18
 // ===================================================================
 
-/// Callback to deselect other SPI devices on the same bus before ADS1118 access.
-static void adsDeselectOthers(void) {
-    digitalWrite(CS_IMU, HIGH);
-    digitalWrite(CS_ACT, HIGH);
-}
+/// libdriver ADS1118 handle
+static ads1118_handle_t s_ads1118_handle;
 
-/// ADS1118 driver instance
-static ADS1118 s_ads1118(sensorSPI);
+/// ADS1118 detected flag
+static bool s_ads1118_detected = false;
 
 /// 1 LSB in volts (+/-4.096V over 32768 steps)
-static const float ADS1118_LSB_V = 0.000125f;  // 4.096 / 32768 = 125 uV
+static constexpr float ADS1118_LSB_V = 0.000125f;  // 4.096 / 32768 = 125 uV
+
+// --- libdriver interface functions (static, ESP32-specific) ---
+
+static uint8_t ads1118_if_spi_init(void) {
+    // SPI bus is already initialised by hal_sensor_spi_init()
+    return 0;
+}
+
+static uint8_t ads1118_if_spi_deinit(void) {
+    // Don't deinit shared bus — other devices need it
+    return 0;
+}
+
+static uint8_t ads1118_if_spi_transmit(uint8_t *tx, uint8_t *rx, uint16_t len) {
+    // Deselect other SPI devices on the shared bus
+    digitalWrite(CS_IMU, HIGH);
+    digitalWrite(CS_ACT, HIGH);
+
+    // ADS1118 uses SPI Mode 1 (CPOL=0, CPHA=1) per datasheet
+    sensorSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE1));
+    digitalWrite(CS_STEER_ANG, LOW);
+
+    for (uint16_t i = 0; i < len; i++) {
+        rx[i] = sensorSPI.transfer(tx[i]);
+    }
+
+    digitalWrite(CS_STEER_ANG, HIGH);
+    sensorSPI.endTransaction();
+    return 0;
+}
+
+static void ads1118_if_delay_ms(uint32_t ms) {
+    delay(ms);
+}
+
+static void ads1118_if_debug_print(const char *const fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    char buf[256];
+    std::vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    Serial.print(buf);
+}
 
 void hal_steer_angle_begin(void) {
     // Ensure all other SPI device CS pins are configured as outputs
     pinMode(CS_IMU, OUTPUT);  digitalWrite(CS_IMU, HIGH);
     pinMode(CS_ACT, OUTPUT);  digitalWrite(CS_ACT, HIGH);
 
-    // Initialise ADS1118 library with CS pin and shared-bus deselect callback
-    s_ads1118.begin(CS_STEER_ANG, nullptr, 0, adsDeselectOthers);
+    // Wire up libdriver handle with ESP32 interface functions
+    DRIVER_ADS1118_LINK_INIT(&s_ads1118_handle, ads1118_handle_t);
+    DRIVER_ADS1118_LINK_SPI_INIT(&s_ads1118_handle, ads1118_if_spi_init);
+    DRIVER_ADS1118_LINK_SPI_DEINIT(&s_ads1118_handle, ads1118_if_spi_deinit);
+    DRIVER_ADS1118_LINK_SPI_TRANSMIT(&s_ads1118_handle, ads1118_if_spi_transmit);
+    DRIVER_ADS1118_LINK_DELAY_MS(&s_ads1118_handle, ads1118_if_delay_ms);
+    DRIVER_ADS1118_LINK_DEBUG_PRINT(&s_ads1118_handle, ads1118_if_debug_print);
 
-    hal_log("ESP32: ADS1118 on CS=%d (AIN0, +/-4.096V, 128 SPS, SPI SCK=%d MISO=%d MOSI=%d)",
-            CS_STEER_ANG, SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
+    // Initialise driver
+    uint8_t res = ads1118_init(&s_ads1118_handle);
+    if (res != 0) {
+        hal_log("ESP32: ADS1118 init failed (err=%u)", res);
+        return;
+    }
+
+    // Configure: AIN0 single-ended, +/-4.096V, 250 SPS, ADC mode
+    ads1118_set_channel(&s_ads1118_handle, ADS1118_CHANNEL_AIN0_GND);
+    ads1118_set_range(&s_ads1118_handle, ADS1118_RANGE_4P096V);
+    ads1118_set_rate(&s_ads1118_handle, ADS1118_RATE_250SPS);
+    ads1118_set_mode(&s_ads1118_handle, ADS1118_MODE_ADC);
+
+    hal_log("ESP32: ADS1118 configured (AIN0, +/-4.096V, 250 SPS, SPI SCK=%d MISO=%d MOSI=%d)",
+            SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
 }
 
 bool hal_steer_angle_detect(void) {
-    bool detected = s_ads1118.detect();
+    // Detection: try a single read. If it succeeds, device is present.
+    // single_read triggers a conversion, waits for completion, and returns result.
+    int16_t raw;
+    float voltage;
+    uint8_t res = ads1118_single_read(&s_ads1118_handle, &raw, &voltage);
 
-    if (detected) {
-        hal_log("ESP32: ADS1118 DETECTED (PGA=%.3fV%s)",
-                s_ads1118.getFSR(),
-                s_ads1118.isDoutInverted() ? ", invert-DOUT" : "");
+    s_ads1118_detected = (res == 0);
+
+    if (s_ads1118_detected) {
+        hal_log("ESP32: ADS1118 DETECTED (raw=%d, %.3fV)", raw, voltage);
+
+        // Start continuous conversion for non-blocking control loop reads
+        res = ads1118_start_continuous_read(&s_ads1118_handle);
+        if (res != 0) {
+            hal_log("ESP32: ADS1118 continuous read start FAILED (err=%u)", res);
+            s_ads1118_detected = false;
+        } else {
+            hal_log("ESP32: ADS1118 continuous mode started");
+        }
     } else {
-        hal_log("ESP32: ADS1118 DETECT FAILED");
+        hal_log("ESP32: ADS1118 DETECT FAILED (err=%u)", res);
     }
 
-    return detected;
+    return s_ads1118_detected;
 }
 
 float hal_steer_angle_read_deg(void) {
-    if (!s_ads1118.isDetected()) {
+    if (!s_ads1118_detected) {
         return 0.0f;  // Not detected - return neutral
     }
 
-    // Non-blocking read: starts new conversion if previous is complete.
-    // Returns last known value if conversion still in progress.
-    int16_t raw = s_ads1118.readLoop(0);  // AIN0
+    // Non-blocking continuous read: returns latest conversion result.
+    int16_t raw;
+    float voltage;
+    uint8_t res = ads1118_continuous_read(&s_ads1118_handle, &raw, &voltage);
 
-    // Convert to voltage
-    float voltage = static_cast<float>(raw) * ADS1118_LSB_V;
+    if (res != 0) {
+        return 0.0f;  // Read error - return neutral
+    }
 
     // Normalise to 0.0 .. 1.0 (3.3V poti supply)
     float normalised = voltage / 3.3f;
