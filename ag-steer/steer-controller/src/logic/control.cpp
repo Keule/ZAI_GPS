@@ -107,6 +107,33 @@ void controlInit(void) {
             s_steer_pid.kp, s_steer_pid.ki, s_steer_pid.kd);
 }
 
+void controlUpdateSettings(uint8_t kp, uint8_t ki, uint8_t kd,
+                           uint16_t minPWM, uint16_t maxPWM) {
+    // AgIO sends gains scaled by 10 (e.g., Kp=30 means 3.0)
+    float new_kp = kp / 10.0f;
+    float new_ki = ki / 10.0f;
+    float new_kd = kd / 10.0f;
+
+    // Only update if values actually changed
+    if (new_kp != s_steer_pid.kp || new_ki != s_steer_pid.ki || new_kd != s_steer_pid.kd ||
+        minPWM != (uint16_t)s_steer_pid.output_min || maxPWM != (uint16_t)s_steer_pid.output_max) {
+
+        s_steer_pid.kp = new_kp;
+        s_steer_pid.ki = new_ki;
+        s_steer_pid.kd = new_kd;
+        s_steer_pid.output_min = minPWM;
+        s_steer_pid.output_max = maxPWM;
+
+        // Reset integral on gain change to prevent windup from old gains
+        s_steer_pid.integral = 0.0f;
+        s_steer_pid.prev_error = 0.0f;
+        s_steer_pid.first_update = true;
+
+        hal_log("Control: settings updated Kp=%.1f Ki=%.1f Kd=%.1f minPWM=%u maxPWM=%u",
+                new_kp, new_ki, new_kd, (unsigned)minPWM, (unsigned)maxPWM);
+    }
+}
+
 void controlStep(void) {
     uint32_t now_ms = hal_millis();
 
@@ -123,6 +150,10 @@ void controlStep(void) {
         // Emergency: disable actuator immediately
         actuatorWriteCommand(0);
         pidReset(&s_steer_pid);
+        {
+            StateLock lock;
+            g_nav.pid_output = 0;
+        }
         return;
     }
 
@@ -136,8 +167,35 @@ void controlStep(void) {
     // ----------------------------------------------------------
     float current_angle = steerAngleReadDeg();
 
+    // Store raw ADC value for protocol messages
+    {
+        StateLock lock;
+        g_nav.steer_angle_raw = hal_steer_angle_read_raw();
+    }
+
     // ----------------------------------------------------------
-    // 4. PID computation
+    // 4. Check if auto-steer is enabled (work + steer switches)
+    // ----------------------------------------------------------
+    bool auto_steer = false;
+    {
+        StateLock lock;
+        auto_steer = g_nav.work_switch && g_nav.steer_switch;
+    }
+
+    if (!auto_steer) {
+        // Auto-steer disabled: hold current position or center
+        // Reset PID to prevent windup while steering is off
+        pidReset(&s_steer_pid);
+        {
+            StateLock lock;
+            g_nav.pid_output = 0;
+        }
+        actuatorWriteCommand(0);
+        return;
+    }
+
+    // ----------------------------------------------------------
+    // 5. PID computation
     // ----------------------------------------------------------
     float setpoint = desiredSteerAngleDeg;
     float error = setpoint - current_angle;
@@ -153,16 +211,17 @@ void controlStep(void) {
     float output = pidCompute(&s_steer_pid, error, dt);
 
     // ----------------------------------------------------------
-    // 5. Write actuator command
+    // 6. Write actuator command
     // ----------------------------------------------------------
     uint16_t cmd = static_cast<uint16_t>(output);
     actuatorWriteCommand(cmd);
 
     // ----------------------------------------------------------
-    // 6. Update timestamp
+    // 7. Update timestamp and PID output for status reporting
     // ----------------------------------------------------------
     {
         StateLock lock;
         g_nav.timestamp_ms = now_ms;
+        g_nav.pid_output = cmd;
     }
 }

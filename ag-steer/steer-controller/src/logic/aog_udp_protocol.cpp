@@ -301,6 +301,25 @@ bool tryDecodeAogSteerDataIn(const uint8_t* payload, size_t payload_len,
 }
 
 // ===================================================================
+// Decoder: Steer Settings In (PGN 252, Len=17)
+// ===================================================================
+bool tryDecodeAogSteerSettingsIn(const uint8_t* payload, size_t payload_len,
+                                 AogSteerSettingsIn* out) {
+    if (!payload || payload_len < sizeof(AogSteerSettingsIn)) return false;
+
+    AogSteerSettingsIn msg;
+    std::memcpy(&msg, payload, sizeof(msg));
+
+    if (out) *out = msg;
+    hal_log("AOG: SteerSettings ack=%u Kp=%u Ki=%u Kd=%u minPWM=%u maxPWM=%u counts=%u hi=%d lo=%d wasOff=%d width=%u",
+            (unsigned)msg.ackNumber, (unsigned)msg.kp, (unsigned)msg.ki, (unsigned)msg.kd,
+            (unsigned)msg.minPWM, (unsigned)msg.maxPWM, (unsigned)msg.counts,
+            (int)msg.hiLimit, (int)msg.loLimit, (int)msg.wasOffset,
+            (unsigned)msg.machineWidth);
+    return true;
+}
+
+// ===================================================================
 // Decoder: Hardware Message (PGN 221, variable length)
 // ===================================================================
 bool tryDecodeAogHardwareMessage(const uint8_t* payload, size_t payload_len,

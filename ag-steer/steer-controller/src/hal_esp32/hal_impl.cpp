@@ -630,10 +630,15 @@ float hal_steer_angle_read_deg(void) {
     if (normalised < 0.0f) normalised = 0.0f;
     if (normalised > 1.0f) normalised = 1.0f;
 
-    // Map 0..1 -> -45..+45 degrees
+    // Map 0..1 -> -22.5°..+22.5°
     float angle = (normalised * 45.0f) - 22.5f;
 
     return angle;
+}
+
+int16_t hal_steer_angle_read_raw(void) {
+    if (!s_ads1118_detected || !s_calibrated) return 0;
+    return ads1118_read_raw();
 }
 
 bool hal_steer_angle_is_calibrated(void) {

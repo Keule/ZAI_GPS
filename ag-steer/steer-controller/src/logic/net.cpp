@@ -25,6 +25,13 @@
 #include <cstring>
 
 // ===================================================================
+// AgIO status byte bitfield (from PGN 254 steer data)
+// ===================================================================
+constexpr uint8_t STATUS_BIT_WORK_SWITCH   = 0x01;  // bit 0
+constexpr uint8_t STATUS_BIT_STEER_SWITCH  = 0x02;  // bit 1
+constexpr uint8_t STATUS_BIT_STEER_ON      = 0x04;  // bit 2
+
+// ===================================================================
 // Send interval tracking
 // ===================================================================
 static uint32_t s_last_send_ms = 0;
@@ -88,6 +95,14 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
             if (tryDecodeAogSteerDataIn(payload, payload_len, &msg)) {
                 // Update desired steer angle from AgIO
                 desiredSteerAngleDeg = msg.steerAngle / 100.0f;
+
+                // Decode status byte: work switch, steer switch, steer on
+                {
+                    StateLock lock;
+                    g_nav.work_switch     = (msg.status & STATUS_BIT_WORK_SWITCH) != 0;
+                    g_nav.steer_switch    = (msg.status & STATUS_BIT_STEER_SWITCH) != 0;
+                    g_nav.last_status_byte = msg.status;
+                }
             }
             break;
         }
@@ -106,9 +121,37 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
             break;
         }
 
-        case PGN_STEER_SETTINGS_IN:
-            hal_log("NET: SteerSettings received (len=%zu) – TODO: implement", payload_len);
+        case PGN_STEER_SETTINGS_IN: {
+            AogSteerSettingsIn settings;
+            if (tryDecodeAogSteerSettingsIn(payload, payload_len, &settings)) {
+                // Validate PGN bytes
+                if (settings.pgn1 == 0xFC && settings.pgn2 == 0xFC) {
+                    // Apply settings to control system
+                    controlUpdateSettings(settings.kp, settings.ki, settings.kd,
+                                         settings.minPWM, settings.maxPWM);
+
+                    // Store settings in global state
+                    {
+                        StateLock lock;
+                        g_nav.settings_ack       = settings.ackNumber;
+                        g_nav.settings_kp        = settings.kp / 10.0f;
+                        g_nav.settings_ki        = settings.ki / 10.0f;
+                        g_nav.settings_kd        = settings.kd / 10.0f;
+                        g_nav.settings_min_pwm   = settings.minPWM;
+                        g_nav.settings_max_pwm   = settings.maxPWM;
+                        g_nav.settings_counts    = settings.counts;
+                        g_nav.settings_hi        = settings.hiLimit;
+                        g_nav.settings_lo        = settings.loLimit;
+                        g_nav.settings_was_offset = settings.wasOffset;
+                        g_nav.settings_received  = true;
+                    }
+                } else {
+                    hal_log("NET: SteerSettings invalid PGN bytes (0x%02X 0x%02X)",
+                            (unsigned)settings.pgn1, (unsigned)settings.pgn2);
+                }
+            }
             break;
+        }
 
         case PGN_STEER_CONFIG_IN:
             hal_log("NET: SteerConfig received (len=%zu) – TODO: implement", payload_len);
@@ -173,8 +216,17 @@ void netSendAogFrames(void) {
         int16_t angle_x100 = static_cast<int16_t>(g_nav.steer_angle_deg * 100.0f);
         int16_t heading_x16 = static_cast<int16_t>(g_nav.heading_deg * 16.0f);
         int16_t roll_x16    = static_cast<int16_t>(g_nav.roll_deg * 16.0f);
-        uint8_t switch_st   = g_nav.safety_ok ? 0x00 : 0x80;  // bit7 = safety
-        uint8_t pwm_disp    = 0;  // TODO: from PID output
+
+        // Switch byte: bit 7 = safety (0=OK, 1=KICK), bit 0 = steer switch relay
+        // Also include work switch state
+        uint8_t switch_st = 0;
+        if (!g_nav.safety_ok)   switch_st |= 0x80;
+        if (g_nav.work_switch) switch_st |= 0x01;
+        if (g_nav.steer_switch) switch_st |= 0x02;
+
+        // PWM display: map PID output (0-65535) to 0-255
+        uint8_t pwm_disp = static_cast<uint8_t>(
+            (g_nav.pid_output * 255.0f) / 65535.0f);
 
         tx_len = encodeAogSteerStatusOut(tx_buf, sizeof(tx_buf),
                                           angle_x100, heading_x16, roll_x16,
@@ -186,13 +238,12 @@ void netSendAogFrames(void) {
 
     // ----------------------------------------------------------
     // 2. From Autosteer 2 (PGN 0xFA) -> AgIO port 5126
-    //    Sensor value byte for steer angle sensor
+    //    Sensor value byte for steer angle sensor (raw ADC low byte)
     // ----------------------------------------------------------
     {
         StateLock lock;
-        // Send raw sensor value (just low byte of steer angle for now)
-        uint8_t sensor_val = static_cast<uint8_t>(
-            static_cast<int16_t>(g_nav.steer_angle_deg) & 0xFF);
+        // Send raw sensor value (low byte of raw ADC)
+        uint8_t sensor_val = static_cast<uint8_t>(g_nav.steer_angle_raw & 0xFF);
         tx_len = encodeAogFromAutosteer2(tx_buf, sizeof(tx_buf), sensor_val);
         if (tx_len > 0) {
             hal_net_send(tx_buf, tx_len, AOG_PORT_STEER);

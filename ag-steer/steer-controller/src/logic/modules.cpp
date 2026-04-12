@@ -132,8 +132,11 @@ void modulesSendHellos(void) {
             // Payload: steerAngle(2) + sensorCounts(2) + switchByte(1)
             StateLock lock;
             int16_t angle = static_cast<int16_t>(g_nav.steer_angle_deg);
-            uint16_t counts = 0;  // TODO: from actual sensor
-            uint8_t sw = g_nav.safety_ok ? 0x00 : 0x80;
+            uint16_t counts = static_cast<uint16_t>(g_nav.steer_angle_raw);
+            uint8_t sw = 0;
+            if (!g_nav.safety_ok)   sw |= 0x80;  // bit 7 = safety
+            if (g_nav.work_switch) sw |= 0x01;  // bit 0 = work switch
+            if (g_nav.steer_switch) sw |= 0x02; // bit 1 = steer switch
             len = encodeAogHelloReplySteer(buf, sizeof(buf), angle, counts, sw);
             label = "SteerHello";
         }

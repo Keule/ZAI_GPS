@@ -53,7 +53,7 @@ constexpr uint8_t PGN_HELLO_REPLY_GPS   = 0x78;  // 120  GPS module hello reply
 // -- Steer --
 constexpr uint8_t PGN_STEER_DATA_IN     = 0xFE;  // 254  AgIO -> steer module
 constexpr uint8_t PGN_STEER_STATUS_OUT  = 0xFD;  // 253  steer module -> AgIO
-constexpr uint8_t PGN_STEER_SETTINGS_IN = 0xFC;  // 252  AgIO -> steer module (settings)
+constexpr uint8_t PGN_STEER_SETTINGS_IN = 0xFC;  // 252  AgIO -> steer module (settings / ACK)
 constexpr uint8_t PGN_STEER_CONFIG_IN   = 0xFB;  // 251  AgIO -> steer module (config)
 constexpr uint8_t PGN_FROM_AUTOSTEER_2  = 0xFA;  // 250  steer module sensor data
 
@@ -190,7 +190,7 @@ static_assert(sizeof(AogHelloReplyGps) == 5, "AogHelloReplyGps must be 5 bytes")
 
 struct __attribute__((packed)) AogSteerDataIn {
     int16_t  speed;           // speed [cm/s], signed
-    uint8_t  status;          // bitfield: work switch, section states, etc.
+    uint8_t  status;          // bitfield: bit0=workSwitch, bit1=steerSwitch, bit2=on
     int16_t  steerAngle;      // desired steer angle [degrees * 100], signed
     uint8_t  xte;             // cross track error
     uint8_t  sectionControl1; // SC1..SC8
@@ -198,6 +198,30 @@ struct __attribute__((packed)) AogSteerDataIn {
 };
 
 static_assert(sizeof(AogSteerDataIn) == 8, "AogSteerDataIn must be 8 bytes");
+
+// ===================================================================
+// Steer Settings In (PGN 252, Src=0x7F -> steer module)
+// "ACK" message from AgIO containing steering parameters.
+// Total payload: 17 bytes
+// ===================================================================
+
+struct __attribute__((packed)) AogSteerSettingsIn {
+    uint8_t  pgn1;            // = 0xFC (repeated PGN byte)
+    uint8_t  pgn2;            // = 0xFC (repeated PGN byte)
+    uint8_t  ackNumber;       // acknowledgment number (0-254, wraps)
+    uint8_t  kp;              // proportional gain (actual = value / 10.0)
+    uint8_t  ki;              // integral gain (actual = value / 10.0)
+    uint8_t  kd;              // derivative gain (actual = value / 10.0)
+    uint16_t minPWM;          // minimum actuator PWM, LE
+    uint16_t maxPWM;          // maximum actuator PWM, LE
+    uint16_t counts;          // steer angle sensor total counts, LE
+    int8_t   hiLimit;         // max steer angle to left [degrees]
+    int8_t   loLimit;         // max steer angle to right [degrees]
+    int16_t  wasOffset;       // sensor zero offset in counts, LE
+    uint8_t  machineWidth;    // implement width [cm]
+};
+
+static_assert(sizeof(AogSteerSettingsIn) == 17, "AogSteerSettingsIn must be 17 bytes");
 
 // ===================================================================
 // Steer Status Out (PGN 253, Src=0x7E -> AgIO)
@@ -380,6 +404,10 @@ bool tryDecodeAogSubnetChange(const uint8_t* payload, size_t payload_len,
 /// Try to decode Steer Data In (PGN 254).
 bool tryDecodeAogSteerDataIn(const uint8_t* payload, size_t payload_len,
                               AogSteerDataIn* out);
+
+/// Try to decode Steer Settings In (PGN 252).
+bool tryDecodeAogSteerSettingsIn(const uint8_t* payload, size_t payload_len,
+                                 AogSteerSettingsIn* out);
 
 /// Try to decode a Hardware Message (PGN 221).
 /// Fills out_duration, out_color, out_message (null-terminated).

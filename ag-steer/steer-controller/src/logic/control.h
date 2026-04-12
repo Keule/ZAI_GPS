@@ -45,6 +45,15 @@ void controlInit(void);
 /// Reads sensors, checks safety, computes PID, writes actuator.
 void controlStep(void);
 
+/// Update PID gains and actuator limits from AgIO steer settings (PGN 252).
+/// @param kp       proportional gain (raw, divide by 10 for actual)
+/// @param ki       integral gain (raw, divide by 10 for actual)
+/// @param kd       derivative gain (raw, divide by 10 for actual)
+/// @param minPWM   actuator minimum PWM
+/// @param maxPWM   actuator maximum PWM
+void controlUpdateSettings(uint8_t kp, uint8_t ki, uint8_t kd,
+                           uint16_t minPWM, uint16_t maxPWM);
+
 // ===================================================================
 // Globals
 // ===================================================================

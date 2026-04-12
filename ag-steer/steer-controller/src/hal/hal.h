@@ -98,9 +98,13 @@ void hal_steer_angle_calibrate(void);
 bool hal_steer_angle_is_calibrated(void);
 
 /// Read current steering angle in degrees.
-/// Uses calibrated min/max to map ADC to -45°..+45°.
+/// Uses calibrated min/max to map ADC to -22.5°..+22.5°.
 /// If not calibrated, returns 0.0.
 float hal_steer_angle_read_deg(void);
+
+/// Read raw 16-bit ADC value from ADS1118 (single sample, no median).
+/// Returns 0 if not detected or not calibrated.
+int16_t hal_steer_angle_read_raw(void);
 
 // --- Actuator ---
 
