@@ -6,7 +6,8 @@
  *   Byte0  Byte1  Byte2  Byte3  Byte4  Data...    CRC
  *   0x80   0x81   Src    PGN    Len    <payload>  checksum
  *
- * CRC = low byte of sum(Byte2 .. Byte[n-2])  (Src + PGN + Len + all data bytes)
+ * Checksum = low byte of sum(Byte2 .. Byte[n-2])  (Src + PGN + Len + all data bytes)
+ * NOTE: This is NOT a CRC polynomial – it is a simple additive 8-bit checksum.
  *
  * Reference: https://github.com/AgOpenGPS-Official/Boards/blob/main/PGN.md
  *
@@ -165,7 +166,7 @@ static_assert(sizeof(AogSubnetReply) == 7, "AogSubnetReply must be 7 bytes");
 // ===================================================================
 
 struct __attribute__((packed)) AogHelloReplySteer {
-    int16_t  steerAngle;     // current actual steer angle (degrees * 1)
+    int16_t  steerAngle;     // current actual steer angle [degrees * 100], signed
     uint16_t sensorCounts;   // raw sensor counts
     uint8_t  switchByte;     // switch status bits
 };
@@ -315,13 +316,19 @@ static_assert(sizeof(AogGpsMainOut) == 51, "AogGpsMainOut must be exactly 51 byt
 // Checksum
 // ===================================================================
 
-/// Compute AOG checksum: low byte of sum of bytes from offset to end-1.
-/// For a complete frame, pass data pointing to Src byte, len = total frame - 3
-/// (excludes preamble 0x80 0x81 and the CRC byte itself).
+/// Compute AOG additive checksum (NOT a CRC polynomial).
+/// Sums bytes[2 .. frame_len-2] (excludes preamble and checksum byte),
+/// returns low 8 bits of the sum.
 ///
-/// Simpler form: pass the whole frame (including preamble), length = frame_length - 1
-/// (excludes the last CRC byte), and we sum from byte[2] onward.
+/// @param frame      Complete frame including preamble (0x80 0x81 ... checksum).
+/// @param frame_len  Total frame length in bytes (including preamble + checksum).
+/// @return          8-bit checksum value.
 uint8_t aogChecksum(const uint8_t* frame, size_t frame_len);
+
+/// Self-test: build a frame, validate round-trip, verify corruption detection.
+/// Call once at startup to verify the checksum implementation.
+/// @return true if all checks pass.
+bool aogChecksumSelfTest(void);
 
 // ===================================================================
 // Encoder functions (return total frame length including preamble & CRC)
@@ -422,3 +429,33 @@ bool tryDecodeAogHardwareMessage(const uint8_t* payload, size_t payload_len,
 
 /// Hex-dump a buffer to log (for debugging).
 void aogHexDump(const char* label, const uint8_t* data, size_t len);
+
+// ===================================================================
+// Inline self-test implementation
+// ===================================================================
+inline bool aogChecksumSelfTest(void) {
+    // Build a known frame: PGN 253, 8 bytes zero payload
+    // Expected: 0x80 0x81 0x7E 0xFD 0x08 [8 zeros] checksum
+    // Checksum = 0x7E + 0xFD + 0x08 + 0*8 = 0x17B, low 8 bits = 0x7B
+    uint8_t test_payload[8] = {0};
+    uint8_t tx[64], rx[64];
+    size_t tx_len = aogBuildFrame(tx, sizeof(tx), 0x7E, 0xFD,
+                                   test_payload, 8);
+    if (tx_len != 14) return false;
+    if (tx[0] != 0x80 || tx[1] != 0x81) return false;
+    if (tx[tx_len - 1] != 0x7B) return false;
+
+    // Validate the frame we just built
+    uint8_t v_src = 0, v_pgn = 0;
+    const uint8_t* v_pay = nullptr;
+    size_t v_plen = 0;
+    if (!aogValidateFrame(tx, tx_len, &v_src, &v_pgn, &v_pay, &v_plen)) return false;
+    if (v_src != 0x7E || v_pgn != 0xFD || v_plen != 8) return false;
+
+    // Corrupt the checksum and verify it fails
+    std::memcpy(rx, tx, tx_len);
+    rx[tx_len - 1] ^= 0xFF;
+    if (aogValidateFrame(rx, tx_len, &v_src, &v_pgn, &v_pay, &v_plen)) return false;
+
+    return true;
+}

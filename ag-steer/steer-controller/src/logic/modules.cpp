@@ -129,9 +129,9 @@ void modulesSendHellos(void) {
 
         if (mod.src_id == AOG_SRC_STEER) {
             // Steer hello: PGN=0x7E, Len=5
-            // Payload: steerAngle(2) + sensorCounts(2) + switchByte(1)
+            // Payload: steerAngle×100(2) + sensorCounts(2) + switchByte(1)
             StateLock lock;
-            int16_t angle = static_cast<int16_t>(g_nav.steer_angle_deg);
+            int16_t angle = static_cast<int16_t>(g_nav.steer_angle_deg * 100.0f);
             uint16_t counts = static_cast<uint16_t>(g_nav.steer_angle_raw);
             uint8_t sw = 0;
             if (!g_nav.safety_ok)   sw |= 0x80;  // bit 7 = safety

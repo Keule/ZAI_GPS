@@ -18,15 +18,23 @@
 AogNetworkConfig g_net_cfg;
 
 // ===================================================================
-// Checksum: low byte of sum from byte[2] to byte[n-2]
-// (excludes preamble bytes 0,1 and the CRC byte at the end)
+// Checksum (NOT a CRC – it is a simple additive 8-bit checksum).
+//
+// Algorithm: sum all bytes from index 2 (Src) to index (frame_len-2),
+//   then take the low 8 bits.  The preamble (bytes 0,1 = 0x80,0x81)
+//   and the checksum byte itself (last byte) are excluded.
+//
+// This is identical to the AgOpenGPS reference implementation
+// (Autosteer_UDP_v5.ino, UDPComm.Designer.cs).
 // ===================================================================
 uint8_t aogChecksum(const uint8_t* frame, size_t frame_len) {
-    if (frame_len < AOG_HEADER_SIZE) return 0;
+    if (frame_len < AOG_HEADER_SIZE + AOG_CRC_SIZE) return 0;
 
+    // Minimum valid frame: 5 header + 1 CRC = 6 bytes.
+    // Sum bytes[2 .. frame_len-2]  (Src + PGN + Len + payload)
+    size_t last_included = frame_len - 1;  // index of the CRC byte itself
     uint16_t sum = 0;
-    // Start at byte[2] (Src), go up to but not including the CRC byte
-    for (size_t i = 2; i + 1 < frame_len; i++) {
+    for (size_t i = 2; i < last_included; i++) {
         sum += frame[i];
     }
     return static_cast<uint8_t>(sum & 0xFF);
