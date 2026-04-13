@@ -1,0 +1,32 @@
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+.pio/
+*.o
+*.elf
+*.bin
+*.map
+*.hex
+
+# Environment
+.env
+.env.local
+
+# Skills system (not part of this repo)
+skills/
+
+# Download/output directory
+download/
+
+# Temp files
+*.tmp
+*.bak
+*.log
