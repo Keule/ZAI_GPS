@@ -121,7 +121,7 @@ void controlInit(void) {
             65535.0f // max output
     );
 
-    LOGI("CTL", "initialised (PID Kp=%.2f Ki=%.3f Kd=%.3f)",
+    hal_log("Control: initialised (PID Kp=%.2f Ki=%.3f Kd=%.3f)",
             s_steer_pid.kp, s_steer_pid.ki, s_steer_pid.kd);
 }
 
