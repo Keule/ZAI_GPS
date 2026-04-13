@@ -30,3 +30,10 @@ download/
 *.tmp
 *.bak
 *.log
+
+# NEVER work on main — always use agent/zai-work
+# Nested repo copy (causes git checkout conflicts)
+ZAI_GPS/
+
+# Leftover from main branch (conflicts with zai-work)
+ag-steer/steer-controller/src/logic/aog_udp_protocol.cpp
