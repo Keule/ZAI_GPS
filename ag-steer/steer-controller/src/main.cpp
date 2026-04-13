@@ -28,6 +28,7 @@
 #include "logic/sd_logger.h"
 
 #include "logic/log_config.h"
+#undef LOG_LOCAL_LEVEL          // Arduino.h already defined it via esp_log.h
 #define LOG_LOCAL_LEVEL LOG_LEVEL_MAIN
 #include "esp_log.h"
 #include "logic/log_ext.h"
@@ -49,6 +50,7 @@ static void controlTaskFunc(void* param) {
     vTaskDelay(pdMS_TO_TICKS(500));
 
     const TickType_t interval = pdMS_TO_TICKS(5);  // 200 Hz = 5 ms
+    uint32_t ctrl_dbg_count = 0;
 
     for (;;) {
         uint32_t start = hal_millis();
@@ -58,6 +60,13 @@ static void controlTaskFunc(void* param) {
 
         // Buffer one log record (subsampled to 10 Hz internally)
         sdLoggerRecord();
+
+        // Heartbeat DBG every 1s (= every 200 iterations)
+        ctrl_dbg_count++;
+        if (ctrl_dbg_count % 200 == 0) {
+            Serial.printf("[DBG-CTRL] alive tick=%lu\n", (unsigned long)ctrl_dbg_count);
+            Serial.flush();
+        }
 
         // Maintain 200 Hz timing
         uint32_t elapsed = hal_millis() - start;
@@ -77,11 +86,15 @@ static void commTaskFunc(void* param) {
     // Wait for network to initialise (done in setup, but give time to settle)
     vTaskDelay(pdMS_TO_TICKS(2000));
 
+    Serial.println("[DBG-COMM] wait done, entering poll loop");
+    Serial.flush();
+
     const TickType_t poll_interval = pdMS_TO_TICKS(10);  // 100 Hz polling
 
     // Hardware status update runs at ~1 Hz
     static uint32_t s_last_hw_status_ms = 0;
     static const uint32_t HW_STATUS_INTERVAL_MS = 1000;
+    uint32_t comm_dbg_count = 0;
 
     for (;;) {
         // Poll network for incoming frames
@@ -89,6 +102,13 @@ static void commTaskFunc(void* param) {
 
         // Send periodic AOG frames (~10 Hz)
         netSendAogFrames();
+
+        // Heartbeat DBG every 5s (= every 500 iterations)
+        comm_dbg_count++;
+        if (comm_dbg_count % 500 == 0) {
+            Serial.printf("[DBG-COMM] alive tick=%lu\n", (unsigned long)comm_dbg_count);
+            Serial.flush();
+        }
 
         // Hardware status monitoring (~1 Hz)
         uint32_t now = hal_millis();
@@ -258,6 +278,8 @@ void setup() {
 // ===================================================================
 // Arduino loop() – not used for real work (tasks handle everything)
 // ===================================================================
+static uint32_t s_loop_dbg_count = 0;
+
 void loop() {
     // Feed watchdog to prevent trigger from this task
     esp_task_wdt_reset();
@@ -281,6 +303,13 @@ void loop() {
                 desiredSteerAngleDeg,
                 hal_net_is_connected() ? "UP" : "DOWN",
                 g_nav.settings_received ? "Y" : "N");
+    }
+
+    // Heartbeat DBG every 1s (= every ~10 iterations at 100ms delay)
+    s_loop_dbg_count++;
+    if (s_loop_dbg_count <= 5 || s_loop_dbg_count % 10 == 0) {
+        Serial.printf("[DBG-LOOP] alive tick=%lu\n", (unsigned long)s_loop_dbg_count);
+        Serial.flush();
     }
 
     vTaskDelay(pdMS_TO_TICKS(100));
