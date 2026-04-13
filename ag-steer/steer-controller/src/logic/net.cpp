@@ -92,6 +92,9 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
                 g_net_cfg.dest_ip[2] = msg.ip_three;
                 g_net_cfg.dest_ip[3] = 255;  // broadcast
 
+                // Also update the HAL's destination IP (used by hal_net_send)
+                hal_net_set_dest_ip(msg.ip_one, msg.ip_two, msg.ip_three, 255);
+
                 hal_log("NET: subnet changed, dest=%u.%u.%u.%u",
                         g_net_cfg.dest_ip[0], g_net_cfg.dest_ip[1],
                         g_net_cfg.dest_ip[2], g_net_cfg.dest_ip[3]);

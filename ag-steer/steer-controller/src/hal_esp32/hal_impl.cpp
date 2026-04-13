@@ -58,8 +58,11 @@
 // W5500 Ethernet - ESP-IDF ETH driver (SPI3_HOST)
 // ===================================================================
 
-// UDP socket for AgIO communication
-static WiFiUDP ethUDP;
+// UDP sockets for AgIO communication
+// Reference uses separate sockets: one for receiving (port 8888),
+// one for sending (from port 5126 to AgIO port 9999).
+static WiFiUDP ethUDP_recv;  // Listen socket – bound to port 8888 (receives from AgIO)
+static WiFiUDP ethUDP_send;  // Send socket – sends FROM port 5126 TO AgIO port 9999
 
 // Static IP configuration
 static IPAddress s_local_ip(192, 168, 1, 70);
@@ -735,22 +738,32 @@ static void onEthEvent(WiFiEvent_t event) {
                 ETH.localIP().toString().c_str(),
                 ETH.macAddress().c_str());
         s_eth_has_ip = true;
-        // Start UDP listener on AgIO port
-        ethUDP.begin(AOG_PORT_AGIO);
-        hal_log("ETH: UDP listening on port %u", AOG_PORT_AGIO);
+
+        // Start receive UDP listener on port 8888 (AgIO sends to this port)
+        // Reference: ether.udpServerListenOnPort(&udpSteerRecv, 8888)
+        ethUDP_recv.begin(AOG_PORT_AGIO_RECV);
+        hal_log("ETH: UDP listening on port %u (AgIO sends here)", AOG_PORT_AGIO_RECV);
+
+        // Start send UDP socket from port 5126 (our source port)
+        // Reference: portMy = 5126
+        ethUDP_send.begin(AOG_PORT_STEER);
+        hal_log("ETH: UDP sending from port %u (to AgIO port %u)", AOG_PORT_STEER, AOG_PORT_AGIO);
         break;
 
     case ARDUINO_EVENT_ETH_DISCONNECTED:
         hal_log("ETH: link DOWN");
         s_eth_link_up = false;
         s_eth_has_ip = false;
-        ethUDP.stop();
+        ethUDP_recv.stop();
+        ethUDP_send.stop();
         break;
 
     case ARDUINO_EVENT_ETH_STOP:
         hal_log("ETH: driver stopped");
         s_eth_link_up = false;
         s_eth_has_ip = false;
+        ethUDP_recv.stop();
+        ethUDP_send.stop();
         break;
 
     default:
@@ -813,24 +826,31 @@ void hal_net_init(void) {
 void hal_net_send(const uint8_t* data, size_t len, uint16_t port) {
     if (!s_eth_has_ip) return;
 
-    ethUDP.beginPacket(s_dest_ip, port);
-    ethUDP.write(data, static_cast<size_t>(len));
-    ethUDP.endPacket();
+    // Always send TO AgIO port 9999 (port parameter is legacy, ignored)
+    // Reference: portDestination = 9999
+    ethUDP_send.beginPacket(s_dest_ip, AOG_PORT_AGIO);
+    ethUDP_send.write(data, static_cast<size_t>(len));
+    ethUDP_send.endPacket();
+}
+
+void hal_net_set_dest_ip(uint8_t ip0, uint8_t ip1, uint8_t ip2, uint8_t ip3) {
+    s_dest_ip = IPAddress(ip0, ip1, ip2, ip3);
+    hal_log("HAL: dest IP updated to %u.%u.%u.%u", ip0, ip1, ip2, ip3);
 }
 
 int hal_net_receive(uint8_t* buf, size_t max_len, uint16_t* out_port) {
     if (!s_eth_has_ip) return 0;
 
-    int packet_size = ethUDP.parsePacket();
+    int packet_size = ethUDP_recv.parsePacket();
     if (packet_size <= 0) return 0;
 
     if (static_cast<size_t>(packet_size) > max_len) {
         packet_size = static_cast<int>(max_len);
     }
 
-    int read = ethUDP.read(buf, packet_size);
+    int read = ethUDP_recv.read(buf, packet_size);
     if (out_port) {
-        *out_port = static_cast<uint16_t>(ethUDP.remotePort());
+        *out_port = static_cast<uint16_t>(ethUDP_recv.remotePort());
     }
     return read;
 }

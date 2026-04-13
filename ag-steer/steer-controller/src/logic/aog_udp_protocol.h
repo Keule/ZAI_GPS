@@ -78,10 +78,14 @@ constexpr uint8_t AOG_HWMSG_DURATION_PERSIST = 0;
 // ===================================================================
 // UDP Ports
 // ===================================================================
-constexpr uint16_t AOG_PORT_STEER = 5126;
-constexpr uint16_t AOG_PORT_GPS   = 5124;
-constexpr uint16_t AOG_PORT_AGIO  = 9999;  // AgIO listens here for incoming data
-constexpr uint16_t AOG_PORT_NMEA  = 29999;
+// AgOpenGPS reference port layout:
+//   AgIO broadcasts TO port 8888 → steer module listens on 8888
+//   Steer module sends FROM port 5126 TO AgIO port 9999
+constexpr uint16_t AOG_PORT_STEER     = 5126;  // Our source port (we send FROM this)
+constexpr uint16_t AOG_PORT_GPS       = 5124;  // GPS module source port
+constexpr uint16_t AOG_PORT_AGIO_RECV = 8888;  // We LISTEN here (AgIO sends TO this port)
+constexpr uint16_t AOG_PORT_AGIO      = 9999;  // We send TO this port (AgIO listens here)
+constexpr uint16_t AOG_PORT_NMEA      = 29999;
 
 // ===================================================================
 // Default network destination (override at runtime via subnet change)

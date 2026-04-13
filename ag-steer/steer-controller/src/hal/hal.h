@@ -124,6 +124,10 @@ bool hal_actuator_detect(void);
 /// Initialise W5500 Ethernet and configure IP.
 void hal_net_init(void);
 
+/// Update the destination IP address for outgoing UDP datagrams.
+/// Call this after receiving a Subnet Change (PGN 201) from AgIO.
+void hal_net_set_dest_ip(uint8_t ip0, uint8_t ip1, uint8_t ip2, uint8_t ip3);
+
 /// Send a UDP datagram to the configured AgIO endpoint.
 /// @param data     payload bytes (caller must include AOG header + data + CRC)
 /// @param len      total length of the datagram
