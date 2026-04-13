@@ -864,6 +864,12 @@ void hal_esp32_init_all(void) {
     while (!Serial && (millis() - serial_start < 3000)) {
         delay(10);
     }
+
+    // Redirect ESP-IDF log (ESP_LOGI etc.) to USB CDC Serial.
+    // Without this, esp_log goes to UART0 while Serial.println
+    // goes to USB CDC — user would only see half the output.
+    Serial.setDebugOutput(true);
+
     hal_log("ESP32-S3 AgSteer starting...");
 
     // Mutex
