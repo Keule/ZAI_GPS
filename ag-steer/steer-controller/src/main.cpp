@@ -44,7 +44,7 @@ static TaskHandle_t s_comm_task_handle = nullptr;
 // ===================================================================
 static void controlTaskFunc(void* param) {
     (void)param;
-    LOGI("MAIN", "Control: task started on core %d", xPortGetCoreID());
+    hal_log("Control: task started on core %d", xPortGetCoreID());
 
     // Wait for network + sensors to stabilise
     vTaskDelay(pdMS_TO_TICKS(500));
@@ -81,7 +81,7 @@ static void controlTaskFunc(void* param) {
 // ===================================================================
 static void commTaskFunc(void* param) {
     (void)param;
-    LOGI("MAIN", "Comm: task started on core %d", xPortGetCoreID());
+    hal_log("Comm: task started on core %d", xPortGetCoreID());
 
     // Wait for network to initialise (done in setup, but give time to settle)
     vTaskDelay(pdMS_TO_TICKS(2000));
@@ -128,7 +128,7 @@ static void commTaskFunc(void* param) {
 
             // Log error count periodically
             if (err_count > 0) {
-                LOGW("MAIN", "COMM: %u HW error(s) active", (unsigned)err_count);
+                hal_log("COMM: %u HW error(s) active", (unsigned)err_count);
             }
         }
 
@@ -150,13 +150,13 @@ void setup() {
     {
         SdOtaVersion ver = sdOtaGetCurrentVersion();
         const esp_partition_t* part = esp_ota_get_running_partition();
-        LOGI("MAIN", "========================================");
-        LOGI("MAIN", "  AgSteer Firmware v%u.%u.%u", ver.major, ver.minor, ver.patch);
-        LOGI("MAIN", "  Build: %s %s", __DATE__, __TIME__);
-        LOGI("MAIN", "  Partition: %s (0x%06X)", part ? part->label : "?",
+        hal_log("========================================");
+        hal_log("  AgSteer Firmware v%u.%u.%u", ver.major, ver.minor, ver.patch);
+        hal_log("  Build: %s %s", __DATE__, __TIME__);
+        hal_log("  Partition: %s (0x%06X)", part ? part->label : "?",
                 part ? (unsigned)part->address : 0);
-        LOGI("MAIN", "  Flash: %d KB free", (int)(ESP.getFreeSketchSpace() / 1024));
-        LOGI("MAIN", "========================================");
+        hal_log("  Flash: %d KB free", (int)(ESP.getFreeSketchSpace() / 1024));
+        hal_log("========================================");
     }
 
     // -----------------------------------------------------------------
@@ -176,10 +176,10 @@ void setup() {
     // -----------------------------------------------------------------
     {
         if (isFirmwareUpdateAvailableOnSD()) {
-            LOGI("MAIN", "firmware update detected on SD card – starting update");
+            hal_log("Main: firmware update detected on SD card – starting update");
             updateFirmwareFromSD();
             // If we reach here the update failed – continue with old firmware
-            LOGE("MAIN", "OTA update FAILED, continuing with current firmware");
+            hal_log("Main: OTA update FAILED, continuing with current firmware");
         }
     }
 
@@ -224,11 +224,11 @@ void setup() {
         }
 
         if (need_cal) {
-            LOGI("MAIN", "%s calibration",
+            hal_log("Main: %s calibration",
                     hal_steer_angle_is_calibrated() ? "forced re" : "initial");
             hal_steer_angle_calibrate();
         } else {
-            LOGI("MAIN", "calibration OK (loaded from NVS)");
+            hal_log("Main: calibration OK (loaded from NVS)");
         }
     }
 
@@ -277,7 +277,7 @@ void setup() {
         0   // Core 0
     );
 
-    LOGI("MAIN", "tasks created, entering main loop");
+    hal_log("Main: tasks created, entering main loop");
 }
 
 // ===================================================================
@@ -295,7 +295,7 @@ void loop() {
     if (now - s_last_status >= 5000) {
         s_last_status = now;
         StateLock lock;
-        LOGI("MAIN", "STAT: hd=%.1f st=%.1f raw=%d safety=%s work=%s steer=%s spd=%.1f wdog=%s pid=%d tgt=%.1f net=%s cfg=%s",
+        hal_log("STAT: hd=%.1f st=%.1f raw=%d safety=%s work=%s steer=%s spd=%.1f wdog=%s pid=%d tgt=%.1f net=%s cfg=%s",
                 g_nav.heading_deg,
                 g_nav.steer_angle_deg,
                 (int)g_nav.steer_angle_raw,
