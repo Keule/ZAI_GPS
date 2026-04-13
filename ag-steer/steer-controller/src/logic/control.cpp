@@ -106,9 +106,11 @@ float pidCompute(PidState* pid, float error, uint32_t dt_ms) {
 // ===================================================================
 
 void controlInit(void) {
-    imuInit();
-    steerAngleInit();
-    actuatorInit();
+    // NOTE: HAL-level init (hal_imu_begin, hal_steer_angle_begin,
+    // hal_actuator_begin) is already done in hal_esp32_init_all().
+    // imuInit/steerAngleInit/actuatorInit would redundantly call
+    // the HAL begin functions and produce duplicate log messages.
+    // We only need to init the PID controller here.
 
     // Default PID gains – tune for actual actuator/sensor combo
     pidInit(&s_steer_pid,

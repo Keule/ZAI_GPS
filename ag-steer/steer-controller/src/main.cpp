@@ -186,6 +186,11 @@ void setup() {
     // Initialise module system – detect hardware for all modules
     modulesInit();
 
+    // Initialise control system (PID controller with default gains).
+    // NOTE: HAL-level init (imu, steer angle, actuator) was already done
+    //       in hal_esp32_init_all().  controlInit() only sets up the PID.
+    controlInit();
+
     // -----------------------------------------------------------------
     // Steering Angle Calibration
     // -----------------------------------------------------------------
