@@ -4,8 +4,8 @@
  *
  * Defines all AgOpenGPS network modules implemented by this firmware,
  * tracks their hardware detection status, and provides functions to:
- *   - Send hello replies for all enabled modules
- *   - Send subnet replies for all enabled modules
+ *   - Send hello replies for all active modules
+ *   - Send subnet replies for all active modules
  *   - Report hardware errors via PGN 0xDD for failed modules
  *
  * AgOpenGPS module concept:
