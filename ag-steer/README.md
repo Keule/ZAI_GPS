@@ -52,3 +52,32 @@ ag-steer/
 cd steer-controller
 pio run -t upload
 ```
+
+## Testbare Matrix (Build + Smoke)
+
+Im Repository ist eine CI-Matrix hinterlegt (`.github/workflows/test-matrix.yml`):
+
+- **Build-Matrix** fuer alle Profile:
+  - `profile_comm_only`
+  - `profile_sensor_front`
+  - `profile_actor_rear`
+  - `profile_full_steer`
+  - (spaeter erweiterbar fuer GNSS/Machine-Profile)
+- **Smoke-Matrix** (Host-Runner) fuer:
+  - Discovery/Hello/Subnet Frames
+  - PGN-I/O-Szenarien je Profil
+  - Timing-Metriken (Jitter + Deadline-Miss-Zaehler)
+
+Lokal ausfuehren:
+
+```bash
+cd ag-steer/steer-controller
+python3 tools/run_test_matrix.py
+```
+
+Nur Host-Smoke (ohne PlatformIO-Builds):
+
+```bash
+cd ag-steer/steer-controller
+SKIP_PROFILE_BUILDS=1 python3 tools/run_test_matrix.py
+```
