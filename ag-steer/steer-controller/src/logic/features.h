@@ -124,15 +124,29 @@
 #define FEAT_PID_STEER_NORM      (FEAT_CFG_RAW_PID_STEER || (FEAT_CFG_PROF_PID && !FEAT_CFG_RAW_PID_STEER) || FEAT_CFG_DEFAULT_ON)
 
 // Pflicht-Capability
+#ifndef FEAT_COMM
 #define FEAT_COMM (FEAT_COMM_NORM)
+#endif
 
 // Optionale Capabilities
-#define FEAT_GNSS           (FEAT_GNSS_NORM)
-#define FEAT_IMU            (FEAT_STEER_SENSOR_NORM && FEAT_IMU_NORM)
-#define FEAT_STEER_SENSOR   (FEAT_STEER_SENSOR_NORM)
-#define FEAT_STEER_ACTOR    (FEAT_STEER_ACTOR_NORM)
+#ifndef FEAT_GNSS
+#define FEAT_GNSS (FEAT_GNSS_NORM)
+#endif
+#ifndef FEAT_IMU
+#define FEAT_IMU (FEAT_STEER_SENSOR_NORM && FEAT_IMU_NORM)
+#endif
+#ifndef FEAT_STEER_SENSOR
+#define FEAT_STEER_SENSOR (FEAT_STEER_SENSOR_NORM)
+#endif
+#ifndef FEAT_STEER_ACTOR
+#define FEAT_STEER_ACTOR (FEAT_STEER_ACTOR_NORM)
+#endif
+#ifndef FEAT_MACHINE_SENSOR
 #define FEAT_MACHINE_SENSOR (FEAT_MACHINE_SENSOR_NORM)
-#define FEAT_MACHINE_ACTOR  (FEAT_MACHINE_ACTOR_NORM && FEAT_STEER_SENSOR && FEAT_STEER_ACTOR)
+#endif
+#ifndef FEAT_MACHINE_ACTOR
+#define FEAT_MACHINE_ACTOR (FEAT_MACHINE_ACTOR_NORM && FEAT_STEER_SENSOR && FEAT_STEER_ACTOR)
+#endif
 
 #define FEAT_STEER_ALL (FEAT_COMM && FEAT_STEER_SENSOR && FEAT_STEER_ACTOR && FEAT_MACHINE_ACTOR)
 
@@ -175,6 +189,8 @@ inline constexpr bool steer_sensor()  { return FEAT_ENABLED(FEAT_STEER_SENSOR); 
 inline constexpr bool steer_actor()   { return FEAT_ENABLED(FEAT_STEER_ACTOR); }
 inline constexpr bool machine_sensor(){ return FEAT_ENABLED(FEAT_MACHINE_SENSOR); }
 inline constexpr bool machine_actor() { return FEAT_ENABLED(FEAT_MACHINE_ACTOR); }
+inline constexpr bool sensor()        { return FEAT_ENABLED(FEAT_STEER_SENSOR); }  // legacy helper
+inline constexpr bool actor()         { return FEAT_ENABLED(FEAT_STEER_ACTOR); }   // legacy helper
 inline constexpr bool control()       { return FEAT_ENABLED(FEAT_MACHINE_ACTOR); }
 inline constexpr bool pid()           { return FEAT_ENABLED(FEAT_PID); }
 }  // namespace feat
