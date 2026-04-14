@@ -114,7 +114,7 @@ struct SpiClientConfig {
 };
 
 static const SpiClientConfig k_spi_cfg_ads = {CS_STEER_ANG, 2000000, SPI_MODE1, 10000};  // 100 Hz
-static const SpiClientConfig k_spi_cfg_imu = {CS_IMU,       1000000, SPI_MODE0,  5000};  // 200 Hz
+static SpiClientConfig k_spi_cfg_imu = {CS_IMU,       1000000, SPI_MODE0,  5000};  // 200 Hz
 static const SpiClientConfig k_spi_cfg_act = {CS_ACT,       1000000, SPI_MODE0,     0};  // event-driven
 
 static SemaphoreHandle_t s_spi_bus_mutex = nullptr;
@@ -385,20 +385,26 @@ bool hal_imu_read(float* yaw_rate_dps, float* roll_deg) {
 }
 
 bool hal_imu_detect(void) {
-    // BNO085 detection: read chip ID from register 0x00
-    // Expected chip ID: 0x00 (BNO085 responds to SPI reset)
-    // For now, verify SPI bus is responsive by attempting a transfer
-    uint8_t tx = 0x00;
+    // BNO085 detection: raw SPI probe transfer.
     uint8_t response = 0;
-    spiTransfer(SpiClient::BNO085, &tx, &response, 1);
+    if (!hal_imu_probe_once(&response)) return false;
 
     // 0xFF = floating MISO (no device pulling it down)
     // 0x00 = MISO stuck LOW (bus fault)
-    // A real BNO085 would respond with its chip ID.
+    // A real BNO085 should produce non-trivial responses during bring-up.
     bool detected = (response != 0xFF && response != 0x00);
     hal_log("ESP32: IMU detect: SPI response=0x%02X %s",
             response, detected ? "OK" : "FAIL (no device)");
     return detected;
+}
+
+bool hal_imu_probe_once(uint8_t* out_response) {
+    if (!out_response) return false;
+    uint8_t tx = 0x00;
+    uint8_t response = 0;
+    spiTransfer(SpiClient::BNO085, &tx, &response, 1);
+    *out_response = response;
+    return true;
 }
 
 bool hal_imu_detect_boot_qualified(HalImuDetectStats* out) {
@@ -407,9 +413,8 @@ bool hal_imu_detect_boot_qualified(HalImuDetectStats* out) {
     local.last_response = 0x00;
 
     for (uint16_t i = 0; i < local.samples; i++) {
-        uint8_t tx = 0x00;
         uint8_t response = 0;
-        spiTransfer(SpiClient::BNO085, &tx, &response, 1);
+        hal_imu_probe_once(&response);
         local.last_response = response;
 
         if (response == 0xFF) {
@@ -451,6 +456,15 @@ void hal_imu_get_spi_info(HalImuSpiInfo* out) {
     out->int_pin = IMU_INT;
     out->freq_hz = k_spi_cfg_imu.freq_hz;
     out->mode = k_spi_cfg_imu.mode;
+}
+
+void hal_imu_set_spi_config(uint32_t freq_hz, uint8_t mode) {
+    if (freq_hz == 0) return;
+    k_spi_cfg_imu.freq_hz = freq_hz;
+    k_spi_cfg_imu.mode = mode;
+    hal_log("ESP32: IMU SPI config set (freq=%luHz mode=%u)",
+            (unsigned long)k_spi_cfg_imu.freq_hz,
+            (unsigned)k_spi_cfg_imu.mode);
 }
 
 // ===================================================================
@@ -1094,9 +1108,11 @@ static void hal_esp32_common_boot_init(void) {
 void hal_esp32_init_imu_bringup(void) {
     hal_esp32_common_boot_init();
 
-    // IMU only (explicitly no actuator dependency in bring-up mode)
+    // IMU + steering-angle ADC for SPI cross-device diagnostics.
+    // Keep actuator/network disabled in bring-up mode.
     hal_imu_begin();
-    hal_log("ESP32: IMU bring-up HAL init complete (actuator/network skipped)");
+    hal_steer_angle_begin();
+    hal_log("ESP32: IMU bring-up HAL init complete (ADS enabled, actuator/network skipped)");
 }
 
 void hal_esp32_init_all(void) {

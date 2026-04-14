@@ -123,6 +123,12 @@ bool hal_imu_detect_boot_qualified(HalImuDetectStats* out);
 /// Return IMU SPI pin mapping + SPI settings used by HAL.
 void hal_imu_get_spi_info(HalImuSpiInfo* out);
 
+/// Override IMU SPI bus parameters at runtime (bring-up diagnostics).
+void hal_imu_set_spi_config(uint32_t freq_hz, uint8_t mode);
+
+/// Perform one raw IMU SPI probe transfer and return response byte.
+bool hal_imu_probe_once(uint8_t* out_response);
+
 // --- Steering Angle Sensor ---
 
 /// Initialise steering angle sensor on SPI.
