@@ -79,6 +79,17 @@ typedef struct {
     uint8_t mode;
 } HalImuSpiInfo;
 
+/// Boot-time IMU detection statistics (multi-sample qualification).
+typedef struct {
+    uint16_t samples;
+    uint16_t ok_count;
+    uint16_t ff_count;
+    uint16_t zero_count;
+    uint16_t other_count;
+    uint8_t last_response;
+    bool present;
+} HalImuDetectStats;
+
 /// Initialise SPI bus 2 (sensor bus) and all chip selects.
 void hal_sensor_spi_init(void);
 
@@ -104,6 +115,10 @@ bool hal_imu_read(float* yaw_rate_dps, float* roll_deg);
 /// Detect if IMU chip is present on SPI bus (call after hal_imu_begin).
 /// Performs a chip ID read to verify hardware responds.
 bool hal_imu_detect(void);
+
+/// Boot-time qualified IMU detection.
+/// Performs multiple samples and classifies responses.
+bool hal_imu_detect_boot_qualified(HalImuDetectStats* out);
 
 /// Return IMU SPI pin mapping + SPI settings used by HAL.
 void hal_imu_get_spi_info(HalImuSpiInfo* out);

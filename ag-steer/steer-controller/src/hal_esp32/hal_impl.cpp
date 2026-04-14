@@ -401,6 +401,47 @@ bool hal_imu_detect(void) {
     return detected;
 }
 
+bool hal_imu_detect_boot_qualified(HalImuDetectStats* out) {
+    HalImuDetectStats local = {};
+    local.samples = 20;
+    local.last_response = 0x00;
+
+    for (uint16_t i = 0; i < local.samples; i++) {
+        uint8_t tx = 0x00;
+        uint8_t response = 0;
+        spiTransfer(SpiClient::BNO085, &tx, &response, 1);
+        local.last_response = response;
+
+        if (response == 0xFF) {
+            local.ff_count++;
+        } else if (response == 0x00) {
+            local.zero_count++;
+        } else {
+            local.ok_count++;
+            local.other_count++;
+        }
+
+        delay(10);
+    }
+
+    // Qualification threshold: require at least 80% non-zero/non-FF responses.
+    // This avoids one-off glitches flipping boot presence.
+    local.present = (local.ok_count >= 16);
+
+    hal_log("ESP32: IMU boot check: present=%s ok=%u/%u ff=%u zero=%u last=0x%02X",
+            local.present ? "YES" : "NO",
+            (unsigned)local.ok_count,
+            (unsigned)local.samples,
+            (unsigned)local.ff_count,
+            (unsigned)local.zero_count,
+            (unsigned)local.last_response);
+
+    if (out) {
+        *out = local;
+    }
+    return local.present;
+}
+
 void hal_imu_get_spi_info(HalImuSpiInfo* out) {
     if (!out) return;
     out->sck_pin = SENS_SPI_SCK;

@@ -185,8 +185,10 @@ static void commTaskFunc(void* param) {
 
             const bool steer_angle_valid =
                 dep_policy::isSteerAngleInputValid(now, steer_ts_ms, steer_quality_ok);
+            const ModuleHwStatus* hw = modulesGetHwStatus();
+            const bool imu_hw_detected = hw ? hw->imu_detected : false;
             const bool imu_valid =
-                dep_policy::isImuInputValid(now, imu_ts_ms, imu_quality_ok);
+                imu_hw_detected && dep_policy::isImuInputValid(now, imu_ts_ms, imu_quality_ok);
 
             // Hardware status monitoring via hw_status subsystem
             uint8_t err_count = hwStatusUpdate(

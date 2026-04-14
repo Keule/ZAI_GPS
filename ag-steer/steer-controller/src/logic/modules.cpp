@@ -75,7 +75,19 @@ void modulesInit(void) {
     s_hw.was_detected = feat::sensor() ? hal_steer_angle_detect() : true;
 
     // IMU (BNO085)
-    s_hw.imu_detected = feat::imu() ? hal_imu_detect() : true;
+    if (feat::imu()) {
+        HalImuDetectStats imu_ds = {};
+        s_hw.imu_detected = hal_imu_detect_boot_qualified(&imu_ds);
+        hal_log("MODULES: IMU boot detect      : %s (ok=%u/%u ff=%u zero=%u last=0x%02X)",
+                s_hw.imu_detected ? "OK" : "FAIL",
+                (unsigned)imu_ds.ok_count,
+                (unsigned)imu_ds.samples,
+                (unsigned)imu_ds.ff_count,
+                (unsigned)imu_ds.zero_count,
+                (unsigned)imu_ds.last_response);
+    } else {
+        s_hw.imu_detected = true;
+    }
 
     // Actuator
     s_hw.actuator_detected = feat::actor() ? hal_actuator_detect() : true;
