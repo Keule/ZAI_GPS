@@ -120,6 +120,7 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
         case aog_pgn::STEER_DATA_IN: {
             AogSteerDataIn msg;
             if (pgnDecodeSteerDataIn(payload, payload_len, &msg)) {
+                const uint32_t now_ms = hal_millis();
                 // Update desired steer angle from AgIO
                 desiredSteerAngleDeg = msg.steerAngle / 100.0f;
 
@@ -134,8 +135,9 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
                     g_nav.gps_speed_kmh = msg.speed / 10.0f;
 
                     // Reset watchdog – AgIO is alive
-                    g_nav.watchdog_timer_ms = hal_millis();
+                    g_nav.watchdog_timer_ms = now_ms;
                 }
+                markInputMeta(Capability::SteerDataIn, now_ms, 100, true);
             }
             break;
         }
@@ -166,6 +168,7 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
                         (unsigned)settings.lowPWM, (unsigned)settings.minPWM,
                         (unsigned)settings.countsPerDegree, (int)settings.wasOffset,
                         (unsigned)settings.ackerman);
+                markInputMeta(Capability::SteerSettings, hal_millis(), 100, true);
             }
             break;
         }
@@ -185,6 +188,7 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
                     g_nav.config_min_speed = config.minSpeed;
                     g_nav.config_received  = true;
                 }
+                markInputMeta(Capability::SteerConfig, hal_millis(), 100, true);
 
                 // TODO: apply hardware config bits (invert WAS, relay polarity,
                 // motor direction, Cytron driver mode, etc.)
@@ -266,24 +270,28 @@ void netSendAogFrames(void) {
     // ----------------------------------------------------------
     {
         StateLock lock;
-        int16_t angle_x100 = static_cast<int16_t>(g_nav.steer_angle_deg * 100.0f);
-        int16_t heading_x10 = static_cast<int16_t>(g_nav.heading_deg * 10.0f);
-        int16_t roll_x10    = static_cast<int16_t>(g_nav.roll_deg * 10.0f);
+        if (!canBuildSteerStatusOut(g_nav, now)) {
+            tx_len = 0;
+        } else {
+            int16_t angle_x100 = static_cast<int16_t>(g_nav.steer_angle_deg * 100.0f);
+            int16_t heading_x10 = static_cast<int16_t>(g_nav.heading_deg * 10.0f);
+            int16_t roll_x10    = static_cast<int16_t>(g_nav.roll_deg * 10.0f);
 
-        // Switch byte: bit 7 = safety (0=OK, 1=KICK), bit 0 = steer switch relay
-        // Also include work switch state
-        uint8_t switch_st = 0;
-        if (!g_nav.safety_ok)   switch_st |= 0x80;
-        if (g_nav.work_switch) switch_st |= 0x01;
-        if (g_nav.steer_switch) switch_st |= 0x02;
+            // Switch byte: bit 7 = safety (0=OK, 1=KICK), bit 0 = steer switch relay
+            // Also include work switch state
+            uint8_t switch_st = 0;
+            if (!g_nav.safety_ok)   switch_st |= 0x80;
+            if (g_nav.work_switch) switch_st |= 0x01;
+            if (g_nav.steer_switch) switch_st |= 0x02;
 
-        // PWM display: map PID output (0-65535) to 0-255
-        uint8_t pwm_disp = static_cast<uint8_t>(
-            (g_nav.pid_output * 255.0f) / 65535.0f);
+            // PWM display: map PID output (0-65535) to 0-255
+            uint8_t pwm_disp = static_cast<uint8_t>(
+                (g_nav.pid_output * 255.0f) / 65535.0f);
 
-        tx_len = pgnEncodeSteerStatusOut(tx_buf, sizeof(tx_buf),
-                                         angle_x100, heading_x10, roll_x10,
-                                         switch_st, pwm_disp);
+            tx_len = pgnEncodeSteerStatusOut(tx_buf, sizeof(tx_buf),
+                                             angle_x100, heading_x10, roll_x10,
+                                             switch_st, pwm_disp);
+        }
         if (tx_len > 0) {
             hal_net_send(tx_buf, tx_len, aog_port::STEER);
         }
@@ -295,9 +303,13 @@ void netSendAogFrames(void) {
     // ----------------------------------------------------------
     {
         StateLock lock;
-        // Send raw sensor value (low byte of raw ADC)
-        uint8_t sensor_val = static_cast<uint8_t>(g_nav.steer_angle_raw & 0xFF);
-        tx_len = pgnEncodeFromAutosteer2(tx_buf, sizeof(tx_buf), sensor_val);
+        if (!canBuildFromAutosteer2(g_nav, now)) {
+            tx_len = 0;
+        } else {
+            // Send raw sensor value (low byte of raw ADC)
+            uint8_t sensor_val = static_cast<uint8_t>(g_nav.steer_angle_raw & 0xFF);
+            tx_len = pgnEncodeFromAutosteer2(tx_buf, sizeof(tx_buf), sensor_val);
+        }
         if (tx_len > 0) {
             hal_net_send(tx_buf, tx_len, aog_port::STEER);
         }

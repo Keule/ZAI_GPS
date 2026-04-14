@@ -23,8 +23,10 @@ void imuInit(void) {
 bool imuUpdate(void) {
     float yaw_rate = 0.0f;
     float roll = 0.0f;
+    const uint32_t now_ms = hal_millis();
 
     if (!hal_imu_read(&yaw_rate, &roll)) {
+        markInputMeta(Capability::Imu, now_ms, 0, false);
         return false;
     }
 
@@ -32,8 +34,9 @@ bool imuUpdate(void) {
         StateLock lock;
         g_nav.yaw_rate_dps = yaw_rate;
         g_nav.roll_deg = roll;
-        g_nav.timestamp_ms = hal_millis();
+        g_nav.timestamp_ms = now_ms;
     }
+    markInputMeta(Capability::Imu, now_ms, 100, true);
 
     return true;
 }

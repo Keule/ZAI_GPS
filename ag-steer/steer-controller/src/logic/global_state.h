@@ -11,6 +11,46 @@
 #include <cstdint>
 
 // ---------------------------------------------------------------------------
+// Input metadata + capability guards
+// ---------------------------------------------------------------------------
+struct InputMeta {
+    uint32_t timestamp_ms = 0;  // Last update timestamp [ms since boot]
+    uint8_t  quality = 0;       // 0..100 quality score
+    bool     valid = false;     // true if latest value passed validation
+};
+
+struct NavigationState;
+
+enum class Capability : uint8_t {
+    SteerDataIn,
+    Imu,
+    SteerAngle,
+    SteerSettings,
+    SteerConfig
+};
+
+/// Mark input metadata for a specific capability.
+void markInputMeta(Capability capability,
+                   uint32_t timestamp_ms,
+                   uint8_t quality,
+                   bool valid);
+
+/// Utility: check if metadata is fresh (handles uint32 wraparound).
+bool isFresh(const InputMeta& meta, uint32_t now_ms, uint32_t max_age_ms);
+
+/// Utility: input must be valid and fresh.
+bool isValidAndFresh(const InputMeta& meta, uint32_t now_ms, uint32_t max_age_ms);
+
+/// Output guard: build/send PGN 253 (Steer Status Out) allowed.
+bool canBuildSteerStatusOut(const NavigationState& nav, uint32_t now_ms);
+
+/// Output guard: build/send PGN 250 (From Autosteer 2) allowed.
+bool canBuildFromAutosteer2(const NavigationState& nav, uint32_t now_ms);
+
+/// Output guard: actuator command path allowed.
+bool canActuateSteer(const NavigationState& nav, uint32_t now_ms);
+
+// ---------------------------------------------------------------------------
 // Mutex abstraction – implemented in HAL
 // ---------------------------------------------------------------------------
 extern "C" {
@@ -71,6 +111,13 @@ struct NavigationState {
 
     // --- Timing ---
     uint32_t timestamp_ms;    // last update timestamp [ms]
+
+    // --- Input metadata ---
+    InputMeta meta_steer_data;
+    InputMeta meta_imu;
+    InputMeta meta_steer_angle;
+    InputMeta meta_steer_settings;
+    InputMeta meta_steer_config;
 };
 
 // ---------------------------------------------------------------------------

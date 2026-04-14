@@ -27,10 +27,6 @@
 /// Watchdog: disable steering if no PGN 254 received for this many ms
 constexpr uint32_t WATCHDOG_TIMEOUT_MS = 2500;
 
-/// Minimum GPS speed [km/h] to allow auto-steering.
-/// Reference disables steering below 0.1 km/h for safety.
-constexpr float MIN_STEER_SPEED_KMH = 0.1f;
-
 // ===================================================================
 // Globals – actual definition in global_state.cpp
 // ===================================================================
@@ -232,16 +228,18 @@ void controlStep(void) {
     }
 
     // ----------------------------------------------------------
-    // 5. Watchdog check: disable steering if AgIO stopped sending
+    // 5. Capability guard: watchdog/freshness + speed + validity
     // ----------------------------------------------------------
+    bool allow_actuation = false;
     {
         StateLock lock;
-        uint32_t elapsed = now_ms - g_nav.watchdog_timer_ms;
-        g_nav.watchdog_triggered = (elapsed > WATCHDOG_TIMEOUT_MS);
+        g_nav.watchdog_triggered = !isValidAndFresh(
+            g_nav.meta_steer_data, now_ms, WATCHDOG_TIMEOUT_MS);
+        allow_actuation = canActuateSteer(g_nav, now_ms);
     }
 
-    if (g_nav.watchdog_triggered) {
-        // AgIO heartbeat lost — disable steering for safety
+    if (!allow_actuation) {
+        // One of the capability conditions is not met -> force safe output.
         pidReset(&s_steer_pid);
         {
             StateLock lock;
@@ -252,21 +250,7 @@ void controlStep(void) {
     }
 
     // ----------------------------------------------------------
-    // 6. Speed safety check: don't steer below minimum speed
-    // ----------------------------------------------------------
-    {
-        StateLock lock;
-        if (g_nav.gps_speed_kmh < MIN_STEER_SPEED_KMH) {
-            // Vehicle is too slow or stationary — disable steering
-            pidReset(&s_steer_pid);
-            g_nav.pid_output = 0;
-            actuatorWriteCommand(0);
-            return;
-        }
-    }
-
-    // ----------------------------------------------------------
-    // 7. PID computation
+    // 6. PID computation
     // ----------------------------------------------------------
     float setpoint = desiredSteerAngleDeg;
     float error = setpoint - current_angle;
@@ -282,13 +266,13 @@ void controlStep(void) {
     float output = pidCompute(&s_steer_pid, error, dt);
 
     // ----------------------------------------------------------
-    // 8. Write actuator command
+    // 7. Write actuator command
     // ----------------------------------------------------------
     uint16_t cmd = static_cast<uint16_t>(output);
     actuatorWriteCommand(cmd);
 
     // ----------------------------------------------------------
-    // 9. Update timestamp and PID output for status reporting
+    // 8. Update timestamp and PID output for status reporting
     // ----------------------------------------------------------
     {
         StateLock lock;

@@ -14,6 +14,8 @@
 #include "esp_log.h"
 #include "log_ext.h"
 
+#include <cmath>
+
 void steerAngleInit(void) {
     hal_steer_angle_begin();
     LOGI("WAS", "initialised (SPI stub)");
@@ -21,11 +23,14 @@ void steerAngleInit(void) {
 
 float steerAngleReadDeg(void) {
     float angle = hal_steer_angle_read_deg();
+    const uint32_t now_ms = hal_millis();
+    const bool valid = std::isfinite(angle);
 
     {
         StateLock lock;
         g_nav.steer_angle_deg = angle;
     }
+    markInputMeta(Capability::SteerAngle, now_ms, valid ? 100 : 0, valid);
 
     return angle;
 }

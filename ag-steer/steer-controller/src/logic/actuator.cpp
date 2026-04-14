@@ -6,6 +6,7 @@
  */
 
 #include "actuator.h"
+#include "global_state.h"
 #include "hal/hal.h"
 
 #include "log_config.h"
@@ -19,5 +20,12 @@ void actuatorInit(void) {
 }
 
 void actuatorWriteCommand(uint16_t cmd) {
+    if (cmd > 0) {
+        const uint32_t now_ms = hal_millis();
+        StateLock lock;
+        if (!canActuateSteer(g_nav, now_ms)) {
+            cmd = 0;
+        }
+    }
     hal_actuator_write(cmd);
 }
