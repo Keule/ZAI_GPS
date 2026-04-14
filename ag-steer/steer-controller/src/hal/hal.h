@@ -56,6 +56,18 @@ bool hal_safety_ok(void);
 // SPI Sensors / Actuator
 // ===================================================================
 
+/// Aggregated telemetry for the shared sensor SPI bus.
+typedef struct {
+    uint32_t window_ms;
+    float bus_utilization_pct;
+    uint32_t bus_transactions;
+    uint32_t bus_busy_us;
+    uint32_t imu_transactions;
+    uint32_t was_transactions;
+    uint32_t imu_deadline_miss;
+    uint32_t was_deadline_miss;
+} HalSpiTelemetry;
+
 /// Initialise SPI bus 2 (sensor bus) and all chip selects.
 void hal_sensor_spi_init(void);
 
@@ -66,6 +78,9 @@ void hal_sensor_spi_deinit(void);
 /// Re-initialise SPI bus 2 (sensor bus) after a temporary release.
 /// Used to restore the sensor bus after an SD card operation.
 void hal_sensor_spi_reinit(void);
+
+/// Copy current SPI telemetry counters into @p out.
+void hal_sensor_spi_get_telemetry(HalSpiTelemetry* out);
 
 // --- IMU (BNO085) ---
 

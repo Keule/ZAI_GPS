@@ -68,6 +68,7 @@ static void controlTaskFunc(void* param) {
     uint32_t ctrl_dbg_count = 0;
     uint32_t ctrl_freq_start = hal_millis();
     uint32_t log_divider = 0;
+    uint32_t last_spi_tm_ms = 0;
 
     for (;;) {
         // ----------------------------- Input / Processing -----------------------------
@@ -92,6 +93,21 @@ static void controlTaskFunc(void* param) {
                 ctrl_dbg_count = 0;
                 Serial.printf("[DBG-CTRL] %.1f Hz\n", hz);
             }
+        }
+
+        const uint32_t now_ms = hal_millis();
+        if (now_ms - last_spi_tm_ms >= 5000) {
+            last_spi_tm_ms = now_ms;
+            HalSpiTelemetry tm = {};
+            hal_sensor_spi_get_telemetry(&tm);
+            hal_log("SPI: util=%.1f%% bus_tx=%lu busy=%luus imu_tx=%lu was_tx=%lu miss(imu=%lu was=%lu)",
+                    tm.bus_utilization_pct,
+                    (unsigned long)tm.bus_transactions,
+                    (unsigned long)tm.bus_busy_us,
+                    (unsigned long)tm.imu_transactions,
+                    (unsigned long)tm.was_transactions,
+                    (unsigned long)tm.imu_deadline_miss,
+                    (unsigned long)tm.was_deadline_miss);
         }
 
         // Maintain fixed 200 Hz timing with minimal jitter.

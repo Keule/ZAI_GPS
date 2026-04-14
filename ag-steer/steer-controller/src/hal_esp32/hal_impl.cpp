@@ -43,6 +43,7 @@
 #include <WiFiUdp.h>
 #include <Preferences.h>    // NVS flash storage for calibration
 #include "driver_ads1118.h"  // libdriver ADS1118
+#include <cstring>
 
 // ===================================================================
 // ETH driver selection based on Arduino ESP32 Core version
@@ -95,6 +96,115 @@ static bool s_eth_has_ip     = false;   // true if ARDUINO_EVENT_ETH_GOT_IP
 // hal_sensor_spi_deinit() / hal_sensor_spi_reinit().
 // ===================================================================
 static SPIClass sensorSPI(FSPI);
+
+// ===================================================================
+// Shared sensor SPI transaction layer (bus lock + per-device settings)
+// ===================================================================
+enum class SpiClient : uint8_t {
+    ADS1118 = 0,
+    BNO085 = 1,
+    ACTUATOR = 2,
+};
+
+struct SpiClientConfig {
+    int cs_pin;
+    uint32_t freq_hz;
+    uint8_t mode;
+    uint32_t period_us;   // polling interval target
+};
+
+static const SpiClientConfig k_spi_cfg_ads = {CS_STEER_ANG, 2000000, SPI_MODE1, 10000};  // 100 Hz
+static const SpiClientConfig k_spi_cfg_imu = {CS_IMU,       1000000, SPI_MODE0,  5000};  // 200 Hz
+static const SpiClientConfig k_spi_cfg_act = {CS_ACT,       1000000, SPI_MODE0,     0};  // event-driven
+
+static SemaphoreHandle_t s_spi_bus_mutex = nullptr;
+
+struct SpiPollState {
+    uint32_t next_due_us = 0;
+    uint32_t deadline_miss = 0;
+    uint32_t transactions = 0;
+};
+
+struct SpiBusTelemetry {
+    uint32_t window_start_us = 0;
+    uint32_t busy_us = 0;
+    uint32_t transactions = 0;
+};
+
+static SpiPollState s_poll_imu;
+static SpiPollState s_poll_was;
+static SpiBusTelemetry s_bus_tm;
+
+static int16_t s_was_raw_cache = 0;
+static uint32_t s_was_last_poll_us = 0;
+static bool s_was_cache_valid = false;
+
+static float s_imu_yaw_cache = 0.0f;
+static float s_imu_roll_cache = 0.0f;
+static uint32_t s_imu_last_poll_us = 0;
+static bool s_imu_cache_valid = false;
+
+static const SpiClientConfig& spiCfg(SpiClient client) {
+    switch (client) {
+    case SpiClient::ADS1118: return k_spi_cfg_ads;
+    case SpiClient::BNO085: return k_spi_cfg_imu;
+    case SpiClient::ACTUATOR: return k_spi_cfg_act;
+    }
+    return k_spi_cfg_ads;
+}
+
+static void spiBeginCritical(void) {
+    if (s_spi_bus_mutex) {
+        xSemaphoreTake(s_spi_bus_mutex, portMAX_DELAY);
+    }
+}
+
+static void spiEndCritical(void) {
+    if (s_spi_bus_mutex) {
+        xSemaphoreGive(s_spi_bus_mutex);
+    }
+}
+
+static bool spiTransfer(SpiClient client, const uint8_t* tx, uint8_t* rx, size_t len) {
+    const SpiClientConfig& cfg = spiCfg(client);
+    if (len == 0) return true;
+
+    const uint32_t t0 = micros();
+    spiBeginCritical();
+
+    digitalWrite(CS_STEER_ANG, HIGH);
+    digitalWrite(CS_IMU, HIGH);
+    digitalWrite(CS_ACT, HIGH);
+
+    sensorSPI.beginTransaction(SPISettings(cfg.freq_hz, MSBFIRST, cfg.mode));
+    digitalWrite(cfg.cs_pin, LOW);
+    for (size_t i = 0; i < len; i++) {
+        const uint8_t v = sensorSPI.transfer(tx ? tx[i] : 0xFF);
+        if (rx) rx[i] = v;
+    }
+    digitalWrite(cfg.cs_pin, HIGH);
+    sensorSPI.endTransaction();
+
+    spiEndCritical();
+    const uint32_t dt = micros() - t0;
+    s_bus_tm.busy_us += dt;
+    s_bus_tm.transactions++;
+    return true;
+}
+
+static void spiCheckDeadline(SpiPollState* poll, uint32_t period_us, uint32_t now_us) {
+    if (!poll || period_us == 0) return;
+    if (poll->next_due_us == 0) {
+        poll->next_due_us = now_us + period_us;
+        return;
+    }
+    if (now_us > poll->next_due_us + period_us) {
+        poll->deadline_miss++;
+    }
+    while (poll->next_due_us <= now_us) {
+        poll->next_due_us += period_us;
+    }
+}
 
 // ===================================================================
 // Mutex (FreeRTOS recursive mutex) — for NavigationState protection
@@ -194,12 +304,22 @@ bool hal_safety_ok(void) {
 // ===================================================================
 void hal_sensor_spi_init(void) {
     sensorSPI.begin(SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI, -1);
+    if (!s_spi_bus_mutex) {
+        s_spi_bus_mutex = xSemaphoreCreateMutex();
+    }
+    s_bus_tm.window_start_us = micros();
+    s_bus_tm.busy_us = 0;
+    s_bus_tm.transactions = 0;
+    s_poll_imu = {};
+    s_poll_was = {};
     hal_log("ESP32: sensor SPI initialised on FSPI/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
             SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
 }
 
 void hal_sensor_spi_deinit(void) {
+    spiBeginCritical();
     sensorSPI.end();
+    spiEndCritical();
     hal_log("ESP32: shared SPI released (FSPI peripheral free)");
 }
 
@@ -209,12 +329,33 @@ void hal_sensor_spi_reinit(void) {
     // the FSPI peripheral in an inconsistent state.  Calling end()
     // again on our sensorSPI forces a clean release, then we re-init
     // with a settling delay.
+    spiBeginCritical();
     sensorSPI.end();
     delay(50);   // let SPI peripheral fully settle
     sensorSPI.begin(SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI, -1);
+    spiEndCritical();
     delay(10);   // let GPIO matrix reconfigure
     hal_log("ESP32: shared SPI re-initialised on FSPI/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
             SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
+}
+
+void hal_sensor_spi_get_telemetry(HalSpiTelemetry* out) {
+    if (!out) return;
+    std::memset(out, 0, sizeof(*out));
+    const uint32_t now_us = micros();
+    const uint32_t win_us = (s_bus_tm.window_start_us == 0 || now_us <= s_bus_tm.window_start_us)
+                                ? 0
+                                : (now_us - s_bus_tm.window_start_us);
+    out->window_ms = win_us / 1000;
+    out->bus_busy_us = s_bus_tm.busy_us;
+    out->bus_transactions = s_bus_tm.transactions;
+    out->imu_transactions = s_poll_imu.transactions;
+    out->was_transactions = s_poll_was.transactions;
+    out->imu_deadline_miss = s_poll_imu.deadline_miss;
+    out->was_deadline_miss = s_poll_was.deadline_miss;
+    if (win_us > 0) {
+        out->bus_utilization_pct = (100.0f * static_cast<float>(s_bus_tm.busy_us)) / static_cast<float>(win_us);
+    }
 }
 
 void hal_imu_begin(void) {
@@ -225,9 +366,21 @@ void hal_imu_begin(void) {
 }
 
 bool hal_imu_read(float* yaw_rate_dps, float* roll_deg) {
-    // TODO: Implement BNO085 SH-2 SPI read protocol
-    *yaw_rate_dps = 0.0f;
-    *roll_deg = 0.0f;
+    if (!yaw_rate_dps || !roll_deg) return false;
+    const uint32_t now_us = micros();
+    if (!s_imu_cache_valid || (now_us - s_imu_last_poll_us) >= k_spi_cfg_imu.period_us) {
+        spiCheckDeadline(&s_poll_imu, k_spi_cfg_imu.period_us, now_us);
+        uint8_t tx[4] = {0x00, 0x00, 0x00, 0x00};
+        uint8_t rx[4] = {0};
+        spiTransfer(SpiClient::BNO085, tx, rx, sizeof(tx));
+        s_imu_yaw_cache = 0.0f;   // TODO: decode SH-2 payload
+        s_imu_roll_cache = 0.0f;  // TODO: decode SH-2 payload
+        s_imu_last_poll_us = now_us;
+        s_imu_cache_valid = true;
+        s_poll_imu.transactions++;
+    }
+    *yaw_rate_dps = s_imu_yaw_cache;
+    *roll_deg = s_imu_roll_cache;
     return true;
 }
 
@@ -235,11 +388,9 @@ bool hal_imu_detect(void) {
     // BNO085 detection: read chip ID from register 0x00
     // Expected chip ID: 0x00 (BNO085 responds to SPI reset)
     // For now, verify SPI bus is responsive by attempting a transfer
-    sensorSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
-    digitalWrite(CS_IMU, LOW);
-    uint8_t response = sensorSPI.transfer(0x00);
-    digitalWrite(CS_IMU, HIGH);
-    sensorSPI.endTransaction();
+    uint8_t tx = 0x00;
+    uint8_t response = 0;
+    spiTransfer(SpiClient::BNO085, &tx, &response, 1);
 
     // 0xFF = floating MISO (no device pulling it down)
     // 0x00 = MISO stuck LOW (bus fault)
@@ -300,9 +451,6 @@ static constexpr uint32_t NVS_CAL_MAGIC = 0xA6511C00;  // magic to validate stor
 
 // --- libdriver interface functions (static, ESP32-specific) ---
 
-/// SPI clock: 2 MHz (safe for ADS1118, matches working test script)
-static constexpr uint32_t ADS1118_SPI_FREQ = 2000000;
-
 static uint8_t ads1118_if_spi_init(void) {
     pinMode(CS_STEER_ANG, OUTPUT);
     digitalWrite(CS_STEER_ANG, HIGH);
@@ -314,20 +462,7 @@ static uint8_t ads1118_if_spi_deinit(void) {
 }
 
 static uint8_t ads1118_if_spi_transmit(uint8_t *tx, uint8_t *rx, uint16_t len) {
-    // Deselect other SPI devices on the shared bus
-    digitalWrite(CS_IMU, HIGH);
-    digitalWrite(CS_ACT, HIGH);
-
-    // ADS1118 uses SPI Mode 1 (CPOL=0, CPHA=1) per datasheet
-    sensorSPI.beginTransaction(SPISettings(ADS1118_SPI_FREQ, MSBFIRST, SPI_MODE1));
-    digitalWrite(CS_STEER_ANG, LOW);
-
-    for (uint16_t i = 0; i < len; i++) {
-        rx[i] = sensorSPI.transfer(tx[i]);
-    }
-
-    digitalWrite(CS_STEER_ANG, HIGH);
-    sensorSPI.endTransaction();
+    spiTransfer(SpiClient::ADS1118, tx, rx, len);
     return 0;
 }
 
@@ -351,10 +486,19 @@ static void ads1118_if_debug_print(const char *const fmt, ...) {
 /// This avoids the libdriver's config register read-back which can
 /// trigger "range is invalid" if SPI returns garbage.
 static int16_t ads1118_read_raw(void) {
+    const uint32_t now_us = micros();
+    if (s_was_cache_valid && (now_us - s_was_last_poll_us) < k_spi_cfg_ads.period_us) {
+        return s_was_raw_cache;
+    }
+    spiCheckDeadline(&s_poll_was, k_spi_cfg_ads.period_us, now_us);
     uint8_t tx[2] = {0xFF, 0xFF};
-    uint8_t rx[2];
+    uint8_t rx[2] = {0};
     ads1118_if_spi_transmit(tx, rx, 2);
-    return static_cast<int16_t>((static_cast<uint16_t>(rx[0]) << 8) | rx[1]);
+    s_was_raw_cache = static_cast<int16_t>((static_cast<uint16_t>(rx[0]) << 8) | rx[1]);
+    s_was_last_poll_us = now_us;
+    s_was_cache_valid = true;
+    s_poll_was.transactions++;
+    return s_was_raw_cache;
 }
 
 /// Read multiple raw samples and return the median value.
@@ -689,11 +833,9 @@ void hal_actuator_begin(void) {
 bool hal_actuator_detect(void) {
     // Actuator is write-only, hard to verify by reading back.
     // Just verify the SPI bus works by attempting a transfer.
-    sensorSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
-    digitalWrite(CS_ACT, LOW);
-    uint8_t response = sensorSPI.transfer(0x00);
-    digitalWrite(CS_ACT, HIGH);
-    sensorSPI.endTransaction();
+    uint8_t tx = 0x00;
+    uint8_t response = 0;
+    spiTransfer(SpiClient::ACTUATOR, &tx, &response, 1);
 
     bool detected = true;  // Stub: assume OK (actuator is write-only)
     hal_log("ESP32: Actuator detect: SPI %s", detected ? "OK" : "FAIL");
@@ -701,12 +843,11 @@ bool hal_actuator_detect(void) {
 }
 
 void hal_actuator_write(uint16_t cmd) {
-    sensorSPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
-    digitalWrite(CS_ACT, LOW);
-    sensorSPI.transfer(static_cast<uint8_t>((cmd >> 8) & 0xFF));
-    sensorSPI.transfer(static_cast<uint8_t>(cmd & 0xFF));
-    digitalWrite(CS_ACT, HIGH);
-    sensorSPI.endTransaction();
+    uint8_t tx[2] = {
+        static_cast<uint8_t>((cmd >> 8) & 0xFF),
+        static_cast<uint8_t>(cmd & 0xFF)
+    };
+    spiTransfer(SpiClient::ACTUATOR, tx, nullptr, sizeof(tx));
 }
 
 // ===================================================================
