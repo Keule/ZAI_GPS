@@ -120,21 +120,19 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
         case aog_pgn::STEER_DATA_IN: {
             AogSteerDataIn msg;
             if (pgnDecodeSteerDataIn(payload, payload_len, &msg)) {
-                // Update desired steer angle from AgIO
-                desiredSteerAngleDeg = msg.steerAngle / 100.0f;
+                const float steer_setpoint_deg = msg.steerAngle / 100.0f;
+                const float speed_kmh = msg.speed / 10.0f;
+                const uint32_t now_ms = hal_millis();
 
-                // Decode status byte: work switch, steer switch, steer on
+                // Output write phase: commit all command inputs consistently.
+                desiredSteerAngleDeg = steer_setpoint_deg;
                 {
                     StateLock lock;
                     g_nav.work_switch      = (msg.status & STATUS_BIT_WORK_SWITCH) != 0;
                     g_nav.steer_switch     = (msg.status & STATUS_BIT_STEER_SWITCH) != 0;
                     g_nav.last_status_byte = msg.status;
-
-                    // Store GPS speed for safety check [km/h]
-                    g_nav.gps_speed_kmh = msg.speed / 10.0f;
-
-                    // Reset watchdog – AgIO is alive
-                    g_nav.watchdog_timer_ms = hal_millis();
+                    g_nav.gps_speed_kmh     = speed_kmh;
+                    g_nav.watchdog_timer_ms = now_ms;
                 }
             }
             break;
@@ -258,48 +256,55 @@ void netSendAogFrames(void) {
     if (now - s_last_send_ms < SEND_INTERVAL_MS) return;
     s_last_send_ms = now;
 
-    uint8_t tx_buf[aog_frame::MAX_FRAME];
-    size_t tx_len = 0;
+    struct NetTxSnapshot {
+        float steer_angle_deg = 0.0f;
+        float heading_deg = 0.0f;
+        float roll_deg = 0.0f;
+        bool safety_ok = false;
+        bool work_switch = false;
+        bool steer_switch = false;
+        uint16_t pid_output = 0;
+        int16_t steer_angle_raw = 0;
+    } snap;
 
-    // ----------------------------------------------------------
-    // 1. Steer Status Out (PGN 253) -> AgIO port 9999
-    // ----------------------------------------------------------
+    // Input phase: take one consistent state snapshot.
     {
         StateLock lock;
-        int16_t angle_x100 = static_cast<int16_t>(g_nav.steer_angle_deg * 100.0f);
-        int16_t heading_x10 = static_cast<int16_t>(g_nav.heading_deg * 10.0f);
-        int16_t roll_x10    = static_cast<int16_t>(g_nav.roll_deg * 10.0f);
-
-        // Switch byte: bit 7 = safety (0=OK, 1=KICK), bit 0 = steer switch relay
-        // Also include work switch state
-        uint8_t switch_st = 0;
-        if (!g_nav.safety_ok)   switch_st |= 0x80;
-        if (g_nav.work_switch) switch_st |= 0x01;
-        if (g_nav.steer_switch) switch_st |= 0x02;
-
-        // PWM display: map PID output (0-65535) to 0-255
-        uint8_t pwm_disp = static_cast<uint8_t>(
-            (g_nav.pid_output * 255.0f) / 65535.0f);
-
-        tx_len = pgnEncodeSteerStatusOut(tx_buf, sizeof(tx_buf),
-                                         angle_x100, heading_x10, roll_x10,
-                                         switch_st, pwm_disp);
-        if (tx_len > 0) {
-            hal_net_send(tx_buf, tx_len, aog_port::STEER);
-        }
+        snap.steer_angle_deg = g_nav.steer_angle_deg;
+        snap.heading_deg = g_nav.heading_deg;
+        snap.roll_deg = g_nav.roll_deg;
+        snap.safety_ok = g_nav.safety_ok;
+        snap.work_switch = g_nav.work_switch;
+        snap.steer_switch = g_nav.steer_switch;
+        snap.pid_output = g_nav.pid_output;
+        snap.steer_angle_raw = g_nav.steer_angle_raw;
     }
 
-    // ----------------------------------------------------------
-    // 2. From Autosteer 2 (PGN 250) -> AgIO port 9999
-    //    Sensor value byte for steer angle sensor (raw ADC low byte)
-    // ----------------------------------------------------------
-    {
-        StateLock lock;
-        // Send raw sensor value (low byte of raw ADC)
-        uint8_t sensor_val = static_cast<uint8_t>(g_nav.steer_angle_raw & 0xFF);
-        tx_len = pgnEncodeFromAutosteer2(tx_buf, sizeof(tx_buf), sensor_val);
-        if (tx_len > 0) {
-            hal_net_send(tx_buf, tx_len, aog_port::STEER);
-        }
+    // Processing phase: encode payloads from snapshot.
+    uint8_t tx_buf[aog_frame::MAX_FRAME];
+    size_t tx_len = 0;
+    const int16_t angle_x100 = static_cast<int16_t>(snap.steer_angle_deg * 100.0f);
+    const int16_t heading_x10 = static_cast<int16_t>(snap.heading_deg * 10.0f);
+    const int16_t roll_x10 = static_cast<int16_t>(snap.roll_deg * 10.0f);
+
+    uint8_t switch_st = 0;
+    if (!snap.safety_ok)  switch_st |= 0x80;
+    if (snap.work_switch) switch_st |= 0x01;
+    if (snap.steer_switch) switch_st |= 0x02;
+
+    const uint8_t pwm_disp = static_cast<uint8_t>((snap.pid_output * 255.0f) / 65535.0f);
+
+    // Output phase: network sends happen outside of state lock.
+    tx_len = pgnEncodeSteerStatusOut(tx_buf, sizeof(tx_buf),
+                                     angle_x100, heading_x10, roll_x10,
+                                     switch_st, pwm_disp);
+    if (tx_len > 0) {
+        hal_net_send(tx_buf, tx_len, aog_port::STEER);
+    }
+
+    const uint8_t sensor_val = static_cast<uint8_t>(snap.steer_angle_raw & 0xFF);
+    tx_len = pgnEncodeFromAutosteer2(tx_buf, sizeof(tx_buf), sensor_val);
+    if (tx_len > 0) {
+        hal_net_send(tx_buf, tx_len, aog_port::STEER);
     }
 }

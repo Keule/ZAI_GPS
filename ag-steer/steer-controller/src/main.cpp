@@ -51,17 +51,23 @@ static void controlTaskFunc(void* param) {
     vTaskDelay(pdMS_TO_TICKS(500));
 
     const TickType_t interval = pdMS_TO_TICKS(5);  // 200 Hz = 5 ms
+    TickType_t next_wake = xTaskGetTickCount();
     uint32_t ctrl_dbg_count = 0;
     uint32_t ctrl_freq_start = hal_millis();
+    uint32_t log_divider = 0;
 
     for (;;) {
-        uint32_t start = hal_millis();
-
-        // Run one control step
+        // ----------------------------- Input / Processing -----------------------------
         controlStep();
 
-        // Buffer one log record (subsampled to 10 Hz internally)
-        sdLoggerRecord();
+        // ------------------------------- Output phase --------------------------------
+        // Keep potentially blocking logger writes out of every 200 Hz iteration.
+        // Log only every 20 cycles (= 10 Hz).
+        log_divider++;
+        if (log_divider >= 20) {
+            log_divider = 0;
+            sdLoggerRecord();
+        }
 
         // Heartbeat DBG every 1s (= every 200 iterations)
         ctrl_dbg_count++;
@@ -71,14 +77,10 @@ static void controlTaskFunc(void* param) {
             ctrl_freq_start = freq_now;
             ctrl_dbg_count = 0;
             Serial.printf("[DBG-CTRL] %.1f Hz\n", hz);
-            Serial.flush();
         }
 
-        // Maintain 200 Hz timing
-        uint32_t elapsed = hal_millis() - start;
-        if (elapsed < 5) {
-            vTaskDelay(interval - pdMS_TO_TICKS(elapsed));
-        }
+        // Maintain fixed 200 Hz timing with minimal jitter.
+        vTaskDelayUntil(&next_wake, interval);
     }
 }
 
@@ -93,9 +95,9 @@ static void commTaskFunc(void* param) {
     vTaskDelay(pdMS_TO_TICKS(2000));
 
     Serial.println("[DBG-COMM] wait done, entering poll loop");
-    Serial.flush();
 
     const TickType_t poll_interval = pdMS_TO_TICKS(10);  // 100 Hz polling
+    TickType_t next_wake = xTaskGetTickCount();
 
     // Hardware status update runs at ~1 Hz
     static uint32_t s_last_hw_status_ms = 0;
@@ -104,10 +106,13 @@ static void commTaskFunc(void* param) {
     uint32_t comm_freq_start = hal_millis();
 
     for (;;) {
-        // Poll network for incoming frames
+        // ---------------------------------- Input -----------------------------------
         netPollReceive();
 
-        // Send periodic AOG frames (~10 Hz)
+        // -------------------------------- Processing --------------------------------
+        modulesUpdateStatus();
+
+        // ---------------------------------- Output ----------------------------------
         netSendAogFrames();
 
         // Heartbeat DBG every 5s (= every 500 iterations)
@@ -118,16 +123,12 @@ static void commTaskFunc(void* param) {
             comm_freq_start = freq_now;
             comm_dbg_count = 0;
             Serial.printf("[DBG-COMM] %.1f Hz\n", hz);
-            Serial.flush();
         }
 
         // Hardware status monitoring (~1 Hz)
         uint32_t now = hal_millis();
         if (now - s_last_hw_status_ms >= HW_STATUS_INTERVAL_MS) {
             s_last_hw_status_ms = now;
-
-            // Update dynamic module status (safety changes)
-            modulesUpdateStatus();
 
             // Hardware status monitoring via hw_status subsystem
             uint8_t err_count = hwStatusUpdate(
@@ -143,8 +144,7 @@ static void commTaskFunc(void* param) {
             }
         }
 
-        // Yield to IDLE task – prevents watchdog trigger
-        vTaskDelay(poll_interval);
+        vTaskDelayUntil(&next_wake, poll_interval);
     }
 }
 
@@ -347,7 +347,6 @@ void loop() {
             s_loop_freq_count = 0;
             Serial.printf("[DBG-LOOP] %.1f Hz\n", hz);
         }
-        Serial.flush();
     }
 
     vTaskDelay(pdMS_TO_TICKS(100));

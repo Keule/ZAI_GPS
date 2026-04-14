@@ -172,127 +172,79 @@ void controlUpdateSettings(uint8_t kp, uint8_t highPWM, uint8_t lowPWM,
 }
 
 void controlStep(void) {
-    uint32_t now_ms = hal_millis();
+    struct ControlInputSnapshot {
+        uint32_t now_ms = 0;
+        bool safety_ok = false;
+        bool auto_steer_enabled = false;
+        float gps_speed_kmh = 0.0f;
+        uint32_t watchdog_timer_ms = 0;
+        float setpoint_deg = 0.0f;
+        float current_angle_deg = 0.0f;
+        int16_t steer_raw = 0;
+    };
+
+    struct ControlOutputSnapshot {
+        uint16_t actuator_cmd = 0;
+        bool watchdog_triggered = false;
+        bool reset_pid = false;
+    };
 
     // ----------------------------------------------------------
-    // 1. Safety check (hardware safety circuit)
+    // Input phase (read once, then process from snapshot)
     // ----------------------------------------------------------
-    bool safety = hal_safety_ok();
-    {
-        StateLock lock;
-        g_nav.safety_ok = safety;
-    }
-
-    if (!safety) {
-        // Emergency: disable actuator immediately
-        actuatorWriteCommand(0);
-        pidReset(&s_steer_pid);
-        {
-            StateLock lock;
-            g_nav.pid_output = 0;
-        }
-        return;
-    }
-
-    // ----------------------------------------------------------
-    // 2. Read IMU (yaw rate, roll)
-    // ----------------------------------------------------------
+    ControlInputSnapshot in;
+    in.now_ms = hal_millis();
+    in.safety_ok = hal_safety_ok();
     imuUpdate();
+    in.current_angle_deg = steerAngleReadDeg();
+    in.steer_raw = hal_steer_angle_read_raw();
+    in.setpoint_deg = desiredSteerAngleDeg;
 
-    // ----------------------------------------------------------
-    // 3. Read steering angle
-    // ----------------------------------------------------------
-    float current_angle = steerAngleReadDeg();
-
-    // Store raw ADC value for protocol messages
     {
         StateLock lock;
-        g_nav.steer_angle_raw = hal_steer_angle_read_raw();
+        in.auto_steer_enabled = g_nav.work_switch && g_nav.steer_switch;
+        in.gps_speed_kmh = g_nav.gps_speed_kmh;
+        in.watchdog_timer_ms = g_nav.watchdog_timer_ms;
     }
 
     // ----------------------------------------------------------
-    // 4. Check if auto-steer is enabled (work + steer switches)
+    // Processing phase (pure computation / decisions)
     // ----------------------------------------------------------
-    bool auto_steer = false;
-    {
-        StateLock lock;
-        auto_steer = g_nav.work_switch && g_nav.steer_switch;
+    ControlOutputSnapshot out;
+    out.watchdog_triggered = (in.now_ms - in.watchdog_timer_ms > WATCHDOG_TIMEOUT_MS);
+
+    if (!in.safety_ok || !in.auto_steer_enabled ||
+        out.watchdog_triggered || in.gps_speed_kmh < MIN_STEER_SPEED_KMH) {
+        out.actuator_cmd = 0;
+        out.reset_pid = true;
+    } else {
+        float error = in.setpoint_deg - in.current_angle_deg;
+        while (error > 180.0f)  error -= 360.0f;
+        while (error < -180.0f) error += 360.0f;
+
+        uint32_t dt = in.now_ms - s_steer_pid.last_update_ms;
+        if (dt > 100) dt = 5;  // prevent huge dt after pause
+        s_steer_pid.last_update_ms = in.now_ms;
+
+        const float output = pidCompute(&s_steer_pid, error, dt);
+        out.actuator_cmd = static_cast<uint16_t>(output);
     }
 
-    if (!auto_steer) {
-        // Auto-steer disabled: hold current position or center
-        // Reset PID to prevent windup while steering is off
+    // ----------------------------------------------------------
+    // Output phase (single writer update + actuator command)
+    // ----------------------------------------------------------
+    if (out.reset_pid) {
         pidReset(&s_steer_pid);
-        {
-            StateLock lock;
-            g_nav.pid_output = 0;
-        }
-        actuatorWriteCommand(0);
-        return;
     }
 
-    // ----------------------------------------------------------
-    // 5. Watchdog check: disable steering if AgIO stopped sending
-    // ----------------------------------------------------------
+    actuatorWriteCommand(out.actuator_cmd);
+
     {
         StateLock lock;
-        uint32_t elapsed = now_ms - g_nav.watchdog_timer_ms;
-        g_nav.watchdog_triggered = (elapsed > WATCHDOG_TIMEOUT_MS);
-    }
-
-    if (g_nav.watchdog_triggered) {
-        // AgIO heartbeat lost — disable steering for safety
-        pidReset(&s_steer_pid);
-        {
-            StateLock lock;
-            g_nav.pid_output = 0;
-        }
-        actuatorWriteCommand(0);
-        return;
-    }
-
-    // ----------------------------------------------------------
-    // 6. Speed safety check: don't steer below minimum speed
-    // ----------------------------------------------------------
-    {
-        StateLock lock;
-        if (g_nav.gps_speed_kmh < MIN_STEER_SPEED_KMH) {
-            // Vehicle is too slow or stationary — disable steering
-            pidReset(&s_steer_pid);
-            g_nav.pid_output = 0;
-            actuatorWriteCommand(0);
-            return;
-        }
-    }
-
-    // ----------------------------------------------------------
-    // 7. PID computation
-    // ----------------------------------------------------------
-    float setpoint = desiredSteerAngleDeg;
-    float error = setpoint - current_angle;
-
-    // Wrap error to [-180, +180]
-    while (error > 180.0f)  error -= 360.0f;
-    while (error < -180.0f) error += 360.0f;
-
-    uint32_t dt = now_ms - s_steer_pid.last_update_ms;
-    if (dt > 100) dt = 5;  // prevent huge dt after pause
-    s_steer_pid.last_update_ms = now_ms;
-
-    float output = pidCompute(&s_steer_pid, error, dt);
-
-    // ----------------------------------------------------------
-    // 8. Write actuator command
-    // ----------------------------------------------------------
-    uint16_t cmd = static_cast<uint16_t>(output);
-    actuatorWriteCommand(cmd);
-
-    // ----------------------------------------------------------
-    // 9. Update timestamp and PID output for status reporting
-    // ----------------------------------------------------------
-    {
-        StateLock lock;
-        g_nav.timestamp_ms = now_ms;
-        g_nav.pid_output = cmd;
+        g_nav.safety_ok = in.safety_ok;
+        g_nav.steer_angle_raw = in.steer_raw;
+        g_nav.watchdog_triggered = out.watchdog_triggered;
+        g_nav.timestamp_ms = in.now_ms;
+        g_nav.pid_output = out.actuator_cmd;
     }
 }
