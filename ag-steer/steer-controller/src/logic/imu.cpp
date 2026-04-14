@@ -81,35 +81,33 @@ void applyCase(uint8_t idx) {
     hal_imu_set_spi_config(c.freq_hz, c.mode);
     resetPhaseStats();
     s_phase_start_ms = hal_millis();
-    LOGI("IMU-BRINGUP",
-         "phase_start idx=%u/%u label=%s imu_spi[freq=%lu mode=%u] ads_ping=%s",
-         (unsigned)idx + 1u,
-         (unsigned)(sizeof(k_cases) / sizeof(k_cases[0])),
-         c.label,
-         (unsigned long)c.freq_hz,
-         (unsigned)c.mode,
-         c.ads_ping ? "ON" : "OFF");
+    hal_log("IMU-BRINGUP: phase_start idx=%u/%u label=%s imu_spi[freq=%lu mode=%u] ads_ping=%s",
+            (unsigned)idx + 1u,
+            (unsigned)(sizeof(k_cases) / sizeof(k_cases[0])),
+            c.label,
+            (unsigned long)c.freq_hz,
+            (unsigned)c.mode,
+            c.ads_ping ? "ON" : "OFF");
 }
 
 void logPhaseSummary(uint8_t idx) {
     if (idx >= (sizeof(k_cases) / sizeof(k_cases[0]))) return;
     const BringupModeCase& c = k_cases[idx];
-    LOGI("IMU-BRINGUP",
-         "phase_done idx=%u label=%s probes=%lu ok=%lu ff=%lu zero=%lu other=%lu last=0x%02X reads_ok=%lu reads_fail=%lu ads_reads=%lu ads_last=%d ads_min=%d ads_max=%d",
-         (unsigned)idx + 1u,
-         c.label,
-         (unsigned long)s_phase_stats.probes,
-         (unsigned long)s_phase_stats.probe_ok,
-         (unsigned long)s_phase_stats.probe_ff,
-         (unsigned long)s_phase_stats.probe_zero,
-         (unsigned long)s_phase_stats.probe_other,
-         (unsigned)s_phase_stats.last_rsp,
-         (unsigned long)s_read_ok,
-         (unsigned long)s_read_fail,
-         (unsigned long)s_phase_stats.ads_reads,
-         (int)s_phase_stats.ads_last,
-         s_phase_stats.ads_seen ? (int)s_phase_stats.ads_min : 0,
-         s_phase_stats.ads_seen ? (int)s_phase_stats.ads_max : 0);
+    hal_log("IMU-BRINGUP: phase_done idx=%u label=%s probes=%lu ok=%lu ff=%lu zero=%lu other=%lu last=0x%02X reads_ok=%lu reads_fail=%lu ads_reads=%lu ads_last=%d ads_min=%d ads_max=%d",
+            (unsigned)idx + 1u,
+            c.label,
+            (unsigned long)s_phase_stats.probes,
+            (unsigned long)s_phase_stats.probe_ok,
+            (unsigned long)s_phase_stats.probe_ff,
+            (unsigned long)s_phase_stats.probe_zero,
+            (unsigned long)s_phase_stats.probe_other,
+            (unsigned)s_phase_stats.last_rsp,
+            (unsigned long)s_read_ok,
+            (unsigned long)s_read_fail,
+            (unsigned long)s_phase_stats.ads_reads,
+            (int)s_phase_stats.ads_last,
+            s_phase_stats.ads_seen ? (int)s_phase_stats.ads_min : 0,
+            s_phase_stats.ads_seen ? (int)s_phase_stats.ads_max : 0);
 }
 }  // namespace
 
@@ -151,11 +149,10 @@ void imuBringupInit(void) {
     HalImuSpiInfo spi = {};
     hal_imu_get_spi_info(&spi);
 
-    LOGI("IMU-BRINGUP",
-         "mode=ON imu_spi pins[sck=%d miso=%d mosi=%d cs=%d int=%d] params[freq=%luHz mode=%u] intervals[detect=%lums read=%lums]",
-         spi.sck_pin, spi.miso_pin, spi.mosi_pin, spi.cs_pin, spi.int_pin,
-         (unsigned long)spi.freq_hz, (unsigned)spi.mode,
-         (unsigned long)k_detect_interval_ms, (unsigned long)k_read_interval_ms);
+    hal_log("IMU-BRINGUP: mode=ON imu_spi pins[sck=%d miso=%d mosi=%d cs=%d int=%d] params[freq=%luHz mode=%u] intervals[detect=%lums read=%lums]",
+            spi.sck_pin, spi.miso_pin, spi.mosi_pin, spi.cs_pin, spi.int_pin,
+            (unsigned long)spi.freq_hz, (unsigned)spi.mode,
+            (unsigned long)k_detect_interval_ms, (unsigned long)k_read_interval_ms);
 
     s_last_detect_ms = 0;
     s_last_read_ms = 0;
@@ -167,13 +164,12 @@ void imuBringupInit(void) {
     s_matrix_done = false;
     applyCase(s_phase_index);
 
-    LOGI("IMU-BRINGUP",
-         "matrix cases=%u phase_ms=%lu detect_ms=%lu read_ms=%lu ads_ms=%lu",
-         (unsigned)(sizeof(k_cases) / sizeof(k_cases[0])),
-         (unsigned long)k_phase_duration_ms,
-         (unsigned long)k_detect_interval_ms,
-         (unsigned long)k_read_interval_ms,
-         (unsigned long)k_ads_interval_ms);
+    hal_log("IMU-BRINGUP: matrix cases=%u phase_ms=%lu detect_ms=%lu read_ms=%lu ads_ms=%lu",
+            (unsigned)(sizeof(k_cases) / sizeof(k_cases[0])),
+            (unsigned long)k_phase_duration_ms,
+            (unsigned long)k_detect_interval_ms,
+            (unsigned long)k_read_interval_ms,
+            (unsigned long)k_ads_interval_ms);
 }
 
 void imuBringupTick(void) {
@@ -186,7 +182,7 @@ void imuBringupTick(void) {
         if (s_phase_index >= (sizeof(k_cases) / sizeof(k_cases[0]))) {
             s_matrix_done = true;
             s_phase_index = (sizeof(k_cases) / sizeof(k_cases[0])) - 1;
-            LOGI("IMU-BRINGUP", "matrix_done: holding last phase config for ongoing monitoring");
+            hal_log("IMU-BRINGUP: matrix_done: holding last phase config for ongoing monitoring");
         } else {
             applyCase(s_phase_index);
         }
@@ -209,12 +205,11 @@ void imuBringupTick(void) {
             s_phase_stats.probe_other++;
             s_last_detect_ok = true;
         }
-        LOGI("IMU-BRINGUP",
-             "probe=%s rsp=0x%02X phase=%u label=%s",
-             s_last_detect_ok ? "OK" : "FAIL",
-             (unsigned)rsp,
-             (unsigned)s_phase_index + 1u,
-             c.label);
+        hal_log("IMU-BRINGUP: probe=%s rsp=0x%02X phase=%u label=%s",
+                s_last_detect_ok ? "OK" : "FAIL",
+                (unsigned)rsp,
+                (unsigned)s_phase_index + 1u,
+                c.label);
     }
 
     if (now_ms - s_last_read_ms >= k_read_interval_ms) {
@@ -228,14 +223,13 @@ void imuBringupTick(void) {
             s_read_fail++;
         }
 
-        LOGI("IMU-BRINGUP",
-             "read=%s yaw=%.3f roll=%.3f cnt_ok=%lu cnt_fail=%lu detect=%s",
-             ok ? "OK" : "FAIL",
-             yaw_rate,
-             roll,
-             (unsigned long)s_read_ok,
-             (unsigned long)s_read_fail,
-             s_last_detect_ok ? "OK" : "FAIL");
+        hal_log("IMU-BRINGUP: read=%s yaw=%.3f roll=%.3f cnt_ok=%lu cnt_fail=%lu detect=%s",
+                ok ? "OK" : "FAIL",
+                yaw_rate,
+                roll,
+                (unsigned long)s_read_ok,
+                (unsigned long)s_read_fail,
+                s_last_detect_ok ? "OK" : "FAIL");
     }
 
     if (c.ads_ping && now_ms - s_last_ads_ms >= k_ads_interval_ms) {
@@ -251,10 +245,10 @@ void imuBringupTick(void) {
             if (raw < s_phase_stats.ads_min) s_phase_stats.ads_min = raw;
             if (raw > s_phase_stats.ads_max) s_phase_stats.ads_max = raw;
         }
-        LOGI("IMU-BRINGUP", "ads_ping raw=%d min=%d max=%d reads=%lu",
-             (int)raw,
-             (int)s_phase_stats.ads_min,
-             (int)s_phase_stats.ads_max,
-             (unsigned long)s_phase_stats.ads_reads);
+        hal_log("IMU-BRINGUP: ads_ping raw=%d min=%d max=%d reads=%lu",
+                (int)raw,
+                (int)s_phase_stats.ads_min,
+                (int)s_phase_stats.ads_max,
+                (unsigned long)s_phase_stats.ads_reads);
     }
 }
