@@ -27,16 +27,19 @@ constexpr uint32_t k_detect_interval_ms = 1000;
 constexpr uint32_t k_read_interval_ms = 100;
 constexpr uint32_t k_ads_interval_ms = 1000;
 constexpr uint32_t k_phase_duration_ms = 6000;
+constexpr uint32_t k_stats_interval_ms = 1000;
 constexpr uint32_t k_reset_low_ms = 10;
 constexpr uint32_t k_reset_settle_ms = 20;
-constexpr uint8_t k_spi_mode_0 = 0;
 constexpr uint8_t k_spi_mode_3 = 3;
 uint32_t s_last_detect_ms = 0;
 uint32_t s_last_read_ms = 0;
 uint32_t s_last_ads_ms = 0;
+uint32_t s_last_stats_ms = 0;
 uint32_t s_read_ok = 0;
 uint32_t s_read_fail = 0;
 bool s_last_detect_ok = false;
+bool s_prev_detect_ok = false;
+bool s_has_prev_detect = false;
 
 struct BringupModeCase {
     uint32_t freq_hz;
@@ -46,12 +49,7 @@ struct BringupModeCase {
 };
 
 constexpr BringupModeCase k_cases[] = {
-    {100000,  k_spi_mode_3, false, "m3_100k_imu_only"},
-    {500000,  k_spi_mode_3, false, "m3_500k_imu_only"},
-    {1000000, k_spi_mode_3, false, "m3_1m_imu_only"},
-    {100000,  k_spi_mode_0, false, "m0_100k_imu_only"},
-    {1000000, k_spi_mode_0, false, "m0_1m_imu_only"},
-    {1000000, k_spi_mode_3, true,  "m3_1m_with_ads"},
+    {100000,  k_spi_mode_3, false, "m3_100k_soak"},
 };
 
 struct BringupStats {
@@ -160,9 +158,12 @@ void imuBringupInit(void) {
     s_last_detect_ms = 0;
     s_last_read_ms = 0;
     s_last_ads_ms = 0;
+    s_last_stats_ms = 0;
     s_read_ok = 0;
     s_read_fail = 0;
     s_last_detect_ok = false;
+    s_prev_detect_ok = false;
+    s_has_prev_detect = false;
     s_phase_index = 0;
     s_matrix_done = false;
     applyCase(s_phase_index);
@@ -208,11 +209,15 @@ void imuBringupTick(void) {
             s_phase_stats.probe_other++;
             s_last_detect_ok = true;
         }
-        hal_log("IMU-BRINGUP: probe=%s rsp=0x%02X phase=%u label=%s",
-                s_last_detect_ok ? "OK" : "FAIL",
-                (unsigned)rsp,
-                (unsigned)s_phase_index + 1u,
-                c.label);
+        if (!s_has_prev_detect || s_last_detect_ok != s_prev_detect_ok) {
+            s_has_prev_detect = true;
+            s_prev_detect_ok = s_last_detect_ok;
+            hal_log("IMU-BRINGUP: detect_transition=%s rsp=0x%02X phase=%u label=%s",
+                    s_last_detect_ok ? "OK" : "FAIL",
+                    (unsigned)rsp,
+                    (unsigned)s_phase_index + 1u,
+                    c.label);
+        }
     }
 
     if (now_ms - s_last_read_ms >= k_read_interval_ms) {
@@ -226,13 +231,8 @@ void imuBringupTick(void) {
             s_read_fail++;
         }
 
-        hal_log("IMU-BRINGUP: read=%s yaw=%.3f roll=%.3f cnt_ok=%lu cnt_fail=%lu detect=%s",
-                ok ? "OK" : "FAIL",
-                yaw_rate,
-                roll,
-                (unsigned long)s_read_ok,
-                (unsigned long)s_read_fail,
-                s_last_detect_ok ? "OK" : "FAIL");
+        (void)yaw_rate;
+        (void)roll;
     }
 
     if (c.ads_ping && now_ms - s_last_ads_ms >= k_ads_interval_ms) {
@@ -253,5 +253,21 @@ void imuBringupTick(void) {
                 (int)s_phase_stats.ads_min,
                 (int)s_phase_stats.ads_max,
                 (unsigned long)s_phase_stats.ads_reads);
+    }
+
+    if (now_ms - s_last_stats_ms >= k_stats_interval_ms) {
+        s_last_stats_ms = now_ms;
+        hal_log("IMU-BRINGUP: stats phase=%u label=%s reads(ok=%lu fail=%lu) probes(total=%lu ok=%lu ff=%lu zero=%lu other=%lu last=0x%02X) detect=%s",
+                (unsigned)s_phase_index + 1u,
+                c.label,
+                (unsigned long)s_read_ok,
+                (unsigned long)s_read_fail,
+                (unsigned long)s_phase_stats.probes,
+                (unsigned long)s_phase_stats.probe_ok,
+                (unsigned long)s_phase_stats.probe_ff,
+                (unsigned long)s_phase_stats.probe_zero,
+                (unsigned long)s_phase_stats.probe_other,
+                (unsigned)s_phase_stats.last_rsp,
+                s_last_detect_ok ? "OK" : "FAIL");
     }
 }
