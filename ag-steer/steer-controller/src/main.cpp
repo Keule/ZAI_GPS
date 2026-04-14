@@ -365,15 +365,16 @@ void loop() {
         // Heartbeat DBG every 1s (= every ~10 iterations at 100ms delay)
         s_loop_dbg_count++;
         if (s_loop_dbg_count <= 5 || s_loop_dbg_count % 10 == 0) {
-            static uint32_t s_loop_freq_start = 0;
-            static uint32_t s_loop_freq_count = 0;
-            if (s_loop_freq_start == 0) s_loop_freq_start = hal_millis();
-            s_loop_freq_count++;
-            if (s_loop_freq_count >= 10) {
-                uint32_t freq_now = hal_millis();
-                float hz = (s_loop_freq_count * 1000.0f) / (float)(freq_now - s_loop_freq_start);
-                s_loop_freq_start = freq_now;
-                s_loop_freq_count = 0;
+            static uint32_t s_loop_freq_start_ms = 0;
+            static uint32_t s_loop_freq_samples = 0;
+            if (s_loop_freq_start_ms == 0) s_loop_freq_start_ms = hal_millis();
+            s_loop_freq_samples++;
+            if (s_loop_freq_samples >= 10) {
+                const uint32_t freq_now_ms = hal_millis();
+                const float hz =
+                    (s_loop_freq_samples * 1000.0f) / (float)(freq_now_ms - s_loop_freq_start_ms);
+                s_loop_freq_start_ms = freq_now_ms;
+                s_loop_freq_samples = 0;
                 Serial.printf("[DBG-LOOP] %.1f Hz\n", hz);
             }
         }

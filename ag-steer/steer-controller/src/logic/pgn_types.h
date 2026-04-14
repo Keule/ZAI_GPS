@@ -101,6 +101,9 @@ namespace aog_port {
     /// GPS module source port
     constexpr uint16_t GPS = 5124;
 
+    /// Machine module source port
+    constexpr uint16_t MACHINE = 5127;
+
     /// NMEA data port (unused in steer firmware)
     constexpr uint16_t NMEA = 29999;
 }

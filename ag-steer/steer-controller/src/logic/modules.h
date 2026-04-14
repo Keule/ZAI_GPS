@@ -4,8 +4,8 @@
  *
  * Defines all AgOpenGPS network modules implemented by this firmware,
  * tracks their hardware detection status, and provides functions to:
- *   - Send hello replies for all enabled modules
- *   - Send subnet replies for all enabled modules
+ *   - Send hello replies for all active modules
+ *   - Send subnet replies for all active modules
  *   - Report hardware errors via PGN 0xDD for failed modules
  *
  * AgOpenGPS module concept:
@@ -14,7 +14,9 @@
  *   (PGN 202) requests, and modules respond with hello/subnet replies.
  *
  * Modules implemented by this firmware:
- *   1. Steer Module (Src=0x7E, Port=5126) – steering control
+ *   1. Steer   (Src=0x7E, Port=5126)
+ *   2. GPS     (Src=0x7C, Port=5124)
+ *   3. Machine (Src=0x7B, Port=5127)
  *
  * Reference: https://github.com/AgOpenGPS-Official/Boards/blob/main/PGN.md
  */
@@ -29,6 +31,8 @@
 // ===================================================================
 enum AogModuleId : uint8_t {
     AOG_MOD_STEER = 0,   ///< Steering module (Src=0x7E, Port=5126)
+    AOG_MOD_GPS,         ///< GPS module (Src=0x7C, Port=5124)
+    AOG_MOD_MACHINE,     ///< Machine module (Src=0x7B, Port=5127)
     AOG_MOD_COUNT        ///< Number of defined modules
 };
 
@@ -48,6 +52,7 @@ struct ModuleHwStatus {
 // ===================================================================
 struct AogModuleInfo {
     uint8_t  src_id;       ///< AgOpenGPS Source ID (0x7E, 0x78, etc.)
+    uint8_t  hello_pgn;    ///< Hello reply PGN for this module
     uint16_t port;         ///< UDP port for this module's data
     const char* name;      ///< Human-readable module name
     bool     enabled;      ///< Software enabled (module is compiled in)
@@ -79,7 +84,7 @@ const AogModuleInfo* modulesGet(AogModuleId id);
 const ModuleHwStatus* modulesGetHwStatus(void);
 
 // ===================================================================
-// Send hello reply for ALL enabled modules.
+// Send hello reply for ALL active modules (enabled + hardware available).
 // Each module sends its specific hello PGN on its port:
 //   - Steer: PGN=0x7E, Src=0x7E, Len=5 (angle+counts+switch)
 // Call when AgIO Hello (PGN 200) is received.
@@ -87,7 +92,7 @@ const ModuleHwStatus* modulesGetHwStatus(void);
 void modulesSendHellos(void);
 
 // ===================================================================
-// Send subnet reply for ALL enabled modules.
+// Send subnet reply for ALL active modules (enabled + hardware available).
 // Each module sends: PGN=0xCB, Len=7 (IP + Subnet)
 // Call when AgIO Scan (PGN 202) is received.
 // ===================================================================

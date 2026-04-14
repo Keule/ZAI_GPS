@@ -6,8 +6,9 @@
  * AgOpenGPS protocol layer (PGN encoding, UDP sending).
  *
  * Module → Subsystem mapping:
- *   Steer Module requires: WAS (steer angle sensor), Actuator, Safety
- *   Steer Module uses:     Ethernet (W5500)
+ *   Steer Module   requires: Ethernet + WAS + IMU + Actuator + Safety
+ *   GPS Module     requires: Ethernet + WAS + IMU
+ *   Machine Module requires: Ethernet + Actuator
  *
  * Detection strategy:
  *   - SPI sensors: attempt chip ID / register read at init
@@ -36,7 +37,9 @@
 
 /// Module table – all modules this firmware implements
 static AogModuleInfo s_modules[AOG_MOD_COUNT] = {
-    { aog_src::STEER,     aog_port::STEER, "Steer", feat::comm(), false },
+    { aog_src::STEER,   aog_pgn::HELLO_REPLY_STEER, aog_port::STEER,   "Steer",   false, false },
+    { aog_src::GPS,     aog_pgn::HELLO_REPLY_GPS,   aog_port::GPS,     "GPS",     false, false },
+    { aog_src::MACHINE, aog_src::MACHINE,           aog_port::MACHINE, "Machine", false, false },
 };
 
 /// Hardware detection results (filled by modulesInit)
@@ -48,6 +51,10 @@ static uint8_t s_module_subnet[3] = {255, 255, 255};
 
 /// Track if startup errors have been sent
 static bool s_startup_errors_sent = false;
+
+static bool isModuleActive(const AogModuleInfo& mod) {
+    return mod.enabled && mod.hw_detected;
+}
 
 // ===================================================================
 // Init – detect all hardware
@@ -77,16 +84,23 @@ void modulesInit(void) {
     s_hw.safety_ok = feat::control() ? hal_safety_ok() : true;
     hal_log("MODULES: Safety Circuit       : %s", s_hw.safety_ok ? "OK" : "KICK");
 
-    // --- Derive module hw_detected from subsystems ---
+    // --- Derive module enablement + hw_detected from feature profiles ---
+    s_modules[AOG_MOD_STEER].enabled   = feat::control();
+    s_modules[AOG_MOD_GPS].enabled     = feat::sensor();
+    s_modules[AOG_MOD_MACHINE].enabled = feat::actor();
 
-    // Steer Module: needs Ethernet + WAS + Actuator + Safety
-    bool steer_hw_ok = true;
-    if (feat::comm())    steer_hw_ok = steer_hw_ok && s_hw.eth_detected;
-    if (feat::sensor())  steer_hw_ok = steer_hw_ok && s_hw.was_detected;
-    if (feat::imu())     steer_hw_ok = steer_hw_ok && s_hw.imu_detected;
-    if (feat::actor())   steer_hw_ok = steer_hw_ok && s_hw.actuator_detected;
-    if (feat::control()) steer_hw_ok = steer_hw_ok && s_hw.safety_ok;
-    s_modules[AOG_MOD_STEER].hw_detected = steer_hw_ok;
+    // Steer Module: needs Ethernet + WAS + IMU + Actuator + Safety
+    s_modules[AOG_MOD_STEER].hw_detected =
+        s_hw.eth_detected && s_hw.was_detected && s_hw.imu_detected &&
+        s_hw.actuator_detected && s_hw.safety_ok;
+
+    // GPS Module: needs Ethernet + WAS + IMU
+    s_modules[AOG_MOD_GPS].hw_detected =
+        s_hw.eth_detected && s_hw.was_detected && s_hw.imu_detected;
+
+    // Machine Module: needs Ethernet + actuator path
+    s_modules[AOG_MOD_MACHINE].hw_detected =
+        s_hw.eth_detected && s_hw.actuator_detected;
 
     // --- Log module summary ---
     hal_log("MODULES: === Module Summary ===");
@@ -130,13 +144,13 @@ void modulesSendHellos(void) {
     uint8_t buf[64];
 
     for (uint8_t i = 0; i < AOG_MOD_COUNT; i++) {
-        if (!s_modules[i].enabled) continue;
+        if (!isModuleActive(s_modules[i])) continue;
 
         const AogModuleInfo& mod = s_modules[i];
         size_t len = 0;
         const char* label = nullptr;
 
-        if (mod.src_id == aog_src::STEER) {
+        if (mod.hello_pgn == aog_pgn::HELLO_REPLY_STEER) {
             // Steer hello: PGN=0x7E, Len=5
             // Payload: steerAngle×100(2) + sensorCounts(2) + switchByte(1)
             StateLock lock;
@@ -148,6 +162,16 @@ void modulesSendHellos(void) {
             if (g_nav.steer_switch) sw |= 0x02; // bit 1 = steer switch
             len = pgnEncodeHelloReplySteer(buf, sizeof(buf), angle, counts, sw);
             label = "SteerHello";
+        } else if (mod.hello_pgn == aog_pgn::HELLO_REPLY_GPS) {
+            len = pgnEncodeHelloReplyGps(buf, sizeof(buf));
+            label = "GpsHello";
+        } else {
+            // Generic hello reply: 5-byte zero payload, PGN = module hello PGN.
+            // Used for modules without dedicated hello payload codec.
+            uint8_t payload[5] = {0, 0, 0, 0, 0};
+            len = pgnBuildFrame(buf, sizeof(buf), mod.src_id, mod.hello_pgn,
+                                payload, sizeof(payload));
+            label = "GenericHello";
         }
 
         if (len > 0) {
@@ -166,7 +190,7 @@ void modulesSendSubnetReplies(void) {
     uint8_t buf[64];
 
     for (uint8_t i = 0; i < AOG_MOD_COUNT; i++) {
-        if (!s_modules[i].enabled) continue;
+        if (!isModuleActive(s_modules[i])) continue;
 
         const AogModuleInfo& mod = s_modules[i];
         size_t len = pgnEncodeSubnetReply(buf, sizeof(buf),
@@ -212,49 +236,44 @@ void modulesSendStartupErrors(void) {
 
     hal_log("MODULES: === Startup Error Report ===");
 
-    // --- Check each subsystem and report if failed ---
-    // If network is up, errors go via UDP (PGN 0xDD) to AgIO.
-    // If network is down, errors go to Serial only.
-
-    // Ethernet
-    if (feat::comm() && !s_hw.eth_detected) {
-        reportError("Ethernet", "ERR Ethernet: W5500 Not Detected",
-                    aog_src::STEER, aog_hwmsg::COLOR_RED);
-    }
-
-    // IMU
-    if (feat::imu() && !s_hw.imu_detected) {
-        reportError("IMU", "ERR IMU (BNO085): Not Detected",
-                    aog_src::STEER, aog_hwmsg::COLOR_RED);
-    }
-
-    // Steer Angle Sensor
-    if (feat::sensor() && !s_hw.was_detected) {
-        reportError("SteerAngle", "ERR Steer Angle Sensor: Not Detected",
-                    aog_src::STEER, aog_hwmsg::COLOR_RED);
-    }
-
-    // Actuator
-    if (feat::actor() && !s_hw.actuator_detected) {
-        reportError("Actuator", "ERR Actuator: Not Detected",
-                    aog_src::STEER, aog_hwmsg::COLOR_RED);
-    }
-
-    // Safety Circuit
-    if (feat::control() && !s_hw.safety_ok) {
-        reportError("Safety", "ERR Safety Circuit: KICK Engaged",
-                    aog_src::STEER, aog_hwmsg::COLOR_RED);
-    }
-
-    // --- Module-level summaries ---
+    // --- Module-level subsystem checks (active profile only) ---
     for (uint8_t i = 0; i < AOG_MOD_COUNT; i++) {
         if (!s_modules[i].enabled) continue;
-        if (s_modules[i].hw_detected) continue;
+        const AogModuleInfo& mod = s_modules[i];
+
+        if (!s_hw.eth_detected) {
+            reportError(mod.name, "ERR Ethernet: W5500 Not Detected",
+                        mod.src_id, aog_hwmsg::COLOR_RED);
+        }
+
+        if (i == AOG_MOD_STEER || i == AOG_MOD_GPS) {
+            if (!s_hw.was_detected) {
+                reportError(mod.name, "ERR Steer Angle Sensor: Not Detected",
+                            mod.src_id, aog_hwmsg::COLOR_RED);
+            }
+            if (!s_hw.imu_detected) {
+                reportError(mod.name, "ERR IMU (BNO085): Not Detected",
+                            mod.src_id, aog_hwmsg::COLOR_RED);
+            }
+        }
+
+        if (i == AOG_MOD_STEER || i == AOG_MOD_MACHINE) {
+            if (!s_hw.actuator_detected) {
+                reportError(mod.name, "ERR Actuator: Not Detected",
+                            mod.src_id, aog_hwmsg::COLOR_RED);
+            }
+        }
+
+        if (i == AOG_MOD_STEER && !s_hw.safety_ok) {
+            reportError(mod.name, "ERR Safety Circuit: KICK Engaged",
+                        mod.src_id, aog_hwmsg::COLOR_RED);
+        }
 
         char msg[64];
-        std::snprintf(msg, sizeof(msg), "ERR Module %s: Not Available", s_modules[i].name);
-        reportError(s_modules[i].name, msg,
-                    s_modules[i].src_id, aog_hwmsg::COLOR_RED);
+        std::snprintf(msg, sizeof(msg), "ERR Module %s: Not Available", mod.name);
+        if (!mod.hw_detected) {
+            reportError(mod.name, msg, mod.src_id, aog_hwmsg::COLOR_RED);
+        }
     }
 
     hal_log("MODULES: === Startup Error Report Complete (%s) ===",
