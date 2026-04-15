@@ -68,19 +68,24 @@
 #define SENS_SPI_SCK   16     // SPI clock
 #define SENS_SPI_MISO  15     // SPI MISO (data from devices to ESP32)
 #define SENS_SPI_MOSI  17     // SPI MOSI (data from ESP32 to devices)
-#define IMU_RST        48
-#define IMU_INT        45 
+
+// Guard against accidental duplicate IMU pin definitions from build flags or
+// other headers. This file is the single source of truth for IMU wiring.
+#if defined(IMU_RST) || defined(IMU_INT) || defined(CS_IMU) || defined(IMU_WAKE)
+  #error "IMU pins already defined elsewhere; keep IMU pin mapping canonical in hardware_pins.h"
+#endif
+
 // Chip Selects (active LOW) - GPIOs 38-42 are output-only, which is fine for CS/control.
 #define CS_IMU          47    // BNO085 IMU
 #define CS_STEER_ANG   18    // ADS1118 ADC (steer angle potentiometer)
 #define CS_ACT         40    // Actuator driver
 
-// IMU reset (active LOW).
+// ---------------------------------------------------------------------------
+// Current IMU Wiring (single source of truth)
+// ---------------------------------------------------------------------------
+#define IMU_INT        45    // BNO085 INT pin (input to ESP32-S3)
 #define IMU_RST        48
-
-// BNO085 PS0/WAKE. Must be HIGH before reset to select SPI mode together
-// with PS1=HIGH, then can be driven LOW later to wake the device.
-#define IMU_WAKE       38
+#define IMU_WAKE       38    // BNO085 PS0/WAKE (set HIGH before reset for SPI mode)
 
 // ---------------------------------------------------------------------------
 // SD Card (FSPI = SPI2_HOST, OTA only)
@@ -94,11 +99,6 @@
 #define SD_SPI_MISO    5      // SPI MISO for SD card
 #define SD_SPI_MOSI    6      // SPI MOSI for SD card
 #define SD_CS          42     // SD card slot
-
-// ---------------------------------------------------------------------------
-// IMU interrupt (BNO085 INT pin) - needs bidirectional GPIO for input!
-// ---------------------------------------------------------------------------
-#define IMU_INT        45    // IMU INT routed to GPIO 45 (bring-up wiring)
 
 // ---------------------------------------------------------------------------
 // Safety input (active LOW)
