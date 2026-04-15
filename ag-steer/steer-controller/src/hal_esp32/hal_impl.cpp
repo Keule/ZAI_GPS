@@ -139,10 +139,6 @@ static int16_t s_was_raw_cache = 0;
 static uint32_t s_was_last_poll_us = 0;
 static bool s_was_cache_valid = false;
 
-static uint32_t s_bno08x_spi_start_us = 0;
-
-static uint32_t s_imu_last_poll_us = 0;
-
 static const SpiClientConfig& spiCfg(SpiClient client) {
     switch (client) {
     case SpiClient::ADS1118: return k_spi_cfg_ads;
@@ -191,55 +187,6 @@ static bool spiTransfer(SpiClient client, const uint8_t* tx, uint8_t* rx, size_t
     return true;
 }
 
-extern "C" bool BNO08x_platform_uses_external_spi(void* device) {
-    (void)device;
-    return true;
-}
-
-extern "C" void BNO08x_platform_spi_begin(void* device) {
-    (void)device;
-    const SpiClientConfig& cfg = k_spi_cfg_imu;
-    s_bno08x_spi_start_us = micros();
-
-    if (s_spi_bus_mutex) {
-        xSemaphoreTake(s_spi_bus_mutex, portMAX_DELAY);
-    }
-
-    digitalWrite(CS_STEER_ANG, HIGH);
-    digitalWrite(CS_IMU, HIGH);
-    digitalWrite(CS_ACT, HIGH);
-
-    sensorSPI.beginTransaction(SPISettings(cfg.freq_hz, MSBFIRST, cfg.mode));
-    digitalWrite(cfg.cs_pin, LOW);
-}
-
-extern "C" bool BNO08x_platform_transfer(void* device, const uint8_t* tx, uint8_t* rx, size_t len) {
-    (void)device;
-    for (size_t i = 0; i < len; i++) {
-        const uint8_t value = sensorSPI.transfer(tx ? tx[i] : 0x00);
-        if (rx) {
-            rx[i] = value;
-        }
-    }
-    return true;
-}
-
-extern "C" void BNO08x_platform_spi_end(void* device) {
-    (void)device;
-    digitalWrite(CS_IMU, HIGH);
-    sensorSPI.endTransaction();
-
-    if (s_spi_bus_mutex) {
-        xSemaphoreGive(s_spi_bus_mutex);
-    }
-
-    const uint32_t now_us = micros();
-    s_bus_tm.busy_us += now_us - s_bno08x_spi_start_us;
-    s_bus_tm.transactions++;
-    s_poll_imu.transactions++;
-    s_imu_last_poll_us = now_us;
-}
-
 static void spiCheckDeadline(SpiPollState* poll, uint32_t period_us, uint32_t now_us) {
     if (!poll || period_us == 0) return;
     if (poll->next_due_us == 0) {
@@ -261,6 +208,12 @@ void hal_esp32_imu_spi_check_deadline(uint32_t period_us, uint32_t now_us) {
 bool hal_esp32_imu_raw_transfer(const uint8_t* tx, uint8_t* rx, size_t len) {
     return spiTransfer(SpiClient::BNO085, tx, rx, len);
 }
+
+SPIClass& hal_esp32_sensor_spi_port(void) {
+    return sensorSPI;
+}
+
+void hal_imu_on_sensor_spi_reinit(void);
 
 // ===================================================================
 // Mutex (FreeRTOS recursive mutex) — for NavigationState protection
@@ -393,6 +346,7 @@ void hal_sensor_spi_reinit(void) {
     delay(10);   // let GPIO matrix reconfigure
     hal_log("ESP32: shared SPI re-initialised on FSPI/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
             SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
+    hal_imu_on_sensor_spi_reinit();
 }
 
 void hal_sensor_spi_get_telemetry(HalSpiTelemetry* out) {
@@ -641,6 +595,16 @@ static void wait_for_enter_live_adc(void) {
 }
 
 void hal_steer_angle_begin(void) {
+#if defined(BNO085_EXCLUSIVE_SPI_TEST)
+    s_ads1118_detected = false;
+    s_calibrated = true;
+    s_was_cache_valid = false;
+    pinMode(CS_STEER_ANG, OUTPUT);
+    digitalWrite(CS_STEER_ANG, HIGH);
+    hal_log("ESP32: ADS1118 disabled (BNO085_EXCLUSIVE_SPI_TEST)");
+    return;
+#endif
+
     // Ensure all other SPI device CS pins are configured as outputs
     pinMode(CS_IMU, OUTPUT);  digitalWrite(CS_IMU, HIGH);
     pinMode(CS_ACT, OUTPUT);  digitalWrite(CS_ACT, HIGH);
@@ -674,6 +638,11 @@ void hal_steer_angle_begin(void) {
 }
 
 bool hal_steer_angle_detect(void) {
+#if defined(BNO085_EXCLUSIVE_SPI_TEST)
+    hal_log("ESP32: ADS1118 detect skipped (BNO085_EXCLUSIVE_SPI_TEST)");
+    return true;
+#endif
+
     // Detection: try a direct raw read. If the value is not stuck at
     // 0x0000 or 0xFFFF (floating MISO), the ADS1118 is present.
     // Also discard 0x7FFF (all 1s in data, possible bus issue).
@@ -821,6 +790,10 @@ void hal_steer_angle_calibrate(void) {
 }
 
 float hal_steer_angle_read_deg(void) {
+#if defined(BNO085_EXCLUSIVE_SPI_TEST)
+    return 0.0f;
+#endif
+
     if (!s_ads1118_detected || !s_calibrated) {
         return 0.0f;  // Not detected or not calibrated — return neutral
     }
@@ -846,11 +819,19 @@ float hal_steer_angle_read_deg(void) {
 }
 
 int16_t hal_steer_angle_read_raw(void) {
+#if defined(BNO085_EXCLUSIVE_SPI_TEST)
+    return 0;
+#endif
+
     if (!s_ads1118_detected || !s_calibrated) return 0;
     return ads1118_read_raw();
 }
 
 bool hal_steer_angle_is_calibrated(void) {
+#if defined(BNO085_EXCLUSIVE_SPI_TEST)
+    return true;
+#endif
+
     return s_calibrated;
 }
 
@@ -860,10 +841,19 @@ bool hal_steer_angle_is_calibrated(void) {
 void hal_actuator_begin(void) {
     pinMode(CS_ACT, OUTPUT);
     digitalWrite(CS_ACT, HIGH);
+#if defined(BNO085_EXCLUSIVE_SPI_TEST)
+    hal_log("ESP32: Actuator SPI disabled (BNO085_EXCLUSIVE_SPI_TEST)");
+    return;
+#endif
     hal_log("ESP32: Actuator begun on CS=%d (stub)", CS_ACT);
 }
 
 bool hal_actuator_detect(void) {
+#if defined(BNO085_EXCLUSIVE_SPI_TEST)
+    hal_log("ESP32: Actuator detect skipped (BNO085_EXCLUSIVE_SPI_TEST)");
+    return true;
+#endif
+
     // Actuator is write-only, hard to verify by reading back.
     // Just verify the SPI bus works by attempting a transfer.
     uint8_t tx = 0x00;
@@ -876,6 +866,11 @@ bool hal_actuator_detect(void) {
 }
 
 void hal_actuator_write(uint16_t cmd) {
+#if defined(BNO085_EXCLUSIVE_SPI_TEST)
+    (void)cmd;
+    return;
+#endif
+
     uint8_t tx[2] = {
         static_cast<uint8_t>((cmd >> 8) & 0xFF),
         static_cast<uint8_t>(cmd & 0xFF)

@@ -187,7 +187,7 @@ static void commTaskFunc(void* param) {
                 dep_policy::isSteerAngleInputValid(now, steer_ts_ms, steer_quality_ok);
             const ModuleHwStatus* hw = modulesGetHwStatus();
             const bool imu_hw_detected = hw ? hw->imu_detected : false;
-            const bool imu_valid =
+            const bool imu_data_valid =
                 imu_hw_detected && dep_policy::isImuInputValid(now, imu_ts_ms, imu_quality_ok);
 
             // Hardware status monitoring via hw_status subsystem
@@ -195,8 +195,10 @@ static void commTaskFunc(void* param) {
                 hal_net_is_connected(),     // Ethernet connected
                 safety_ok,                  // Safety circuit OK
                 steer_angle_valid,          // steer angle freshness + plausibility
-                imu_valid                   // IMU freshness + plausibility
+                imu_hw_detected             // IMU hardware presence; data quality remains in g_nav
             );
+
+            (void)imu_data_valid;
 
             // Log only on count changes, plus occasional reminders.
             bool changed = (err_count != last_hw_err_count);
@@ -245,7 +247,6 @@ void setup() {
         hal_log("  Flash: %d KB free", (int)(ESP.getFreeSketchSpace() / 1024));
         hal_log("========================================");
     }
-
     if (s_imu_bringup_active) {
         hal_log("Main: IMU bring-up mode active (FEAT_IMU_BRINGUP).");
         imuBringupInit();
@@ -268,12 +269,16 @@ void setup() {
     // the SD card before booting.
     // -----------------------------------------------------------------
     {
+#if defined(BNO085_EXCLUSIVE_SPI_TEST)
+        hal_log("Main: SD OTA check skipped (BNO085_EXCLUSIVE_SPI_TEST keeps FSPI on IMU pins)");
+#else
         if (isFirmwareUpdateAvailableOnSD()) {
             hal_log("Main: firmware update detected on SD card – starting update");
             updateFirmwareFromSD();
             // If we reach here the update failed – continue with old firmware
             hal_log("Main: OTA update FAILED, continuing with current firmware");
         }
+#endif
     }
 
     // Initialise module system – detect hardware for all modules
@@ -346,9 +351,13 @@ void setup() {
     // The logger runs as a low-priority FreeRTOS task that periodically
     // drains a ring buffer to the SD card (every 2 seconds).
     // -----------------------------------------------------------------
+#if defined(BNO085_EXCLUSIVE_SPI_TEST)
+    hal_log("Main: SD logger skipped (BNO085_EXCLUSIVE_SPI_TEST keeps FSPI on IMU pins)");
+#else
     if (feat::control()) {
         sdLoggerInit();
     }
+#endif
 
     // Report initial hardware errors
     // Always call – reportError() will use UDP if network is up,

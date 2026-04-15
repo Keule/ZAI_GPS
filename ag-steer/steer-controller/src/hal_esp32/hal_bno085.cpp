@@ -1,49 +1,121 @@
 /**
  * @file hal_bno085.cpp
- * @brief BNO085 HAL binding using the local esp32_bno08x_driver.
+ * @brief BNO085 HAL binding using the 7Semi BNO08x SPI example pattern.
  */
 
 #include "hal/hal.h"
 #include "hardware_pins.h"
 
+#include <7Semi_BNO08x.h>
 #include <Arduino.h>
-#include <stddef.h>
+#include <BnoSPIBus.h>
+#include <SPI.h>
 
-extern "C" {
-#include "bno08x_driver.h"
-}
+SPIClass& hal_esp32_sensor_spi_port(void);
 
 namespace {
 
-constexpr uint32_t kBno085SpiHz = 1000000;
-constexpr uint32_t kBno085PeriodUs = 5000;
+constexpr uint32_t kBno085SpiHz = 3000000UL;
+constexpr uint16_t kBno085PeriodMs = 20;
 constexpr float kRadToDeg = 57.2957795f;
 
-BNO08x s_bno08x;
+BnoSPIBus* s_bno_bus = nullptr;
+BNO08x_7Semi* s_bno08x = nullptr;
+
 bool s_bno08x_begin_attempted = false;
 bool s_bno08x_ready = false;
-uint32_t s_bno08x_last_gyro_count = 0;
-uint32_t s_bno08x_last_quat_count = 0;
-
+bool s_reports_enabled = false;
+bool s_imu_cache_valid = false;
 float s_imu_yaw_cache = 0.0f;
 float s_imu_roll_cache = 0.0f;
-uint32_t s_imu_last_poll_us = 0;
+float s_imu_acc_x_cache = 0.0f;
+float s_imu_acc_y_cache = 0.0f;
+float s_imu_acc_z_cache = 0.0f;
 uint32_t s_imu_last_data_us = 0;
-bool s_imu_cache_valid = false;
+uint32_t s_last_diag_log_ms = 0;
+uint32_t s_diag_read_ok = 0;
+uint32_t s_diag_read_wait = 0;
+uint32_t s_spi_recover_count = 0;
+uint32_t s_diag_packet_count = 0;
 
-void enableRuntimeReports() {
-    BNO08x_enable_rotation_vector(&s_bno08x, kBno085PeriodUs);
-    BNO08x_enable_gyro(&s_bno08x, kBno085PeriodUs);
-    s_bno08x_last_gyro_count = BNO08x_get_gyro_update_count(&s_bno08x);
-    s_bno08x_last_quat_count = BNO08x_get_quat_update_count(&s_bno08x);
-    s_imu_last_data_us = 0;
+void prepareChipSelects() {
+    pinMode(CS_STEER_ANG, OUTPUT);
+    digitalWrite(CS_STEER_ANG, HIGH);
+    pinMode(CS_ACT, OUTPUT);
+    digitalWrite(CS_ACT, HIGH);
+    pinMode(CS_IMU, OUTPUT);
+    digitalWrite(CS_IMU, HIGH);
+
+    pinMode(IMU_WAKE, OUTPUT);
+    digitalWrite(IMU_WAKE, HIGH);
+}
+
+bool enableRuntimeReports() {
+    if (!s_bno08x) return false;
+
+    for (uint8_t i = 0; i < 5; i++) {
+        s_bno08x->processData();
+        delay(10);
+    }
+
+    const bool acc_ok = s_bno08x->enableAcc(kBno085PeriodMs);
+    const bool gyro_ok = s_bno08x->enableGyro(kBno085PeriodMs);
+    const bool mag_ok = s_bno08x->enableMag(50);
+    const bool rot_ok = s_bno08x->enableRotationVector(kBno085PeriodMs);
+    const bool lin_ok = s_bno08x->enableLinearAccel(kBno085PeriodMs);
+
+    s_reports_enabled = true;
     s_imu_cache_valid = false;
+    s_imu_last_data_us = 0;
+    hal_log("ESP32: 7Semi BNO085 reports requested acc=%s gyro=%s mag=%s rotation=%s linear=%s poll=%s",
+            acc_ok ? "OK" : "FAIL",
+            gyro_ok ? "OK" : "FAIL",
+            mag_ok ? "OK" : "FAIL",
+            rot_ok ? "OK" : "FAIL",
+            lin_ok ? "OK" : "FAIL",
+            s_reports_enabled ? "ON" : "OFF");
+    return s_reports_enabled;
+}
+
+void recoverAfterSpiReinit() {
+    if (!s_bno08x_begin_attempted || !s_bno08x) return;
+
+    prepareChipSelects();
+    delay(20);
+
+    s_bno08x_ready = s_bno08x->begin();
+    s_reports_enabled = false;
+    s_imu_cache_valid = false;
+    s_imu_last_data_us = 0;
+    s_spi_recover_count++;
+
+    hal_log("ESP32: 7Semi BNO085 SPI recovery #%lu begin %s (levels[int=%d rst=%d wake=%d])",
+            (unsigned long)s_spi_recover_count,
+            s_bno08x_ready ? "OK" : "FAIL",
+            digitalRead(IMU_INT),
+            digitalRead(IMU_RST),
+            digitalRead(IMU_WAKE));
+
+    if (s_bno08x_ready) {
+        enableRuntimeReports();
+    }
+}
+
+float rollDegFromQuaternion(float i, float j, float k, float real) {
+    const float norm = sqrtf((real * real) + (i * i) + (j * j) + (k * k));
+    if (norm <= 0.0f) return 0.0f;
+
+    real /= norm;
+    i /= norm;
+    j /= norm;
+    k /= norm;
+
+    const float t0 = 2.0f * ((real * i) + (j * k));
+    const float t1 = 1.0f - (2.0f * ((i * i) + (j * j)));
+    return atan2f(t0, t1) * kRadToDeg;
 }
 
 } // namespace
-
-void hal_esp32_imu_spi_check_deadline(uint32_t period_us, uint32_t now_us);
-bool hal_esp32_imu_raw_transfer(const uint8_t* tx, uint8_t* rx, size_t len);
 
 void hal_imu_begin(void) {
     if (s_bno08x_begin_attempted) {
@@ -51,30 +123,28 @@ void hal_imu_begin(void) {
     }
     s_bno08x_begin_attempted = true;
 
-    BNO08x_config_t imu_config = {
-        SPI2_HOST,
-        static_cast<gpio_num_t>(SENS_SPI_MOSI),
-        static_cast<gpio_num_t>(SENS_SPI_MISO),
-        static_cast<gpio_num_t>(SENS_SPI_SCK),
-        static_cast<gpio_num_t>(CS_IMU),
-        static_cast<gpio_num_t>(IMU_INT),
-        static_cast<gpio_num_t>(IMU_RST),
-        static_cast<gpio_num_t>(IMU_WAKE),
+    prepareChipSelects();
+    hal_imu_set_spi_config(kBno085SpiHz, SPI_MODE3);
+
+    SPIClass& imu_spi = hal_esp32_sensor_spi_port();
+    static BnoSPIBus bus(
+        imu_spi,
+        CS_IMU,
+        IMU_INT,
+        IMU_RST,
         kBno085SpiHz,
-        0,
-        5,
-    };
+        SPI_MODE3,
+        SENS_SPI_SCK,
+        SENS_SPI_MISO,
+        SENS_SPI_MOSI);
+    static BNO08x_7Semi bno(bus);
 
-    BNO08x_init(&s_bno08x, &imu_config);
-    s_bno08x_ready = BNO08x_initialize(&s_bno08x);
-    if (!s_bno08x_ready) {
-        hal_log("ESP32: BNO085 init failed via shared FSPI transfer layer (CS=%d INT=%d RST=%d WAKE/PS0=%d)",
-                CS_IMU, IMU_INT, IMU_RST, IMU_WAKE);
-        return;
-    }
+    s_bno_bus = &bus;
+    s_bno08x = &bno;
 
-    enableRuntimeReports();
-    hal_log("ESP32: BNO085 initialised via esp32_bno08x_driver on shared FSPI (SCK=%d MISO=%d MOSI=%d CS=%d INT=%d RST=%d WAKE/PS0=%d freq=%luHz)",
+    s_bno08x_ready = s_bno08x->begin();
+    hal_log("ESP32: 7Semi BNO085 example-style begin %s (SCK=%d MISO=%d MOSI=%d CS=%d INT=%d RST=%d WAKE/PS0=%d freq=%luHz mode=3 levels[int=%d rst=%d wake=%d])",
+            s_bno08x_ready ? "OK" : "FAIL",
             SENS_SPI_SCK,
             SENS_SPI_MISO,
             SENS_SPI_MOSI,
@@ -82,21 +152,20 @@ void hal_imu_begin(void) {
             IMU_INT,
             IMU_RST,
             IMU_WAKE,
-            (unsigned long)kBno085SpiHz);
+            (unsigned long)kBno085SpiHz,
+            digitalRead(IMU_INT),
+            digitalRead(IMU_RST),
+            digitalRead(IMU_WAKE));
+
+    if (s_bno08x_ready) {
+        enableRuntimeReports();
+    }
 }
 
 void hal_imu_reset_pulse(uint32_t low_ms, uint32_t settle_ms) {
-    if (s_bno08x_ready) {
-        const bool ok = BNO08x_hard_reset(&s_bno08x);
-        if (ok) {
-            enableRuntimeReports();
-        }
-        hal_log("ESP32: IMU hard reset via esp32_bno08x_driver %s", ok ? "OK" : "FAIL");
-        return;
-    }
-
-    pinMode(IMU_WAKE, OUTPUT);
-    digitalWrite(IMU_WAKE, HIGH);
+    prepareChipSelects();
+    pinMode(IMU_RST, OUTPUT);
+    pinMode(IMU_INT, INPUT_PULLUP);
 
     const int int_before = digitalRead(IMU_INT);
     const int wake_before = digitalRead(IMU_WAKE);
@@ -119,73 +188,97 @@ void hal_imu_reset_pulse(uint32_t low_ms, uint32_t settle_ms) {
 
 bool hal_imu_read(float* yaw_rate_dps, float* roll_deg) {
     if (!yaw_rate_dps || !roll_deg) return false;
-    if (!s_bno08x_ready) return false;
+    if (!s_bno08x_ready || !s_reports_enabled || !s_bno08x) return false;
+
+    bool got_update = false;
+    const bool int_asserted = digitalRead(IMU_INT) == LOW;
+    if (int_asserted) {
+        for (uint8_t i = 0; i < 4 && digitalRead(IMU_INT) == LOW; i++) {
+            uint8_t pkt[256] = {};
+            const int n = s_bno08x->readPacket(pkt, sizeof(pkt));
+            if (n <= 0) {
+                break;
+            }
+            s_diag_packet_count++;
+            s_bno08x->processPacket(pkt, static_cast<size_t>(n));
+        }
+    }
+
+    float ax = 0.0f;
+    float ay = 0.0f;
+    float az = 0.0f;
+    if (s_bno08x->getAccelerometer(ax, ay, az)) {
+        s_imu_acc_x_cache = ax;
+        s_imu_acc_y_cache = ay;
+        s_imu_acc_z_cache = az;
+        got_update = true;
+    }
+
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    if (s_bno08x->getGyroscope(x, y, z)) {
+        s_imu_yaw_cache = z * kRadToDeg;
+        got_update = true;
+    }
+
+    float qi = 0.0f;
+    float qj = 0.0f;
+    float qk = 0.0f;
+    float qr = 1.0f;
+    if (s_bno08x->getQuaternion(qi, qj, qk, qr)) {
+        s_imu_roll_cache = rollDegFromQuaternion(qi, qj, qk, qr);
+        got_update = true;
+    }
 
     const uint32_t now_us = micros();
-    if (!s_imu_cache_valid || (now_us - s_imu_last_poll_us) >= kBno085PeriodUs) {
-        hal_esp32_imu_spi_check_deadline(kBno085PeriodUs, now_us);
-
-        const uint32_t gyro_count = BNO08x_get_gyro_update_count(&s_bno08x);
-        const uint32_t quat_count = BNO08x_get_quat_update_count(&s_bno08x);
-        const bool has_new_data =
-            (gyro_count != s_bno08x_last_gyro_count) ||
-            (quat_count != s_bno08x_last_quat_count);
-
-        if (!has_new_data) {
-            const bool cached_data_fresh =
-                s_imu_cache_valid &&
-                s_imu_last_data_us != 0 &&
-                (now_us - s_imu_last_data_us) <= 50000UL;
-            if (!cached_data_fresh) {
-                return false;
-            }
-            *yaw_rate_dps = s_imu_yaw_cache;
-            *roll_deg = s_imu_roll_cache;
-            return true;
-        }
-
-        if (!s_imu_cache_valid && (gyro_count == 0 || quat_count == 0)) {
-            return false;
-        }
-
-        if (gyro_count != s_bno08x_last_gyro_count) {
-            const float yaw_rate_rad_s = BNO08x_get_gyro_calibrated_velocity_Z(&s_bno08x);
-            s_imu_yaw_cache = yaw_rate_rad_s * kRadToDeg;
-            s_bno08x_last_gyro_count = gyro_count;
-        }
-
-        if (quat_count != s_bno08x_last_quat_count) {
-            s_imu_roll_cache = BNO08x_get_roll_deg(&s_bno08x);
-            s_bno08x_last_quat_count = quat_count;
-        }
-
-        s_imu_last_poll_us = now_us;
+    if (got_update) {
         s_imu_last_data_us = now_us;
         s_imu_cache_valid = true;
+        s_diag_read_ok++;
+    } else {
+        s_diag_read_wait++;
     }
+
+    const uint32_t now_ms = millis();
+    if ((now_ms - s_last_diag_log_ms) >= 500UL) {
+        s_last_diag_log_ms = now_ms;
+        const uint32_t age_ms = s_imu_last_data_us == 0 ? 0 : ((now_us - s_imu_last_data_us) / 1000UL);
+        hal_log("IMU-DIAG: 7semi-example poll=%s int=%d data=%s age=%lums pkt=%lu acc=[%.2f %.2f %.2f] mps2 yaw_rate=%.2f dps roll=%.2f deg ok=%lu wait=%lu",
+                s_reports_enabled ? "ON" : "OFF",
+                digitalRead(IMU_INT),
+                got_update ? "NEW" : (s_imu_cache_valid ? "CACHE" : "WAIT"),
+                (unsigned long)age_ms,
+                (unsigned long)s_diag_packet_count,
+                s_imu_acc_x_cache,
+                s_imu_acc_y_cache,
+                s_imu_acc_z_cache,
+                s_imu_yaw_cache,
+                s_imu_roll_cache,
+                (unsigned long)s_diag_read_ok,
+                (unsigned long)s_diag_read_wait);
+    }
+
+    if (!s_imu_cache_valid || s_imu_last_data_us == 0 || (now_us - s_imu_last_data_us) > 50000UL) {
+        return false;
+    }
+
     *yaw_rate_dps = s_imu_yaw_cache;
     *roll_deg = s_imu_roll_cache;
     return true;
 }
 
 bool hal_imu_detect(void) {
-    hal_log("ESP32: IMU detect via esp32_bno08x_driver/shared FSPI: %s",
-            s_bno08x_ready ? "OK" : "FAIL");
+    hal_log("ESP32: IMU detect via 7Semi BNO085 example SPI: lib=%s reports=%s",
+            s_bno08x_ready ? "OK" : "FAIL",
+            s_reports_enabled ? "OK" : "FAIL");
     return s_bno08x_ready;
 }
 
 bool hal_imu_probe_once(uint8_t* out_response) {
     if (!out_response) return false;
-    if (s_bno08x_ready) {
-        *out_response = 0x01;
-        return true;
-    }
-
-    uint8_t tx[4] = {0x00, 0x00, 0x00, 0x00};
-    uint8_t rx[4] = {0x00, 0x00, 0x00, 0x00};
-    const bool transfer_ok = hal_esp32_imu_raw_transfer(tx, rx, sizeof(rx));
-    *out_response = rx[0];
-    return transfer_ok && rx[0] != 0x00 && rx[0] != 0xFF;
+    *out_response = s_bno08x_ready ? 0x01 : 0x00;
+    return s_bno08x_ready;
 }
 
 bool hal_imu_detect_boot_qualified(HalImuDetectStats* out) {
@@ -200,16 +293,16 @@ bool hal_imu_detect_boot_qualified(HalImuDetectStats* out) {
         local.zero_count = 1;
     }
 
-    hal_log("ESP32: IMU boot check via esp32_bno08x_driver/shared FSPI: present=%s ok=%u/%u ff=%u zero=%u last=0x%02X",
+    hal_log("ESP32: IMU boot check via 7Semi example SPI: present=%s reports=%s",
             local.present ? "YES" : "NO",
-            (unsigned)local.ok_count,
-            (unsigned)local.samples,
-            (unsigned)local.ff_count,
-            (unsigned)local.zero_count,
-            (unsigned)local.last_response);
+            s_reports_enabled ? "OK" : "FAIL");
 
     if (out) {
         *out = local;
     }
     return local.present;
+}
+
+void hal_imu_on_sensor_spi_reinit(void) {
+    recoverAfterSpiReinit();
 }

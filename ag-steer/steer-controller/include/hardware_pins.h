@@ -68,7 +68,8 @@
 #define SENS_SPI_SCK   16     // SPI clock
 #define SENS_SPI_MISO  15     // SPI MISO (data from devices to ESP32)
 #define SENS_SPI_MOSI  17     // SPI MOSI (data from ESP32 to devices)
-
+#define IMU_RST        48
+#define IMU_INT        45 
 // Chip Selects (active LOW) - GPIOs 38-42 are output-only, which is fine for CS/control.
 #define CS_IMU          47    // BNO085 IMU
 #define CS_STEER_ANG   18    // ADS1118 ADC (steer angle potentiometer)
