@@ -65,9 +65,9 @@
 // ADS1118, IMU, and Actuator share this bus with different CS pins.
 // SCK/MISO/MOSI are on GPIO 16/15/17 respectively.
 // ---------------------------------------------------------------------------
-#define SENS_SPI_SCK   16     // SPI clock
-#define SENS_SPI_MISO  15     // SPI MISO (data from devices to ESP32)
-#define SENS_SPI_MOSI  17     // SPI MOSI (data from ESP32 to devices)
+#define SENS_SPI_SCK   47     // SPI clock
+#define SENS_SPI_MISO  21     // SPI MISO (data from devices to ESP32)
+#define SENS_SPI_MOSI  38     // SPI MOSI (data from ESP32 to devices)
 
 // Guard against accidental duplicate IMU pin definitions from build flags or
 // other headers. This file is the single source of truth for IMU wiring.
@@ -75,17 +75,23 @@
   #error "IMU pins already defined elsewhere; keep IMU pin mapping canonical in hardware_pins.h"
 #endif
 
-// Chip Selects (active LOW) - GPIOs 38-42 are output-only, which is fine for CS/control.
-#define CS_IMU          47    // BNO085 IMU
-#define CS_STEER_ANG   18    // ADS1118 ADC (steer angle potentiometer)
-#define CS_ACT         40    // Actuator driver
-
 // ---------------------------------------------------------------------------
 // Current IMU Wiring (single source of truth)
 // ---------------------------------------------------------------------------
-#define IMU_INT        45    // BNO085 INT pin (input to ESP32-S3)
-#define IMU_RST        48
-#define IMU_WAKE       38    // BNO085 PS0/WAKE (set HIGH before reset for SPI mode)
+#define IMU_INT        46    // BNO085 INT pin (input to ESP32-S3)
+#define IMU_RST        41
+#define CS_IMU          40    // BNO085 IMU
+#define IMU_WAKE       15    // BNO085 PS0/WAKE (set HIGH before reset for SPI mode)
+
+// Chip Selects (active LOW) - GPIOs 38-42 are output-only, which is fine for CS/control.
+
+#define CS_STEER_ANG   18    // ADS1118 ADC (steer angle potentiometer)
+#define CS_ACT         16    // Actuator driver
+
+
+
+
+
 
 // ---------------------------------------------------------------------------
 // SD Card (FSPI = SPI2_HOST, OTA only)
