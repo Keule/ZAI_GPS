@@ -1,97 +1,63 @@
-# AgSteer — Autosteer System für AgOpenGPS
+# ZAI_GPS — AgSteer Firmware (AgOpenGPS)
 
-Multi-Gerät ESP32-Firmware für agriculturische Lenkung (AgOpenGPS / AgIO).
+Dieses Repository ist der **kanonische Einstieg** für das Projekt `ZAI_GPS`.
 
-## Projektstruktur
+## Startpfade
 
-```
-ag-steer/
-├── steer-controller/          # Lenk-Controller Firmware (ESP32-S3)
-│   ├── platformio.ini         #   PlatformIO Konfiguration
-│   ├── src/
-│   │   ├── main.cpp           #   Einstiegspunkt, FreeRTOS Tasks
-│   │   ├── hal/               #   Hardware Abstraction Layer (C API)
-│   │   ├── hal_esp32/         #   ESP32-S3 HAL Implementierung
-│   │   └── logic/             #   Reine Logik (PID, PGN, Module, ...)
-│   ├── include/               #   Pin-Definitionen (hardware_pins.h)
-│   ├── lib/                   #   Lokale Bibliotheken (ads1118, ETHClass2)
-│   └── boards/                #   Custom Board Definition
-│
-├── gps-bridge/                # GPS-Bridge Firmware (TODO)
-│   └── reference/             #   Ausgelagerte GNSS-Code Referenz
-│       ├── gnss.h             #     NMEA Parser (GGA, RMC)
-│       └── gnss.cpp           #     GNSS UART Implementierung
-│
-└── shared/                    # Gemeinsamer Code (TODO)
-```
+### Für Menschen
+1. **System/Architektur verstehen:**
+   - [`docs/ADR-001-capability-cycle-freshness-output-gating.md`](docs/ADR-001-capability-cycle-freshness-output-gating.md)
+   - [`docs/protocol/README.md`](docs/protocol/README.md)
+2. **Projektstand/Handover lesen:**
+   - [`docs/Handover2.md`](docs/Handover2.md) (aktuell)
+   - [`docs/Handover1.md`](docs/Handover1.md) (historisch)
+3. **Prozessregeln und Arbeitsprinzipien:**
+   - [`docs/plans/P1-dependent-api-freeze-und-crc-grenze.md`](docs/plans/P1-dependent-api-freeze-und-crc-grenze.md)
+4. **Backlog/Arbeitsverlauf:**
+   - [`worklog.md`](worklog.md)
 
-## Geräte
+### Für Agenten
+1. **Zuerst dieses README lesen** (kanonischer Einstieg).
+2. **Protokollgrenze verinnerlichen (verpflichtend):**
+   - **Core-AOG-PGNs**: CRC/Checksum **strikt validieren**.
+   - **Discovery/Management-PGNs**: definierte **CRC-Ausnahme** (toleranter Pfad).
+   - Referenzen:
+     - [`docs/Handover2.md`](docs/Handover2.md)
+     - [`docs/plans/P1-dependent-api-freeze-und-crc-grenze.md`](docs/plans/P1-dependent-api-freeze-und-crc-grenze.md)
+     - [`docs/protocol/README.md`](docs/protocol/README.md)
+3. **Dann in dieser Reihenfolge arbeiten:**
+   - Architektur (`ADR-001`) → Handover (`Handover2`) → Prozess (`P1-Plan`) → Backlog (`worklog.md`).
 
-### Steering Controller (`steer-controller/`)
-- **Board:** LilyGO T-ETH-Lite-S3 (ESP32-S3 + W5500 Ethernet)
-- **Funktionen:**
-  - ADS1118 Lenkwinkelsensor (SPI, FSPI)
-  - BNO085 IMU (SPI)
-  - Hydraulik-/Elektro-Aktuator (SPI)
-  - PID Regelkreis (200 Hz)
-  - Ethernet/UDP Kommunikation mit AgIO
-  - SD-Karte OTA Firmware-Update
-  - Lenkwinkel-Kalibrierung mit NVS-Persistenz
+## Konsistente Einstiege nach Thema
 
-### GPS Bridge (`gps-bridge/`) — TODO
-- **Board:** TBD (ESP32-S3)
-- **Funktionen:**
-  - 2x GNSS UART (UM980 RTK-Rover)
-  - NMEA Parsing (GGA, RMC)
-  - GPS PGN (214) an AgIO senden
-  - Dual-Antennen Heading
+- **Architektur:**
+  - [`docs/ADR-001-capability-cycle-freshness-output-gating.md`](docs/ADR-001-capability-cycle-freshness-output-gating.md)
+- **Handover:**
+  - [`docs/Handover2.md`](docs/Handover2.md)
+  - [`docs/Handover1.md`](docs/Handover1.md)
+- **Prozess:**
+  - [`docs/plans/P1-dependent-api-freeze-und-crc-grenze.md`](docs/plans/P1-dependent-api-freeze-und-crc-grenze.md)
+- **Backlog:**
+  - [`worklog.md`](worklog.md)
 
-## Bauen
+## Protokollbesonderheit (sichtbar und verbindlich)
 
-```bash
-cd steer-controller
-pio run -t upload
-```
+> **Nicht verhandelbar:**
+>
+> - **Core-AOG-Pfad** (z. B. Steer Data/Status/Settings/Config): CRC strikt.
+> - **Discovery/Management-Pfad** (z. B. PGN 200/201/202 inkl. Replies): CRC-Ausnahme gemäß AgIO-Kompatibilität.
+>
+> Änderungen dürfen diese Grenze nicht implizit verschieben.
 
-## Testbare Matrix (Build + Smoke)
-
-Im Repository ist eine CI-Matrix hinterlegt (`.github/workflows/test-matrix.yml`):
-
-- **Build-Matrix** fuer alle Profile:
-  - `profile_comm_only`
-  - `profile_sensor_front`
-  - `profile_actor_rear`
-  - `profile_full_steer`
-  - (spaeter erweiterbar fuer GNSS/Machine-Profile)
-- **Smoke-Matrix** (Host-Runner) fuer:
-  - Discovery/Hello/Subnet Frames
-  - PGN-I/O-Szenarien je Profil
-  - Timing-Metriken (Jitter + Deadline-Miss-Zaehler)
-
-Lokal ausfuehren:
+## Build & Smoke lokal
 
 ```bash
+pio run
 python3 tools/run_test_matrix.py
 ```
 
-Nur Host-Smoke (ohne PlatformIO-Builds):
+Nur Host-Smoke ohne PlatformIO-Builds:
 
 ```bash
 SKIP_PROFILE_BUILDS=1 python3 tools/run_test_matrix.py
 ```
-
-### CI-Trigger-Pfade (`.github/workflows/test-matrix.yml`)
-
-Die Test-Matrix wird nur bei relevanten Firmware-/Test-Aenderungen gestartet:
-
-- `src/**`
-- `include/**`
-- `lib/**`
-- `boards/**`
-- `tools/**`
-- `platformio.ini`
-- `auto_version.py`
-- `partitions_ota.csv`
-- `.github/workflows/test-matrix.yml`
-
-Hinweis: Das Repository-Root ist das Projekt-Root (kein `ag-steer/steer-controller`-Unterordner). Deshalb nutzt die CI keinen `working-directory`-Override mehr.
