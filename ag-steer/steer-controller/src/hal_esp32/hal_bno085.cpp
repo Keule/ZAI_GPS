@@ -6,7 +6,13 @@
 #include "hal/hal.h"
 #include "hardware_pins.h"
 
-#include <7Semi_BNO08x.h>
+#if __has_include(<7Semi_BNO08x.h>)
+  #include <7Semi_BNO08x.h>
+#elif __has_include(<7semi_BNO08x.h>)
+  #include <7semi_BNO08x.h>
+#else
+  #error "Missing 7Semi_BNO08x.h (check PlatformIO lib_deps for 7Semi BNO08x library)"
+#endif
 #include <Arduino.h>
 #include <BnoSPIBus.h>
 #include <SPI.h>

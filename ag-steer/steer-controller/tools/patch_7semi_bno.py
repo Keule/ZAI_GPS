@@ -5,19 +5,17 @@ Import("env")
 
 def patch_7semi_bno(source=None, target=None, env=None):
     pioenv = env.subst("$PIOENV")
-    lib_file = (
+    libdeps_dir = (
         Path(env.subst("$PROJECT_DIR"))
         / ".pio"
         / "libdeps"
         / pioenv
-        / "7Semi BNO08x"
-        / "src"
-        / "BnoSPIBus.h"
     )
-
-    if not lib_file.exists():
-        print(f"7Semi BNO patch skipped: {lib_file} not found yet")
+    candidates = list(libdeps_dir.glob("*/src/BnoSPIBus.h"))
+    if not candidates:
+        print(f"7Semi BNO patch skipped: no BnoSPIBus.h found in {libdeps_dir}")
         return
+    lib_file = candidates[0]
 
     original = lib_file.read_text(encoding="utf-8")
     patched = original.replace("    delay(3);\n", "    delayMicroseconds(1000);\n")
