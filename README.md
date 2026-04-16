@@ -71,13 +71,27 @@ Im Repository ist eine CI-Matrix hinterlegt (`.github/workflows/test-matrix.yml`
 Lokal ausfuehren:
 
 ```bash
-cd ag-steer/steer-controller
 python3 tools/run_test_matrix.py
 ```
 
 Nur Host-Smoke (ohne PlatformIO-Builds):
 
 ```bash
-cd ag-steer/steer-controller
 SKIP_PROFILE_BUILDS=1 python3 tools/run_test_matrix.py
 ```
+
+### CI-Trigger-Pfade (`.github/workflows/test-matrix.yml`)
+
+Die Test-Matrix wird nur bei relevanten Firmware-/Test-Aenderungen gestartet:
+
+- `src/**`
+- `include/**`
+- `lib/**`
+- `boards/**`
+- `tools/**`
+- `platformio.ini`
+- `auto_version.py`
+- `partitions_ota.csv`
+- `.github/workflows/test-matrix.yml`
+
+Hinweis: Das Repository-Root ist das Projekt-Root (kein `ag-steer/steer-controller`-Unterordner). Deshalb nutzt die CI keinen `working-directory`-Override mehr.

@@ -3,11 +3,25 @@ name: Test Matrix
 on:
   push:
     paths:
-      - "ag-steer/**"
+      - "src/**"
+      - "include/**"
+      - "lib/**"
+      - "boards/**"
+      - "tools/**"
+      - "platformio.ini"
+      - "auto_version.py"
+      - "partitions_ota.csv"
       - ".github/workflows/test-matrix.yml"
   pull_request:
     paths:
-      - "ag-steer/**"
+      - "src/**"
+      - "include/**"
+      - "lib/**"
+      - "boards/**"
+      - "tools/**"
+      - "platformio.ini"
+      - "auto_version.py"
+      - "partitions_ota.csv"
       - ".github/workflows/test-matrix.yml"
 
 jobs:
@@ -24,9 +38,6 @@ jobs:
           - profile_full_steer
           # Reserved for future expansion
           # - profile_gnss_machine
-    defaults:
-      run:
-        working-directory: ag-steer/steer-controller
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -40,9 +51,6 @@ jobs:
   smoke-matrix:
     name: Smoke Matrix (Discovery/PGN/Timing)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ag-steer/steer-controller
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
