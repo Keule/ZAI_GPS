@@ -276,7 +276,27 @@ void hal_imu_reset_pulse(uint32_t low_ms, uint32_t settle_ms) {
 
 bool hal_imu_read(float* yaw_rate_dps, float* roll_deg, float* heading_deg) {
     if (!yaw_rate_dps || !roll_deg || !heading_deg) return false;
-    if (!s_bno08x_ready || !s_reports_enabled || !s_bno08x) return false;
+    const uint32_t now_us = micros();
+    const uint32_t now_ms = millis();
+    if (!s_bno08x_ready || !s_reports_enabled || !s_bno08x) {
+#if LOG_IMU_DIAG_INTERVAL_MS > 0
+        if ((now_ms - s_last_diag_log_ms) >= LOG_IMU_DIAG_INTERVAL_MS) {
+            s_last_diag_log_ms = now_ms;
+            // Keep IMU diagnostics visible even if init/report setup failed.
+            // This helps distinguish IMU bring-up issues from shared SPI/MISO contention.
+            hal_log("IMU-DIAG: init=WAIT ready=%s reports=%s obj=%s int=%d pkt=%lu ok=%lu wait=%lu",
+                    s_bno08x_ready ? "Y" : "N",
+                    s_reports_enabled ? "Y" : "N",
+                    s_bno08x ? "Y" : "N",
+                    digitalRead(IMU_INT),
+                    (unsigned long)s_diag_packet_count,
+                    (unsigned long)s_diag_read_ok,
+                    (unsigned long)s_diag_read_wait);
+        }
+#endif
+        s_diag_read_wait++;
+        return false;
+    }
 
     bool got_update = false;
     const bool int_asserted = digitalRead(IMU_INT) == LOW;
@@ -328,8 +348,6 @@ bool hal_imu_read(float* yaw_rate_dps, float* roll_deg, float* heading_deg) {
         got_update = true;
     }
 
-    const uint32_t now_us = micros();
-    const uint32_t now_ms = millis();
     updateHeadingBootstrap(now_ms);
 
     if (got_update) {
