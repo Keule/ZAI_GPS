@@ -9,6 +9,7 @@
  *     - ADS1118 ADC (steer angle): CS=18
  *     - BNO085 IMU: CS=47
  *     - Actuator: CS=40
+ *   - IMU sideband wiring: INT=45, RST=48, WAKE=38
  *   - SD Card (FSPI, OTA only): SCK=7, MISO=5, MOSI=6, CS=42
  *   - Safety: GPIO4 active LOW
  *
@@ -88,7 +89,7 @@ static bool s_eth_has_ip     = false;   // true if ARDUINO_EVENT_ETH_GOT_IP
 // On ESP32-S3 (Arduino Core 2.x):  HSPI = SPI3_HOST (occupied by W5500!)
 //                                  FSPI = SPI2_HOST (free for sensors)
 //
-// Sensor devices on this bus: ADS1118 (CS=18), IMU (CS=38), Actuator (CS=40).
+// Sensor devices on this bus: ADS1118 (CS=18), IMU (CS=47), Actuator (CS=40).
 // Pins: SCK=16, MISO=15, MOSI=17.
 //
 // SD card uses the SAME SPI peripheral (FSPI) but DIFFERENT pins (SCK=7, MISO=5, MOSI=6).
