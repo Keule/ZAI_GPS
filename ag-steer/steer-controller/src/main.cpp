@@ -422,25 +422,65 @@ void loop() {
     // Feed watchdog to prevent trigger from this task
     esp_task_wdt_reset();
 
-    // Periodic status output every 5 seconds
+    // Periodic serial telemetry every 5 seconds.
+    // IMPORTANT: IMU serial telemetry must remain network-independent so
+    // diagnostics stay visible even with Ethernet link down.
     static uint32_t s_last_status = 0;
     uint32_t now = hal_millis();
     if (now - s_last_status >= 5000) {
         s_last_status = now;
-        StateLock lock;
-        hal_log("STAT: hd=%.1f st=%.1f raw=%d safety=%s work=%s steer=%s spd=%.1f wdog=%s pid=%d tgt=%.1f net=%s cfg=%s",
-                g_nav.heading_deg,
-                g_nav.steer_angle_deg,
-                (int)g_nav.steer_angle_raw,
-                g_nav.safety_ok ? "OK" : "KICK",
-                g_nav.work_switch ? "ON" : "OFF",
-                g_nav.steer_switch ? "ON" : "OFF",
-                g_nav.gps_speed_kmh,
-                g_nav.watchdog_triggered ? "TRIG" : "OK",
-                (int)g_nav.pid_output,
+        float heading_deg = 0.0f;
+        float steer_angle_deg = 0.0f;
+        int steer_angle_raw = 0;
+        bool safety_ok = false;
+        bool work_switch = false;
+        bool steer_switch = false;
+        float gps_speed_kmh = 0.0f;
+        bool watchdog_triggered = false;
+        int pid_output = 0;
+        bool settings_received = false;
+        float roll_deg = 0.0f;
+        float yaw_rate_dps = 0.0f;
+        bool imu_quality_ok = false;
+        uint32_t imu_timestamp_ms = 0;
+
+        {
+            StateLock lock;
+            heading_deg = g_nav.heading_deg;
+            steer_angle_deg = g_nav.steer_angle_deg;
+            steer_angle_raw = (int)g_nav.steer_angle_raw;
+            safety_ok = g_nav.safety_ok;
+            work_switch = g_nav.work_switch;
+            steer_switch = g_nav.steer_switch;
+            gps_speed_kmh = g_nav.gps_speed_kmh;
+            watchdog_triggered = g_nav.watchdog_triggered;
+            pid_output = (int)g_nav.pid_output;
+            settings_received = g_nav.settings_received;
+            roll_deg = g_nav.roll_deg;
+            yaw_rate_dps = g_nav.yaw_rate_dps;
+            imu_quality_ok = g_nav.imu_quality_ok;
+            imu_timestamp_ms = g_nav.imu_timestamp_ms;
+        }
+
+        const uint32_t imu_age_ms =
+            (imu_timestamp_ms == 0U) ? 0U : (uint32_t)(now - imu_timestamp_ms);
+        hal_log("STAT: hd=%.1f st=%.1f raw=%d safety=%s work=%s steer=%s spd=%.1f wdog=%s pid=%d tgt=%.1f roll_deg=%.2f yaw_rate_dps=%.2f imu_quality_ok=%s imu_age_ms=%lu net=%s cfg=%s",
+                heading_deg,
+                steer_angle_deg,
+                steer_angle_raw,
+                safety_ok ? "OK" : "KICK",
+                work_switch ? "ON" : "OFF",
+                steer_switch ? "ON" : "OFF",
+                gps_speed_kmh,
+                watchdog_triggered ? "TRIG" : "OK",
+                pid_output,
                 desiredSteerAngleDeg,
+                roll_deg,
+                yaw_rate_dps,
+                imu_quality_ok ? "Y" : "N",
+                (unsigned long)imu_age_ms,
                 hal_net_is_connected() ? "UP" : "DOWN",
-                g_nav.settings_received ? "Y" : "N");
+                settings_received ? "Y" : "N");
     }
 
     if (MAIN_VERBOSE_TASK_DBG) {
