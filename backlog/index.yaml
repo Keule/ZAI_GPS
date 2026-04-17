@@ -43,6 +43,7 @@ epics:
       - TASK-006
       - TASK-011
       - TASK-012
+      - TASK-013
       - TASK-014
 
   - id: EPIC-004
@@ -189,6 +190,15 @@ tasks:
     dependencies: []
 
   - id: TASK-013
+    title: HAL-/Netzwerk-Schnittstellenänderungen mit expliziten Claims und Merge-Risikosteuerung planen
+    file: backlog/tasks/TASK-013-hal-net-interface-claims-und-parallelisierung.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-003
     title: RTCM-Weiterleitung AgIO → UM980 validieren und PGN-214-RTK-Verhalten verifizieren
     file: backlog/tasks/TASK-013-rtcm-zu-um980-validierung.md
     epic_id: EPIC-004
