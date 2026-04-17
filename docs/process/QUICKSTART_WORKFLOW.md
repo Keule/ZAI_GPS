@@ -95,6 +95,14 @@ Anschließend im `backlog/index.yaml` registrieren.
    - KI-Entwickler ändern keine Prozess- oder Doku-Dateien.
    - Prozess-/Doku-Änderungen obliegen KI-Planer, KI-Reviewer und Mensch.
 
+## 4a) Definition of Done (KI-Entwickler) — verbindlich
+Ein Task gilt für KI-Entwickler **nur dann** als `done`, wenn ein vollständiger Entwickler-Report vorhanden ist:
+
+- Pflicht-Artefakt: `reports/<Task-ID>/<dev-name>.md`
+- Verbindliche Vorlage: `templates/dev-report.md`
+- Ohne Report-Datei darf der Task-Status **nicht** `done` sein.
+- Fehlender Report ⇒ Task-Status mindestens `blocked` (nicht `done`).
+
 ## 5) Session-Ende / Handover
 1. `templates/session-handover.md` ausfüllen:
    - erledigt / offen / blocker / nächster konkreter Schritt.

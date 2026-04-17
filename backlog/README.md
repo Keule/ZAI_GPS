@@ -41,3 +41,4 @@ Jede Datei in `backlog/tasks/` muss folgende Felder enthalten:
 ## Validierung
 
 - Optionaler Konsistenzcheck: `python3 tools/validate_backlog_index.py` (benötigt `PyYAML`).
+- Reviewer/Planer schließen einen Task nur mit vorhandenem Report-Artefakt unter `reports/<Task-ID>/<dev-name>.md` (gemäß `templates/dev-report.md`).
