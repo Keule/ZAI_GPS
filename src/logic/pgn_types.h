@@ -309,9 +309,9 @@ struct __attribute__((packed)) AogGpsMainOut {
     int16_t  roll;              // [14-15] Roll [degrees × 16]
     int32_t  altitude;          // [16-19] Altitude [mm]
     uint8_t  satCount;          // [20]    Satellites tracked
-    uint8_t  fixQuality;        // [21]    Fix quality (0=none,1=GPS,2=DGPS,4=RTK Fix)
+    uint8_t  fixQuality;        // [21]    Fix quality (0=none,1=GPS,2=DGPS,4=RTK Fix,5=RTK Float)
     int16_t  hdop;              // [22-23] HDOP × 100
-    int16_t  age;               // [24-25] Differential age × 100 [ms]
+    int16_t  age;               // [24-25] Differential age × 100 [ms] (signed, saturating)
     int16_t  imuHeading;        // [26-27] IMU heading [degrees × 16]
     int16_t  imuRoll;           // [28-29] IMU roll [degrees × 16]
     int16_t  imuPitch;          // [30-31] IMU pitch [degrees × 16]
