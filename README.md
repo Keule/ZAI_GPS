@@ -14,6 +14,7 @@ Dieses Repository ist der **kanonische Einstieg** für das Projekt `ZAI_GPS`.
 3. **Prozessregeln und Arbeitsprinzipien:**
    - [`docs/plans/P1-dependent-api-freeze-und-crc-grenze.md`](docs/plans/P1-dependent-api-freeze-und-crc-grenze.md)
    - [`docs/process/PLAN_AGENT.md`](docs/process/PLAN_AGENT.md)
+   - [`docs/process/QUICKSTART_WORKFLOW.md`](docs/process/QUICKSTART_WORKFLOW.md)
 4. **Backlog/Arbeitsverlauf:**
    - [`backlog/README.md`](backlog/README.md)
    - optional direkt: [`backlog/index.yaml`](backlog/index.yaml)
@@ -46,6 +47,7 @@ Dieses Repository ist der **kanonische Einstieg** für das Projekt `ZAI_GPS`.
 - **Prozess:**
   - [`docs/plans/P1-dependent-api-freeze-und-crc-grenze.md`](docs/plans/P1-dependent-api-freeze-und-crc-grenze.md)
   - [`docs/process/PLAN_AGENT.md`](docs/process/PLAN_AGENT.md)
+  - [`docs/process/QUICKSTART_WORKFLOW.md`](docs/process/QUICKSTART_WORKFLOW.md)
 - **Backlog:**
   - [`backlog/README.md`](backlog/README.md)
   - optional direkt: [`backlog/index.yaml`](backlog/index.yaml)
