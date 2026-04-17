@@ -344,11 +344,24 @@ static SemaphoreHandle_t s_gnss_rtcm_mutex = nullptr;
 static bool s_gnss_rtcm_ready = false;
 static uint32_t s_gnss_rtcm_drop_bytes = 0;
 
+struct GnssUartPins {
+    int8_t rx;
+    int8_t tx;
+};
+
 static HardwareSerial* gnssUartForNum(uint8_t uart_num) {
     switch (uart_num) {
     case 1: return &Serial1;
     case 2: return &Serial2;
     default: return nullptr;
+    }
+}
+
+static GnssUartPins gnssUartPinsForNum(uint8_t uart_num) {
+    switch (uart_num) {
+    case 1: return GnssUartPins{GNSS_UART1_RX, GNSS_UART1_TX};
+    case 2: return GnssUartPins{GNSS_UART2_RX, GNSS_UART2_TX};
+    default: return GnssUartPins{-1, -1};
     }
 }
 
@@ -379,11 +392,6 @@ bool hal_gnss_rtcm_begin(uint32_t baud, int8_t rx_pin, int8_t tx_pin) {
         LOGE("HAL", "GNSS RTCM begin failed: baud must be > 0");
         return false;
     }
-    if (tx_pin < 0) {
-        LOGE("HAL", "GNSS RTCM begin failed: TX pin must be >= 0");
-        return false;
-    }
-
     if (!s_gnss_rtcm_mutex) {
         s_gnss_rtcm_mutex = xSemaphoreCreateMutex();
     }
@@ -391,8 +399,25 @@ bool hal_gnss_rtcm_begin(uint32_t baud, int8_t rx_pin, int8_t tx_pin) {
         xSemaphoreTake(s_gnss_rtcm_mutex, portMAX_DELAY);
     }
 
-    const int uart_rx = (rx_pin < 0) ? -1 : static_cast<int>(rx_pin);
-    const int uart_tx = static_cast<int>(tx_pin);
+    const GnssUartPins defaults = gnssUartPinsForNum(s_gnss_rtcm_uart_num);
+    const int uart_rx = (rx_pin < 0) ? static_cast<int>(defaults.rx) : static_cast<int>(rx_pin);
+    const int uart_tx = (tx_pin < 0) ? static_cast<int>(defaults.tx) : static_cast<int>(tx_pin);
+
+    if (uart_tx < 0) {
+        LOGE("HAL", "GNSS RTCM begin failed: UART%u TX pin unresolved",
+             static_cast<unsigned>(s_gnss_rtcm_uart_num));
+        if (s_gnss_rtcm_mutex) {
+            xSemaphoreGive(s_gnss_rtcm_mutex);
+        }
+        return false;
+    }
+    if (uart_rx >= 38 && uart_rx <= 42) {
+        LOGE("HAL", "GNSS RTCM begin failed: RX pin %d is output-only on ESP32-S3", uart_rx);
+        if (s_gnss_rtcm_mutex) {
+            xSemaphoreGive(s_gnss_rtcm_mutex);
+        }
+        return false;
+    }
 
     s_gnss_rtcm_uart->begin(baud, SERIAL_8N1, uart_rx, uart_tx);
     s_gnss_rtcm_ready = true;
@@ -1419,6 +1444,48 @@ void hal_esp32_init_imu_bringup(void) {
     hal_imu_reset_pulse(10, 20);
     hal_steer_angle_begin();
     hal_log("ESP32: IMU bring-up HAL init complete (ADS enabled, actuator/network skipped)");
+}
+
+void hal_esp32_init_gnss_buildup(void) {
+    hal_esp32_common_boot_init();
+
+#if defined(GNSS_BUILDUP_RTCM_UART_NUM)
+    constexpr uint8_t k_rtcm_uart_num = GNSS_BUILDUP_RTCM_UART_NUM;
+#else
+    constexpr uint8_t k_rtcm_uart_num = 1;
+#endif
+
+#if defined(GNSS_BUILDUP_RTCM_BAUD)
+    constexpr uint32_t k_rtcm_baud = GNSS_BUILDUP_RTCM_BAUD;
+#else
+    constexpr uint32_t k_rtcm_baud = 115200;
+#endif
+
+#if defined(GNSS_BUILDUP_RTCM_RX_PIN)
+    constexpr int8_t k_rtcm_rx_pin = static_cast<int8_t>(GNSS_BUILDUP_RTCM_RX_PIN);
+#else
+    constexpr int8_t k_rtcm_rx_pin = 45;
+#endif
+
+#if defined(GNSS_BUILDUP_RTCM_TX_PIN)
+    constexpr int8_t k_rtcm_tx_pin = static_cast<int8_t>(GNSS_BUILDUP_RTCM_TX_PIN);
+#else
+    constexpr int8_t k_rtcm_tx_pin = 48;
+#endif
+
+    // Communication path required for RTCM ingress (ETH UDP).
+    hal_net_init();
+
+    // Dedicated RTCM egress over GNSS UART.
+    hal_esp32_gnss_rtcm_set_uart(k_rtcm_uart_num);
+    const bool gnss_uart_ok = hal_gnss_rtcm_begin(k_rtcm_baud, k_rtcm_rx_pin, k_rtcm_tx_pin);
+    hal_log("ESP32: GNSS buildup HAL init %s (ETH=%s, UART%u baud=%lu rx=%d tx=%d)",
+            gnss_uart_ok ? "complete" : "degraded",
+            hal_net_is_connected() ? "UP" : "DOWN",
+            static_cast<unsigned>(k_rtcm_uart_num),
+            static_cast<unsigned long>(k_rtcm_baud),
+            static_cast<int>(k_rtcm_rx_pin),
+            static_cast<int>(k_rtcm_tx_pin));
 }
 
 void hal_esp32_init_all(void) {

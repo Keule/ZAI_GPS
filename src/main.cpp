@@ -11,6 +11,7 @@
  * NOTE: Hardware init is done in setup():
  *       - normal mode: hal_esp32_init_all()
  *       - IMU bring-up mode: hal_esp32_init_imu_bringup()
+ *       - GNSS buildup mode: hal_esp32_init_gnss_buildup()
  *       Tasks do NOT re-initialize anything.
  */
 
@@ -45,12 +46,17 @@
 static TaskHandle_t s_control_task_handle = nullptr;
 static TaskHandle_t s_comm_task_handle = nullptr;
 static bool s_imu_bringup_active = false;
+static bool s_gnss_buildup_active = false;
 
 // ===================================================================
 // Runtime/Debug logging knobs
 // ===================================================================
 static constexpr bool MAIN_VERBOSE_TASK_DBG = false;  // true => print loop Hz heartbeats
 static constexpr uint32_t MAIN_HW_ERR_REMINDER_MS = 30000;
+static constexpr uint32_t MAIN_GNSS_BUILDUP_INIT_TIMEOUT_MS = 15000;
+static constexpr uint32_t MAIN_GNSS_BUILDUP_STATUS_INTERVAL_MS = 2000;
+static uint32_t s_gnss_buildup_start_ms = 0;
+static bool s_gnss_buildup_fallback_latched = false;
 
 static inline bool shouldLogPeriodic(uint32_t now_ms, uint32_t* last_ms, uint32_t interval_ms) {
     if (now_ms - *last_ms < interval_ms) return false;
@@ -343,7 +349,9 @@ static void commTaskFunc(void* param) {
         netPollReceive();
 
         // -------------------------------- Processing --------------------------------
-        modulesUpdateStatus();
+        if (!s_gnss_buildup_active) {
+            modulesUpdateStatus();
+        }
 
         // ---------------------------------- Output ----------------------------------
         netSendAogFrames();
@@ -363,7 +371,7 @@ static void commTaskFunc(void* param) {
 
         // Hardware status monitoring (~1 Hz)
         uint32_t now = hal_millis();
-        if (now - s_last_hw_status_ms >= HW_STATUS_INTERVAL_MS) {
+        if (!s_gnss_buildup_active && now - s_last_hw_status_ms >= HW_STATUS_INTERVAL_MS) {
             s_last_hw_status_ms = now;
 
             bool safety_ok = true;
@@ -421,10 +429,26 @@ static void commTaskFunc(void* param) {
 // Arduino setup()
 // ===================================================================
 void setup() {
+#if defined(FEAT_IMU_BRINGUP) && defined(FEAT_GNSS_BUILDUP)
+#error "FEAT_IMU_BRINGUP and FEAT_GNSS_BUILDUP are mutually exclusive."
+#endif
+
     s_imu_bringup_active = imuBringupModeEnabled();
+    s_gnss_buildup_active =
+#if defined(FEAT_GNSS_BUILDUP)
+        true;
+#else
+        false;
+#endif
+
     if (s_imu_bringup_active) {
         // Explicit bring-up path: no actuator or network dependency.
         hal_esp32_init_imu_bringup();
+    } else if (s_gnss_buildup_active) {
+        // GNSS buildup path: communication + GNSS UART only.
+        hal_esp32_init_gnss_buildup();
+        s_gnss_buildup_start_ms = hal_millis();
+        hal_log("Main: GNSS buildup mode active (FEAT_GNSS_BUILDUP).");
     } else {
         // Normal operation path.
         hal_esp32_init_all();
@@ -452,6 +476,20 @@ void setup() {
     }
 
     gnssMirrorInit();
+    if (s_gnss_buildup_active) {
+        // Reduced startup: no OTA, no module detection, no sensor/actuator stack.
+        xTaskCreatePinnedToCore(
+            commTaskFunc,
+            "comm",
+            4096,
+            nullptr,
+            configMAX_PRIORITIES - 3,
+            &s_comm_task_handle,
+            0
+        );
+        hal_log("Main: GNSS buildup reduced init done (comm task only).");
+        return;
+    }
 
     // -----------------------------------------------------------------
     // SD-Card OTA Firmware Update
@@ -594,6 +632,50 @@ static uint32_t s_loop_dbg_count = 0;
 void loop() {
     if (s_imu_bringup_active) {
         imuBringupTick();
+        vTaskDelay(pdMS_TO_TICKS(20));
+        return;
+    }
+
+    if (s_gnss_buildup_active) {
+        const uint32_t now = hal_millis();
+        static uint32_t s_last_gnss_buildup_log_ms = 0;
+        if (now - s_last_gnss_buildup_log_ms >= MAIN_GNSS_BUILDUP_STATUS_INTERVAL_MS) {
+            s_last_gnss_buildup_log_ms = now;
+
+            uint8_t fix_type = 0;
+            bool rtcm_active = false;
+            uint32_t diff_age = 0;
+            uint32_t status_age_ms = 0;
+            {
+                StateLock lock;
+                fix_type = g_nav.um980_fix_type;
+                rtcm_active = g_nav.um980_rtcm_active;
+                diff_age = g_nav.gps_diff_age_x100_ms;
+                status_age_ms = (g_nav.um980_status_timestamp_ms == 0)
+                    ? 0
+                    : (now - g_nav.um980_status_timestamp_ms);
+            }
+
+            hal_log("GNSS-BUILDUP: port_status net=%s rtcm_uart=%s drop=%lu | fix_status type=%u rtcm=%s diff_age_x100ms=%lu status_age_ms=%lu",
+                    hal_net_is_connected() ? "UP" : "DOWN",
+                    hal_gnss_rtcm_is_ready() ? "READY" : "DOWN",
+                    static_cast<unsigned long>(hal_gnss_rtcm_drop_count()),
+                    static_cast<unsigned>(fix_type),
+                    rtcm_active ? "ON" : "OFF",
+                    static_cast<unsigned long>(diff_age),
+                    static_cast<unsigned long>(status_age_ms));
+        }
+
+        if (!s_gnss_buildup_fallback_latched &&
+            now - s_gnss_buildup_start_ms >= MAIN_GNSS_BUILDUP_INIT_TIMEOUT_MS) {
+            const bool ready = hal_net_is_connected() && hal_gnss_rtcm_is_ready();
+            if (!ready) {
+                s_gnss_buildup_fallback_latched = true;
+                hal_log("GNSS-BUILDUP: init timeout after %lums -> fallback=degraded-comm (no abort, keep running for diagnostics)",
+                        static_cast<unsigned long>(MAIN_GNSS_BUILDUP_INIT_TIMEOUT_MS));
+            }
+        }
+
         vTaskDelay(pdMS_TO_TICKS(20));
         return;
     }

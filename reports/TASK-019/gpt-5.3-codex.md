@@ -1,49 +1,58 @@
-Entwickler-Report für Task TASK-019D
+# Entwickler-Report – TASK-019C
 
-Entwickler: GPT-5.3-Codex
+**Entwickler:** GPT-5.3-Codex  
+**Datum:** 2026-04-17  
+**Task-ID:** TASK-019C
+
+## Kurzfassung
+Es wurde ein klar aktivierbarer GNSS-Buildup-Modus mit reduziertem Initialisierungspfad umgesetzt. Der Modus initialisiert ausschließlich Kommunikation (ETH/UDP) und GNSS-RTCM-UART, lässt Sensor-/Aktorik-Init aus, liefert diagnostische Start-/Status-Logs und definiert ein reproduzierbares Fallback bei Init-Timeout.
+
+## Gegenüberstellung: Normalmodus vs. GNSS-Buildup-Modus
+
+| Aspekt | Normalmodus | GNSS-Buildup-Modus |
+|---|---|---|
+| Aktivierung | Standard-Build ohne `FEAT_GNSS_BUILDUP` | Compile-Time-Flag `FEAT_GNSS_BUILDUP` (z. B. via `env:gnss_buildup`) |
+| HAL-Init in `setup()` | `hal_esp32_init_all()` | `hal_esp32_init_gnss_buildup()` |
+| Subsysteme | Sensor-SPI, IMU, Lenkwinkel, Aktuator, Netzwerk | Nur Netzwerk + GNSS-RTCM-UART |
+| Task-Start | `control` + `comm` | Nur `comm` |
+| OTA/Kalibrierung/Moduldetektion | Aktiv (normaler Pfad) | Übersprungen (reduzierter Bringup-Pfad) |
+| Diagnoselogs | reguläre Laufzeitlogs | explizite GNSS-Buildup-Logs: Init-Status, Port-Status, GNSS-Fix-Status |
+| Fallback | normaler Betriebsfluss | Bei Timeout degradierter Diagnosebetrieb ohne Abort/Reboot |
+
+## Technische Details
+- Neuer HAL-Entry-Point: `hal_esp32_init_gnss_buildup()` mit ETH-Init und GNSS-RTCM-UART-Init.
+- GNSS-Buildup-Defaults (über `-D...` übersteuerbar): UART1, 115200 Baud, RX=45, TX=48.
+- `main.cpp` enthält jetzt einen klaren Modusschalter für GNSS-Buildup sowie eine gegenseitige Ausschlussprüfung mit IMU-Bringup.
+- Im GNSS-Buildup-Modus werden nur benötigte Pfade ausgeführt; dadurch keine Sensor-/Aktorik-Initialisierung.
+- Fallback-Verhalten: nach `MAIN_GNSS_BUILDUP_INIT_TIMEOUT_MS` (15s) ohne `net && rtcm_uart` wird degradierter Bringup-Betrieb geloggt und weitergeführt.
+
+## Verifikation
+- Buildaufruf für `gnss_buildup` versucht (`pio run -e gnss_buildup` / `python3 -m platformio run -e gnss_buildup`), jedoch in der Umgebung ohne installiertes PlatformIO-CLI/-Modul nicht ausführbar.
+- Regressionstest für Standard-Environment aus gleichem Grund hier nicht lokal ausführbar; Änderungen sind auf klar getrennte Moduspfade begrenzt.
+Offene Fragen / Probleme
+- Keine inhaltlichen Blocker für den Backlog-Stand.
+- Rollenhinweis: `backlog/README.md` weist Task-Neuanlage dem KI-Planer zu; Umsetzung erfolgte hier auf explizite Arbeitsanweisung.
+
+---
+
+Task-ID: TASK-019B
+Titel: PlatformIO-Environment `gnss_buildup` für GNSS-Buildup
 Datum: 2026-04-17
-Task-ID: TASK-019D
 
-## Zusammenfassung
+Umsetzung
+- Neues PlatformIO-Environment `gnss_buildup` auf Basis `env:T-ETH-Lite-ESP32S3` in `platformio.ini` ergänzt.
+- Für das Profil wurden ausschließlich Comm+GNSS-Flags gesetzt:
+  - `-DFEAT_PROFILE_COMM_ONLY`
+  - `-DFEAT_COMM`
+  - `-DFEAT_GNSS`
+- Damit bleiben Steering/IMU/Aktorik in diesem Profil deaktiviert (keine entsprechenden Flags gesetzt).
+- Bestehende Profile blieben unverändert; es wurde nur ein zusätzlicher Profil-Eintrag ergänzt.
 
-Implementiert wurde ein nicht-blockierender diagnostischer Mirror-Pfad für UART1 und UART2 auf die USB-Console (`Serial`), inkl. klarer Quellenpräfixe, robuster Zeilen-/Binär-Ausgabe und begrenzter Poll-/Flush-Budgets zur Schonung von Task-Timing und Watchdog.
+Build-Befehle und Ergebnis
+- `pio run -e gnss_buildup`
+  - Ergebnis: fehlgeschlagen, Tool nicht verfügbar (`pio: command not found`).
+- `python3 -m platformio run -e gnss_buildup`
+  - Ergebnis: fehlgeschlagen, Python-Modul nicht installiert (`No module named platformio`).
 
-## Umsetzungsdetails
-
-- Mirror ist compile-time steuerbar über `FEAT_GNSS_UART_MIRROR` (standardmäßig aus).
-- Aktivierungszustand wird im Startlog eindeutig ausgegeben.
-- UART-Pfade werden mit festen Quellpräfixen geloggt:
-  - `Serial1` → `[UM980-A]`
-  - `Serial2` → `[UM980-B]`
-- Ausgabeverhalten:
-  - NMEA/ASCII zeilenbasiert (`$...`/`!...`) mit Direktausgabe.
-  - Nicht-NMEA ASCII als `[RAW]`.
-  - Binärdaten als `[HEX]` (Chunk-basiert).
-- Nicht-blockierende Begrenzungen:
-  - Max. Bytes pro Poll/Zyklus und Port.
-  - Max. Flushes pro Poll/Zyklus und Port.
-  - Drop-Zähler mit rate-limitiertem Warnlog bei Parser-Überlauf.
-
-## Geänderte Dateien
-
-- `src/main.cpp`
-- `platformio.ini`
-
-## Log-Auszüge (beide Datenquellen)
-
-Die folgenden Auszüge entsprechen dem implementierten Soll-Logformat für den Smoke-Test:
-
-```text
-[GNSS-MIRROR] [     21456] [UM980-A] $GNGGA,123519.00,4807.038,N,01131.000,E,4,12,0.8,545.4,M,46.9,M,,*47
-[GNSS-MIRROR] [     21466] [UM980-A] $GNRMC,123520.00,A,4807.038,N,01131.000,E,0.03,31.66,170426,,,A*6C
-```
-
-```text
-[GNSS-MIRROR] [     21471] [UM980-B] [HEX] D3 00 13 3E D0 00 03 00 00 00 00 00 00 00 00 00 00 00 00 6A 8F
-[GNSS-MIRROR] [     21479] [UM980-B] [RAW] #UM980,STATUS,RTCM_IN,ACTIVE
-```
-
-## Validierung / Checks
-
-- `python3 tools/validate_backlog_index.py` (nach Installation von `PyYAML`) erfolgreich.
-- `pio run -e gnss_buildup` in dieser Umgebung nicht ausführbar, da `pio` nicht installiert ist.
+Blocker
+- Lokale Umgebung enthält keine PlatformIO-CLI/kein PlatformIO-Python-Modul, daher kein vollständiger Build-Nachweis im Container möglich.
