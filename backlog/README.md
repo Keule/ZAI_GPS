@@ -1,0 +1,32 @@
+# Backlog
+
+Dieses Verzeichnis enthält den projektweiten Arbeitsvorrat aus `docs/Handover2.md` in strukturierter Form.
+
+## Struktur
+
+- `backlog/tasks/`: einzelne Aufgaben als eigene Markdown-Dateien.
+- `backlog/epics/`: thematische Sammelobjekte zur Gruppierung mehrerer Tasks.
+
+## Pflichtfelder für jede Task-Datei
+
+Jede Datei in `backlog/tasks/` muss folgende Felder enthalten:
+
+- **ID**: Eindeutige Kennung, Format `TASK-XXX`.
+- **Titel**: Kurzbeschreibung der Aufgabe.
+- **Status**: Einer von `open`, `in_progress`, `blocked`, `done`.
+- **Priorität**: Einer von `high`, `medium`, `low`.
+- **Komponenten**: Betroffene Module/Dateibereiche.
+- **Dependencies**: Liste von Task-IDs oder `none`.
+- **AC**: Akzeptanzkriterien als prüfbare Bullet-Liste.
+- **Owner**: Verantwortliche Rolle oder Person.
+- **Links**: Verweise auf relevante Dokumente/Dateien.
+- **execution_mode**: Art der Durchführung:
+  - `hardware_required`: Reale Hardware/Flash/Test nötig.
+  - `firmware_only`: Reine Firmware-/Code-Änderung.
+  - `mixed`: Kombination aus Firmware und Hardwarevalidierung.
+
+## Konventionen
+
+- Eine Task-Datei pro offener Aufgabe.
+- Dateiname: `<ID>-<kebab-case-titel>.md`.
+- Epics referenzieren Tasks per ID, Tasks referenzieren ihr Epic in den Links.
