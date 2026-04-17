@@ -102,6 +102,7 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
             if (pgnDecodeHelloFromAgio(payload, payload_len, &msg)) {
                 LOGI("NET", "Hello from AgIO (module=0x%02X, ver=%u) -> sending ALL module hellos",
                         (unsigned)msg.moduleId, (unsigned)msg.agioVersion);
+                modulesSendStartupErrors();
                 modulesSendHellos();
             }
             break;
@@ -110,6 +111,7 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
         case aog_pgn::SCAN_REQUEST: {
             if (pgnDecodeScanRequest(payload, payload_len)) {
                 LOGI("NET", "Scan request -> sending ALL module subnet replies");
+                modulesSendStartupErrors();
                 modulesSendSubnetReplies();
             }
             break;

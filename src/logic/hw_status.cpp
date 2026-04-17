@@ -25,14 +25,12 @@
 // Configuration
 // ===================================================================
 
-/// How often to re-send a persistent error message (milliseconds)
-static const uint32_t RESEND_INTERVAL_MS = 10000;  // 10 seconds
-
-/// Minimum time between any two hardware messages (milliseconds)
-static const uint32_t MIN_MSG_INTERVAL_MS = 2000;  // 2 seconds
-
-/// Delay before reporting an error after first detection (debounce)
-static const uint32_t ERROR_DEBOUNCE_MS = 3000;  // 3 seconds
+static const HwRateLimitPolicy HW_RATE_POLICY = {
+    500,    // startup_min_interval_ms
+    2000,   // runtime_min_interval_ms
+    3000,   // runtime_error_debounce_ms
+    10000   // runtime_resend_interval_ms
+};
 
 // ===================================================================
 // State
@@ -41,8 +39,9 @@ static const uint32_t ERROR_DEBOUNCE_MS = 3000;  // 3 seconds
 /// Per-subsystem status
 static HwSubsysStatus s_subsys[HW_COUNT];
 
-/// Timestamp of last hardware message sent (rate limiting)
-static uint32_t s_last_msg_sent_ms = 0;
+/// Timestamp of last hardware message sent (rate limiting, path-aware)
+static uint32_t s_last_startup_msg_sent_ms = 0;
+static uint32_t s_last_runtime_msg_sent_ms = 0;
 
 // ===================================================================
 // Human-readable subsystem names (for HW messages)
@@ -65,7 +64,8 @@ void hwStatusInit(void) {
         s_subsys[i].first_seen = 0;
         s_subsys[i].last_sent  = 0;
     }
-    s_last_msg_sent_ms = 0;
+    s_last_startup_msg_sent_ms = 0;
+    s_last_runtime_msg_sent_ms = 0;
     LOGI("HWS", "monitoring initialised (%u subsystems)", (unsigned)HW_COUNT);
 }
 
@@ -108,22 +108,43 @@ uint8_t hwStatusErrorCount(void) {
 // ===================================================================
 // Internal: send a formatted hardware message
 // ===================================================================
-static void sendHwMessage(uint8_t src, uint8_t color, uint8_t duration,
-                           const char* text) {
+static bool sendHwMessage(uint8_t src, uint8_t color, uint8_t duration,
+                          const char* text, HwErrorClass err_class) {
     uint32_t now = hal_millis();
 
-    // Rate limit: minimum interval between messages
-    if (now - s_last_msg_sent_ms < MIN_MSG_INTERVAL_MS) return;
+    uint32_t* last_sent_ms = (err_class == HW_ERR_CLASS_STARTUP)
+                             ? &s_last_startup_msg_sent_ms
+                             : &s_last_runtime_msg_sent_ms;
+    const uint32_t min_interval_ms =
+        (err_class == HW_ERR_CLASS_STARTUP)
+            ? HW_RATE_POLICY.startup_min_interval_ms
+            : HW_RATE_POLICY.runtime_min_interval_ms;
+
+    // Startup path may still need fallback logs even without network.
+    if (err_class == HW_ERR_CLASS_STARTUP && !hal_net_is_connected()) {
+        LOGW("HWS", "[startup-serial] %s", text);
+        return false;
+    }
+
+    // Runtime path: do nothing if no network transport is available.
+    if (err_class == HW_ERR_CLASS_RUNTIME && !hal_net_is_connected()) {
+        return false;
+    }
+
+    // Rate limit: minimum interval between messages for this path
+    if (now - *last_sent_ms < min_interval_ms) return false;
 
     uint8_t tx_buf[aog_frame::MAX_FRAME];
     size_t len = pgnEncodeHardwareMessage(tx_buf, sizeof(tx_buf),
                                            src, duration, color, text);
     if (len > 0) {
         hal_net_send(tx_buf, len, aog_port::AGIO_SEND);
-        s_last_msg_sent_ms = now;
-        LOGI("HWS", "sent msg color=%u dur=%u \"%s\"",
-                (unsigned)color, (unsigned)duration, text);
+        *last_sent_ms = now;
+        LOGI("HWS", "sent msg class=%u color=%u dur=%u \"%s\"",
+             (unsigned)err_class, (unsigned)color, (unsigned)duration, text);
+        return true;
     }
+    return false;
 }
 
 // ===================================================================
@@ -137,7 +158,33 @@ void hwStatusSendMessage(uint8_t src, HwSeverity severity, uint8_t duration,
     std::vsnprintf(text, sizeof(text), fmt, args);
     va_end(args);
 
-    sendHwMessage(src, severity, duration, text);
+    (void)sendHwMessage(src, severity, duration, text, HW_ERR_CLASS_RUNTIME);
+}
+
+HwSeverity hwStatusPriorityToSeverity(HwErrorPriority prio) {
+    switch (prio) {
+        case HW_ERR_PRIO_P1: return HW_SEV_ERROR;
+        case HW_ERR_PRIO_P2: return HW_SEV_WARNING;
+        case HW_ERR_PRIO_P3: return HW_SEV_INFO;
+        default: return HW_SEV_ERROR;
+    }
+}
+
+const HwRateLimitPolicy* hwStatusPolicy(void) {
+    return &HW_RATE_POLICY;
+}
+
+void hwStatusSendClassifiedMessage(uint8_t src,
+                                   HwErrorClass err_class,
+                                   HwErrorPriority prio,
+                                   uint8_t duration,
+                                   const char* fmt, ...) {
+    char text[aog_frame::HWMSG_MAX_TEXT + 1];
+    va_list args;
+    va_start(args, fmt);
+    std::vsnprintf(text, sizeof(text), fmt, args);
+    va_end(args);
+    (void)sendHwMessage(src, hwStatusPriorityToSeverity(prio), duration, text, err_class);
 }
 
 // ===================================================================
@@ -185,11 +232,11 @@ uint8_t hwStatusUpdate(bool connected,
         if (!s_subsys[i].error) continue;
 
         // Debounce: wait before first message
-        if (now - s_subsys[i].first_seen < ERROR_DEBOUNCE_MS) continue;
+        if (now - s_subsys[i].first_seen < HW_RATE_POLICY.runtime_error_debounce_ms) continue;
 
         // Resend interval for persistent errors
         if (s_subsys[i].last_sent > 0 &&
-            now - s_subsys[i].last_sent < RESEND_INTERVAL_MS) {
+            now - s_subsys[i].last_sent < HW_RATE_POLICY.runtime_resend_interval_ms) {
             continue;
         }
 
@@ -202,11 +249,8 @@ uint8_t hwStatusUpdate(bool connected,
                       (s_subsys[i].severity == HW_SEV_ERROR) ? "Failure" : "Not Available");
 
         // Send from steer module source
-        sendHwMessage(aog_src::STEER, s_subsys[i].severity,
-                      aog_hwmsg::DURATION_PERSIST, text);
-
-        if (s_subsys[i].last_sent == 0) {
-            // First time sending for this error
+        if (sendHwMessage(aog_src::STEER, s_subsys[i].severity,
+                          aog_hwmsg::DURATION_PERSIST, text, HW_ERR_CLASS_RUNTIME)) {
             s_subsys[i].last_sent = now;
         }
     }
@@ -222,7 +266,8 @@ uint8_t hwStatusUpdate(bool connected,
         // All errors cleared
         s_had_errors = false;
         // Send a single "all OK" message (green)
-        sendHwMessage(aog_src::STEER, HW_SEV_OK, 3, "All systems OK");
+        (void)sendHwMessage(aog_src::STEER, HW_SEV_OK, 3, "All systems OK",
+                            HW_ERR_CLASS_RUNTIME);
     }
 
     return err_count;

@@ -21,6 +21,7 @@
 #include "pgn_codec.h"
 #include "pgn_types.h"
 #include "global_state.h"
+#include "hw_status.h"
 #include "hal/hal.h"
 
 #include "log_config.h"
@@ -49,8 +50,8 @@ static ModuleHwStatus s_hw = {};
 static uint8_t s_module_ip[4] = {192, 168, 1, 70};
 static uint8_t s_module_subnet[3] = {255, 255, 255};
 
-/// Track if startup errors have been sent
-static bool s_startup_errors_sent = false;
+/// Track if startup errors still need to be sent to AgIO.
+static bool s_startup_errors_pending = true;
 
 static bool isModuleActive(const AogModuleInfo& mod) {
     return mod.enabled && mod.hw_detected;
@@ -217,34 +218,14 @@ void modulesSendSubnetReplies(void) {
 }
 
 // ===================================================================
-// Internal helper: send an error message via UDP if network is up,
-// otherwise log to Serial only.
-// ===================================================================
-static void reportError(const char* subsystem, const char* message,
-                         uint8_t src, uint8_t color) {
-    if (hal_net_is_connected()) {
-        uint8_t tx_buf[aog_frame::MAX_FRAME];
-        size_t len = pgnEncodeHardwareMessage(tx_buf, sizeof(tx_buf),
-                                               src,
-                                               aog_hwmsg::DURATION_PERSIST,
-                                               color,
-                                               message);
-        if (len > 0) {
-            hal_net_send(tx_buf, len, aog_port::AGIO_SEND);
-            hal_log("MODULES: UDP error sent - %s: %s", subsystem, message);
-            return;
-        }
-    }
-    // Fallback: Serial only
-    hal_log("MODULES: [SERIAL] %s: %s  (network not available)", subsystem, message);
-}
-
-// ===================================================================
 // Send startup error messages for failed hardware
 // ===================================================================
 void modulesSendStartupErrors(void) {
-    if (s_startup_errors_sent) return;
-    s_startup_errors_sent = true;
+    if (!s_startup_errors_pending) return;
+    const bool net_connected = hal_net_is_connected();
+    if (!net_connected) {
+        hal_log("MODULES: startup errors pending (network down, defer UDP report)");
+    }
 
     hal_log("MODULES: === Startup Error Report ===");
 
@@ -254,42 +235,53 @@ void modulesSendStartupErrors(void) {
         const AogModuleInfo& mod = s_modules[i];
 
         if (!s_hw.eth_detected) {
-            reportError(mod.name, "ERR Ethernet: W5500 Not Detected",
-                        mod.src_id, aog_hwmsg::COLOR_RED);
+            hwStatusSendClassifiedMessage(mod.src_id, HW_ERR_CLASS_STARTUP, HW_ERR_PRIO_P1,
+                                          aog_hwmsg::DURATION_PERSIST,
+                                          "ERR Ethernet: W5500 Not Detected");
         }
 
         if (i == AOG_MOD_STEER || i == AOG_MOD_GPS) {
             if (!s_hw.was_detected) {
-                reportError(mod.name, "ERR Steer Angle Sensor: Not Detected",
-                            mod.src_id, aog_hwmsg::COLOR_RED);
+                hwStatusSendClassifiedMessage(mod.src_id, HW_ERR_CLASS_STARTUP, HW_ERR_PRIO_P1,
+                                              aog_hwmsg::DURATION_PERSIST,
+                                              "ERR Steer Angle Sensor: Not Detected");
             }
             if (!s_hw.imu_detected) {
-                reportError(mod.name, "ERR IMU (BNO085): Not Detected",
-                            mod.src_id, aog_hwmsg::COLOR_RED);
+                hwStatusSendClassifiedMessage(mod.src_id, HW_ERR_CLASS_STARTUP, HW_ERR_PRIO_P1,
+                                              aog_hwmsg::DURATION_PERSIST,
+                                              "ERR IMU (BNO085): Not Detected");
             }
         }
 
         if (i == AOG_MOD_STEER || i == AOG_MOD_MACHINE) {
             if (!s_hw.actuator_detected) {
-                reportError(mod.name, "ERR Actuator: Not Detected",
-                            mod.src_id, aog_hwmsg::COLOR_RED);
+                hwStatusSendClassifiedMessage(mod.src_id, HW_ERR_CLASS_STARTUP, HW_ERR_PRIO_P1,
+                                              aog_hwmsg::DURATION_PERSIST,
+                                              "ERR Actuator: Not Detected");
             }
         }
 
         if (i == AOG_MOD_STEER && !s_hw.safety_ok) {
-            reportError(mod.name, "ERR Safety Circuit: KICK Engaged",
-                        mod.src_id, aog_hwmsg::COLOR_RED);
+            hwStatusSendClassifiedMessage(mod.src_id, HW_ERR_CLASS_STARTUP, HW_ERR_PRIO_P1,
+                                          aog_hwmsg::DURATION_PERSIST,
+                                          "ERR Safety Circuit: KICK Engaged");
         }
 
         char msg[64];
         std::snprintf(msg, sizeof(msg), "ERR Module %s: Not Available", mod.name);
         if (!mod.hw_detected) {
-            reportError(mod.name, msg, mod.src_id, aog_hwmsg::COLOR_RED);
+            hwStatusSendClassifiedMessage(mod.src_id, HW_ERR_CLASS_STARTUP, HW_ERR_PRIO_P1,
+                                          aog_hwmsg::DURATION_PERSIST, "%s", msg);
         }
     }
 
     hal_log("MODULES: === Startup Error Report Complete (%s) ===",
             hal_net_is_connected() ? "UDP" : "Serial only");
+
+    // Mark complete only when UDP path was available so AgIO can see boot faults.
+    if (net_connected) {
+        s_startup_errors_pending = false;
+    }
 }
 
 // ===================================================================

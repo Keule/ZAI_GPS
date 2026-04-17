@@ -40,6 +40,27 @@ enum HwSeverity : uint8_t {
 };
 
 // ===================================================================
+// Error classification for message path policy
+// ===================================================================
+enum HwErrorClass : uint8_t {
+    HW_ERR_CLASS_STARTUP = 0,  ///< Boot-time detection/reporting path
+    HW_ERR_CLASS_RUNTIME = 1   ///< Runtime monitoring/periodic path
+};
+
+enum HwErrorPriority : uint8_t {
+    HW_ERR_PRIO_P1 = 0,  ///< Critical (red)
+    HW_ERR_PRIO_P2 = 1,  ///< Degraded (yellow)
+    HW_ERR_PRIO_P3 = 2   ///< Informational (blue/green)
+};
+
+struct HwRateLimitPolicy {
+    uint32_t startup_min_interval_ms;
+    uint32_t runtime_min_interval_ms;
+    uint32_t runtime_error_debounce_ms;
+    uint32_t runtime_resend_interval_ms;
+};
+
+// ===================================================================
 // Per-subsystem status entry
 // ===================================================================
 struct HwSubsysStatus {
@@ -99,3 +120,13 @@ uint8_t hwStatusUpdate(bool connected,
 // ===================================================================
 void hwStatusSendMessage(uint8_t src, HwSeverity severity, uint8_t duration,
                           const char* fmt, ...);
+
+HwSeverity hwStatusPriorityToSeverity(HwErrorPriority prio);
+
+const HwRateLimitPolicy* hwStatusPolicy(void);
+
+void hwStatusSendClassifiedMessage(uint8_t src,
+                                   HwErrorClass err_class,
+                                   HwErrorPriority prio,
+                                   uint8_t duration,
+                                   const char* fmt, ...);
