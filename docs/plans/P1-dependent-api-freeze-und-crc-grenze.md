@@ -90,3 +90,15 @@ Danach können die technischen Refactorings parallel laufen.
 - Höchstes Risiko: implizite Verhaltensänderung an CRC-Entscheidungslogik.
 - Deshalb: kleine PRs, frühe Integrationsläufe, klare Testpflicht pro Pfad.
 - Bei Konflikten zwischen Refactoring und API-Freeze gilt immer der Freeze (bis ADR-Entscheid).
+
+---
+
+## Dokumentations-Templates (Standard)
+
+Für Session- und Entscheidungsdokumentation sind folgende Vorlagen zu verwenden:
+
+- [`templates/session-start.md`](../../templates/session-start.md)
+- [`templates/session-progress.md`](../../templates/session-progress.md)
+- [`templates/session-handover.md`](../../templates/session-handover.md)
+- [`templates/task.md`](../../templates/task.md)
+- [`templates/adr.md`](../../templates/adr.md)

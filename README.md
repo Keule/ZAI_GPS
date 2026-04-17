@@ -15,6 +15,12 @@ Dieses Repository ist der **kanonische Einstieg** für das Projekt `ZAI_GPS`.
    - [`docs/plans/P1-dependent-api-freeze-und-crc-grenze.md`](docs/plans/P1-dependent-api-freeze-und-crc-grenze.md)
 4. **Backlog/Arbeitsverlauf:**
    - [`worklog.md`](worklog.md)
+5. **Standard-Templates für Doku/Übergaben:**
+   - [`templates/session-start.md`](templates/session-start.md)
+   - [`templates/session-progress.md`](templates/session-progress.md)
+   - [`templates/session-handover.md`](templates/session-handover.md)
+   - [`templates/task.md`](templates/task.md)
+   - [`templates/adr.md`](templates/adr.md)
 
 ### Für Agenten
 1. **Zuerst dieses README lesen** (kanonischer Einstieg).
@@ -39,6 +45,12 @@ Dieses Repository ist der **kanonische Einstieg** für das Projekt `ZAI_GPS`.
   - [`docs/plans/P1-dependent-api-freeze-und-crc-grenze.md`](docs/plans/P1-dependent-api-freeze-und-crc-grenze.md)
 - **Backlog:**
   - [`worklog.md`](worklog.md)
+- **Templates:**
+  - [`templates/session-start.md`](templates/session-start.md)
+  - [`templates/session-progress.md`](templates/session-progress.md)
+  - [`templates/session-handover.md`](templates/session-handover.md)
+  - [`templates/task.md`](templates/task.md)
+  - [`templates/adr.md`](templates/adr.md)
 
 ## Protokollbesonderheit (sichtbar und verbindlich)
 
