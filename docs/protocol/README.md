@@ -18,3 +18,7 @@ performed from it yet.
 
 - [BNO080/BNO085 Datasheet](../BNO080_085-Datasheet.pdf): reference for BNO085
   SPI timing, INT signalling, SH-2 packet handling, and sensor report rates.
+
+## Bridge/Steering Contract
+
+- [Dual-GNSS Bridge -> Steering-Core Vertrag](../architecture/dual-gnss-steering-contract.md)
