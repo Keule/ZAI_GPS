@@ -1446,6 +1446,48 @@ void hal_esp32_init_imu_bringup(void) {
     hal_log("ESP32: IMU bring-up HAL init complete (ADS enabled, actuator/network skipped)");
 }
 
+void hal_esp32_init_gnss_buildup(void) {
+    hal_esp32_common_boot_init();
+
+#if defined(GNSS_BUILDUP_RTCM_UART_NUM)
+    constexpr uint8_t k_rtcm_uart_num = GNSS_BUILDUP_RTCM_UART_NUM;
+#else
+    constexpr uint8_t k_rtcm_uart_num = 1;
+#endif
+
+#if defined(GNSS_BUILDUP_RTCM_BAUD)
+    constexpr uint32_t k_rtcm_baud = GNSS_BUILDUP_RTCM_BAUD;
+#else
+    constexpr uint32_t k_rtcm_baud = 115200;
+#endif
+
+#if defined(GNSS_BUILDUP_RTCM_RX_PIN)
+    constexpr int8_t k_rtcm_rx_pin = static_cast<int8_t>(GNSS_BUILDUP_RTCM_RX_PIN);
+#else
+    constexpr int8_t k_rtcm_rx_pin = 45;
+#endif
+
+#if defined(GNSS_BUILDUP_RTCM_TX_PIN)
+    constexpr int8_t k_rtcm_tx_pin = static_cast<int8_t>(GNSS_BUILDUP_RTCM_TX_PIN);
+#else
+    constexpr int8_t k_rtcm_tx_pin = 48;
+#endif
+
+    // Communication path required for RTCM ingress (ETH UDP).
+    hal_net_init();
+
+    // Dedicated RTCM egress over GNSS UART.
+    hal_esp32_gnss_rtcm_set_uart(k_rtcm_uart_num);
+    const bool gnss_uart_ok = hal_gnss_rtcm_begin(k_rtcm_baud, k_rtcm_rx_pin, k_rtcm_tx_pin);
+    hal_log("ESP32: GNSS buildup HAL init %s (ETH=%s, UART%u baud=%lu rx=%d tx=%d)",
+            gnss_uart_ok ? "complete" : "degraded",
+            hal_net_is_connected() ? "UP" : "DOWN",
+            static_cast<unsigned>(k_rtcm_uart_num),
+            static_cast<unsigned long>(k_rtcm_baud),
+            static_cast<int>(k_rtcm_rx_pin),
+            static_cast<int>(k_rtcm_tx_pin));
+}
+
 void hal_esp32_init_all(void) {
     hal_esp32_common_boot_init();
 
