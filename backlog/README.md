@@ -6,6 +6,7 @@ Dieses Verzeichnis enthält den projektweiten Arbeitsvorrat aus `docs/Handover2.
 
 - `backlog/tasks/`: einzelne Aufgaben als eigene Markdown-Dateien.
 - `backlog/epics/`: thematische Sammelobjekte zur Gruppierung mehrerer Tasks.
+- `backlog/index.yaml`: zentraler Index mit Enums sowie Referenzen auf alle Epics und Tasks.
 
 ## Pflichtfelder für jede Task-Datei
 
@@ -30,3 +31,8 @@ Jede Datei in `backlog/tasks/` muss folgende Felder enthalten:
 - Eine Task-Datei pro offener Aufgabe.
 - Dateiname: `<ID>-<kebab-case-titel>.md`.
 - Epics referenzieren Tasks per ID, Tasks referenzieren ihr Epic in den Links.
+
+
+## Validierung
+
+- Optionaler Konsistenzcheck: `python3 tools/validate_backlog_index.py` (benötigt `PyYAML`).

@@ -1,0 +1,171 @@
+version: 1
+
+enums:
+  status:
+    - open
+    - in_progress
+    - blocked
+    - done
+  priority:
+    - high
+    - medium
+    - low
+  execution_mode:
+    - hardware_required
+    - firmware_only
+    - mixed
+  task_category:
+    - runtime_stability
+    - sensor_safety
+    - platform_reuse
+    - feature_expansion
+
+epics:
+  - id: EPIC-001
+    title: Runtime Stability
+    file: backlog/epics/EPIC-001-runtime-stability.md
+    task_ids:
+      - TASK-001
+      - TASK-002
+      - TASK-003
+
+  - id: EPIC-002
+    title: Sensor and Safety Integration
+    file: backlog/epics/EPIC-002-sensor-and-safety.md
+    task_ids:
+      - TASK-004
+      - TASK-005
+
+  - id: EPIC-003
+    title: Platform and Reuse
+    file: backlog/epics/EPIC-003-platform-and-reuse.md
+    task_ids:
+      - TASK-006
+      - TASK-011
+
+  - id: EPIC-004
+    title: Feature Expansion
+    file: backlog/epics/EPIC-004-feature-expansion.md
+    task_ids:
+      - TASK-007
+      - TASK-008
+      - TASK-009
+      - TASK-010
+
+tasks:
+  - id: TASK-001
+    title: Boot-Log mit aktuellem Firmware-Stand validieren
+    file: backlog/tasks/TASK-001-boot-log-validierung.md
+    epic_id: EPIC-001
+    status: open
+    priority: high
+    execution_mode: hardware_required
+    task_category: runtime_stability
+    dependencies: []
+
+  - id: TASK-002
+    title: Temporäre `[DBG-*]` Hz-Logs entfernen oder auf DEBUG-Level setzen
+    file: backlog/tasks/TASK-002-dbg-marker-bereinigen.md
+    epic_id: EPIC-001
+    status: open
+    priority: high
+    execution_mode: firmware_only
+    task_category: runtime_stability
+    dependencies:
+      - TASK-001
+
+  - id: TASK-003
+    title: Empfangene Steer-Config (PGN 251) funktional auf Hardware anwenden
+    file: backlog/tasks/TASK-003-pgn251-config-anwenden.md
+    epic_id: EPIC-001
+    status: open
+    priority: high
+    execution_mode: mixed
+    task_category: runtime_stability
+    dependencies: []
+
+  - id: TASK-004
+    title: BNO085-Pfad auf echter Hardware integrieren und kalibrieren
+    file: backlog/tasks/TASK-004-bno085-integration-produktiv.md
+    epic_id: EPIC-002
+    status: open
+    priority: medium
+    execution_mode: hardware_required
+    task_category: sensor_safety
+    dependencies: []
+
+  - id: TASK-005
+    title: Externen Hardware-Watchdog spezifizieren und integrieren
+    file: backlog/tasks/TASK-005-externer-hardware-watchdog.md
+    epic_id: EPIC-002
+    status: open
+    priority: medium
+    execution_mode: mixed
+    task_category: sensor_safety
+    dependencies:
+      - TASK-001
+
+  - id: TASK-006
+    title: PGN Codec/Types/Registry in wiederverwendbare Library extrahieren
+    file: backlog/tasks/TASK-006-pgn-bibliothek-auslagern.md
+    epic_id: EPIC-003
+    status: open
+    priority: medium
+    execution_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-003
+
+  - id: TASK-007
+    title: Zweite ESP32-Firmware für GPS-Bridge (PGN 214) erstellen
+    file: backlog/tasks/TASK-007-gps-bridge-firmware.md
+    epic_id: EPIC-004
+    status: open
+    priority: low
+    execution_mode: mixed
+    task_category: feature_expansion
+    dependencies:
+      - TASK-006
+
+  - id: TASK-008
+    title: PGN 182/183 für Abschnittssteuerung implementieren
+    file: backlog/tasks/TASK-008-section-control-pgn182-183.md
+    epic_id: EPIC-004
+    status: open
+    priority: low
+    execution_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-006
+
+  - id: TASK-009
+    title: PGN 100 (Corrected Position) für GPS-Out Geräte bereitstellen
+    file: backlog/tasks/TASK-009-nmea-output-pgn100.md
+    epic_id: EPIC-004
+    status: open
+    priority: low
+    execution_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-006
+
+  - id: TASK-010
+    title: Laufzeitfehler zusätzlich via PGN 221 an AgIO senden
+    file: backlog/tasks/TASK-010-runtime-fehler-reporting.md
+    epic_id: EPIC-004
+    status: open
+    priority: low
+    execution_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-003
+
+  - id: TASK-011
+    title: Automatischen PlatformIO Build-Check bei Push etablieren
+    file: backlog/tasks/TASK-011-platformio-ci-cd.md
+    epic_id: EPIC-003
+    status: open
+    priority: low
+    execution_mode: firmware_only
+    task_category: platform_reuse
+    dependencies: []
