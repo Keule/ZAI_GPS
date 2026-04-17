@@ -305,7 +305,7 @@ void controlStep(void) {
     const float cfg_min_speed_kmh = static_cast<float>(in.config_min_speed) * 0.1f;
     const float effective_min_speed_kmh =
         (cfg_min_speed_kmh > MIN_STEER_SPEED_KMH) ? cfg_min_speed_kmh : MIN_STEER_SPEED_KMH;
-
+    }
     if (!in.safety_ok || !in.auto_steer_enabled ||
         out.watchdog_triggered || in.gps_speed_kmh < effective_min_speed_kmh) {
         out.actuator_cmd = 0;
