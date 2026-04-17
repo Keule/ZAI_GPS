@@ -18,6 +18,7 @@
 #include <FreeRTOS.h>
 #include <esp_task_wdt.h>
 #include <esp_ota_ops.h>
+#include <cstdio>
 
 #include "hal/hal.h"
 #include "hal_esp32/hal_impl.h"
@@ -55,6 +56,180 @@ static inline bool shouldLogPeriodic(uint32_t now_ms, uint32_t* last_ms, uint32_
     if (now_ms - *last_ms < interval_ms) return false;
     *last_ms = now_ms;
     return true;
+}
+
+// ===================================================================
+// GNSS UART mirror (diagnostic bring-up path)
+// ===================================================================
+#if defined(FEAT_GNSS_UART_MIRROR)
+static constexpr bool MAIN_GNSS_UART_MIRROR_ENABLED = true;
+#else
+static constexpr bool MAIN_GNSS_UART_MIRROR_ENABLED = false;
+#endif
+
+#ifndef GNSS_MIRROR_BAUD
+#define GNSS_MIRROR_BAUD 115200
+#endif
+#ifndef GNSS_MIRROR_UART1_RX_PIN
+#define GNSS_MIRROR_UART1_RX_PIN 44
+#endif
+#ifndef GNSS_MIRROR_UART1_TX_PIN
+#define GNSS_MIRROR_UART1_TX_PIN -1
+#endif
+#ifndef GNSS_MIRROR_UART2_RX_PIN
+#define GNSS_MIRROR_UART2_RX_PIN 2
+#endif
+#ifndef GNSS_MIRROR_UART2_TX_PIN
+#define GNSS_MIRROR_UART2_TX_PIN -1
+#endif
+
+static constexpr size_t MAIN_GNSS_MIRROR_LINE_CAP = 96;
+static constexpr size_t MAIN_GNSS_MIRROR_BINARY_CHUNK = 24;
+static constexpr int MAIN_GNSS_MIRROR_MAX_BYTES_PER_PORT_POLL = 64;
+static constexpr int MAIN_GNSS_MIRROR_MAX_FLUSH_PER_PORT_POLL = 2;
+
+struct GnssMirrorPortState {
+    HardwareSerial* uart = nullptr;
+    const char* prefix = "";
+    uint8_t line_buf[MAIN_GNSS_MIRROR_LINE_CAP] = {0};
+    size_t line_len = 0;
+    bool binary_mode = false;
+    uint32_t dropped_bytes = 0;
+    uint32_t last_drop_log_ms = 0;
+};
+
+static GnssMirrorPortState s_gnss_mirror_ports[] = {
+    {&Serial1, "[UM980-A]"},
+    {&Serial2, "[UM980-B]"},
+};
+
+static void gnssMirrorLogDropped(GnssMirrorPortState* port, uint32_t now_ms) {
+    if (port->dropped_bytes == 0) return;
+    if (now_ms - port->last_drop_log_ms < 2000) return;
+    port->last_drop_log_ms = now_ms;
+    hal_log("GNSS-MIRROR: %s dropped=%lu byte(s) due to local parser limits",
+            port->prefix,
+            (unsigned long)port->dropped_bytes);
+    port->dropped_bytes = 0;
+}
+
+static bool gnssMirrorLooksLikeNmea(const uint8_t* data, size_t len) {
+    return len > 0 && (data[0] == '$' || data[0] == '!');
+}
+
+static void gnssMirrorFlush(GnssMirrorPortState* port) {
+    if (port->line_len == 0) return;
+
+    if (!port->binary_mode) {
+        char text[MAIN_GNSS_MIRROR_LINE_CAP + 1];
+        size_t out = 0;
+        for (size_t i = 0; i < port->line_len && out < MAIN_GNSS_MIRROR_LINE_CAP; ++i) {
+            const uint8_t b = port->line_buf[i];
+            if (b == '\r' || b == '\n') continue;
+            if (b >= 32 && b <= 126) {
+                text[out++] = static_cast<char>(b);
+            }
+        }
+        text[out] = '\0';
+
+        if (out > 0) {
+            if (gnssMirrorLooksLikeNmea(port->line_buf, port->line_len)) {
+                hal_log("GNSS-MIRROR: %s %s", port->prefix, text);
+            } else {
+                hal_log("GNSS-MIRROR: %s [RAW] %s", port->prefix, text);
+            }
+        }
+    } else {
+        char hex_line[(MAIN_GNSS_MIRROR_BINARY_CHUNK * 3) + 1];
+        size_t pos = 0;
+        for (size_t i = 0; i < port->line_len && i < MAIN_GNSS_MIRROR_BINARY_CHUNK; ++i) {
+            const int n = std::snprintf(&hex_line[pos], sizeof(hex_line) - pos, "%02X",
+                                        (unsigned)port->line_buf[i]);
+            if (n <= 0) break;
+            pos += static_cast<size_t>(n);
+            if ((i + 1) < port->line_len && pos + 1 < sizeof(hex_line)) {
+                hex_line[pos++] = ' ';
+                hex_line[pos] = '\0';
+            }
+        }
+        if (pos > 0) {
+            hal_log("GNSS-MIRROR: %s [HEX] %s", port->prefix, hex_line);
+        }
+    }
+
+    port->line_len = 0;
+    port->binary_mode = false;
+}
+
+static void gnssMirrorPollPort(GnssMirrorPortState* port) {
+    if (!port || !port->uart) return;
+
+    int bytes_left = MAIN_GNSS_MIRROR_MAX_BYTES_PER_PORT_POLL;
+    int flush_budget = MAIN_GNSS_MIRROR_MAX_FLUSH_PER_PORT_POLL;
+
+    while (bytes_left-- > 0 && port->uart->available() > 0) {
+        const int value = port->uart->read();
+        if (value < 0) break;
+
+        const uint8_t b = static_cast<uint8_t>(value);
+        const bool is_newline = (b == '\n');
+        const bool is_ascii = (b == '\r' || b == '\n' || b == '\t' || (b >= 32 && b <= 126));
+
+        if (!is_ascii) {
+            port->binary_mode = true;
+        }
+
+        if (!is_newline) {
+            if (port->line_len < MAIN_GNSS_MIRROR_LINE_CAP) {
+                port->line_buf[port->line_len++] = b;
+            } else {
+                port->dropped_bytes++;
+                if (flush_budget > 0) {
+                    gnssMirrorFlush(port);
+                    flush_budget--;
+                }
+            }
+        }
+
+        const bool force_binary_flush = port->binary_mode &&
+                                        port->line_len >= MAIN_GNSS_MIRROR_BINARY_CHUNK;
+        if (is_newline || force_binary_flush) {
+            if (flush_budget > 0) {
+                gnssMirrorFlush(port);
+                flush_budget--;
+            } else {
+                break;
+            }
+        }
+    }
+
+    gnssMirrorLogDropped(port, hal_millis());
+}
+
+static void gnssMirrorPoll(void) {
+    if (!MAIN_GNSS_UART_MIRROR_ENABLED) return;
+    for (GnssMirrorPortState& port : s_gnss_mirror_ports) {
+        gnssMirrorPollPort(&port);
+    }
+}
+
+static void gnssMirrorInit(void) {
+    if (!MAIN_GNSS_UART_MIRROR_ENABLED) {
+        hal_log("GNSS-MIRROR: disabled (compile with FEAT_GNSS_UART_MIRROR to enable)");
+        return;
+    }
+
+    Serial1.begin(GNSS_MIRROR_BAUD, SERIAL_8N1, GNSS_MIRROR_UART1_RX_PIN, GNSS_MIRROR_UART1_TX_PIN);
+    Serial2.begin(GNSS_MIRROR_BAUD, SERIAL_8N1, GNSS_MIRROR_UART2_RX_PIN, GNSS_MIRROR_UART2_TX_PIN);
+
+    hal_log("GNSS-MIRROR: enabled baud=%lu UART1(rx=%d tx=%d)->%s UART2(rx=%d tx=%d)->%s",
+            (unsigned long)GNSS_MIRROR_BAUD,
+            (int)GNSS_MIRROR_UART1_RX_PIN,
+            (int)GNSS_MIRROR_UART1_TX_PIN,
+            s_gnss_mirror_ports[0].prefix,
+            (int)GNSS_MIRROR_UART2_RX_PIN,
+            (int)GNSS_MIRROR_UART2_TX_PIN,
+            s_gnss_mirror_ports[1].prefix);
 }
 
 // ===================================================================
@@ -172,6 +347,7 @@ static void commTaskFunc(void* param) {
 
         // ---------------------------------- Output ----------------------------------
         netSendAogFrames();
+        gnssMirrorPoll();
 
         if (MAIN_VERBOSE_TASK_DBG) {
             // Heartbeat DBG every 5s (= every 500 iterations)
@@ -271,8 +447,11 @@ void setup() {
     if (s_imu_bringup_active) {
         hal_log("Main: IMU bring-up mode active (FEAT_IMU_BRINGUP).");
         imuBringupInit();
+        gnssMirrorInit();
         return;
     }
+
+    gnssMirrorInit();
 
     // -----------------------------------------------------------------
     // SD-Card OTA Firmware Update
