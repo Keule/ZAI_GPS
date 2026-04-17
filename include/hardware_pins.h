@@ -51,108 +51,14 @@
 #include <cstdint>
 #include "board_profile/board_profile_select.h"
 
-// ---------------------------------------------------------------------------
-// SPI Bus 1: Ethernet - W5500 (managed by ESP-IDF ETH driver on SPI3_HOST)
-// These pins are fixed by the board design - DO NOT CHANGE.
-// ---------------------------------------------------------------------------
-#define ETH_SCK        BOARD_ETH_SCK
-#define ETH_MISO       BOARD_ETH_MISO
-#define ETH_MOSI       BOARD_ETH_MOSI
-#define ETH_CS         BOARD_ETH_CS
-#define ETH_INT        BOARD_ETH_INT
-#define ETH_RST        BOARD_ETH_RST
-
-// ---------------------------------------------------------------------------
-// SPI Bus 2: Sensor Bus (FSPI = SPI2_HOST)
-//
-// ADS1118, IMU, and Actuator share this bus with different CS pins.
-// SCK/MISO/MOSI are on GPIO 16/15/17 respectively.
-// ---------------------------------------------------------------------------
-#define SENS_SPI_SCK   47     // SPI clock
-#define SENS_SPI_MISO  21     // SPI MISO (data from devices to ESP32)
-#define SENS_SPI_MOSI  38     // SPI MOSI (data from ESP32 to devices)
-
-// Guard against accidental duplicate IMU pin definitions from build flags or
-// other headers. This file is the single source of truth for IMU wiring.
-#if defined(IMU_RST) || defined(IMU_INT) || defined(CS_IMU) || defined(IMU_WAKE)
-  #error "IMU pins already defined elsewhere; keep IMU pin mapping canonical in hardware_pins.h"
-#endif
-
-// ---------------------------------------------------------------------------
-// Current IMU Wiring (single source of truth)
-// ---------------------------------------------------------------------------
-#define IMU_INT        46    // BNO085 INT pin (input to ESP32-S3)
-#define IMU_RST        41
-#define CS_IMU          40    // BNO085 IMU
-#define IMU_WAKE       15    // BNO085 PS0/WAKE (set HIGH before reset for SPI mode)
-
-// Chip Selects (active LOW) - GPIOs 38-42 are output-only, which is fine for CS/control.
-
-#define CS_STEER_ANG   18    // ADS1118 ADC (steer angle potentiometer)
-#define CS_ACT         16    // Actuator driver
 
 
-
-
-
-
-// ---------------------------------------------------------------------------
-// SD Card (FSPI = SPI2_HOST, OTA only)
-//
-// The SD card uses the SAME SPI peripheral (FSPI) but DIFFERENT pins.
-// During normal operation FSPI is initialised with sensor pins (15/16/17).
-// For OTA firmware updates, FSPI is re-initialised with SD pins (5/6/7)
-// via hal_sensor_spi_deinit() / hal_sensor_spi_reinit().
-// ---------------------------------------------------------------------------
-#define SD_SPI_SCK     7      // SPI clock for SD card
-#define SD_SPI_MISO    5      // SPI MISO for SD card
-#define SD_SPI_MOSI    6      // SPI MOSI for SD card
-#define SD_CS          42     // SD card slot
-
-// ---------------------------------------------------------------------------
-// Safety input (active LOW)
-// ---------------------------------------------------------------------------
-#define SAFETY_IN       4
-
-// ---------------------------------------------------------------------------
-// GNSS UART bring-up matrix (TASK-019A)
-//
-// Board constraints (ESP32-S3R8):
-//   - GPIO 26..37: reserved by Octal PSRAM (must not be used)
-//   - GPIO 38..42: output-only (must not be used as UART RX)
-//
-// Selected assignment:
-//   - UART1 (GNSS/RTCM primary): TX=48, RX=45
-//   - UART2 (GNSS/Console mirror): TX=2, RX=1
-// ---------------------------------------------------------------------------
-#define GNSS_UART1_TX   48
-#define GNSS_UART1_RX   45
-#define GNSS_UART2_TX    2
-#define GNSS_UART2_RX    1
-
-// GNSS console mirror defaults (diagnostic read-only sniffing in gnss_buildup)
-inline constexpr uint32_t GNSS_MIRROR_BAUD = 115200;
-inline constexpr int8_t GNSS_MIRROR_UART1_RX_PIN = 44;
-inline constexpr int8_t GNSS_MIRROR_UART1_TX_PIN = -1;
-inline constexpr int8_t GNSS_MIRROR_UART2_RX_PIN = 2;
-inline constexpr int8_t GNSS_MIRROR_UART2_TX_PIN = -1;
 
 // Optional GNSS sideband lines (not wired on current board revision)
 #define GNSS1_PPS_PIN   -1
 #define GNSS1_EN_PIN    -1
 #define GNSS2_PPS_PIN   -1
 #define GNSS2_EN_PIN    -1
-
-// ---------------------------------------------------------------------------
-// Logging switch (active LOW, internal pull-up)
-//
-// GPIO 46 is an ESP32-S3 strapping pin, but works for this active-LOW input:
-// floating/LOW is safe for serial download mode and normal boot ignores it.
-// Connect a toggle switch between GPIO 46 and GND.
-//   Switch OFF (open)  -> pin pulled HIGH -> logging disabled
-//   Switch ON (closed) -> pin pulled LOW  -> logging enabled
-// ---------------------------------------------------------------------------
-#define LOG_SWITCH_PIN   46
 
 // ---------------------------------------------------------------------------
 // Firmware OTA files on SD card
