@@ -65,3 +65,27 @@ Handover-Dokumente dürfen ergänzen, aber nicht diese Vorgaben ersetzen.
 ## Grundsatz (verbindlich)
 
 **Pinbelegung gehört in die zentrale Hardware-Konfiguration, nicht in Build-Flags.**
+
+## Plattformregeln (ESP32 vs ESP32-S3, verbindlich)
+
+### ESP32-WROVER-E (Environment `T-ETH-Lite-ESP32`)
+
+Pflichtregeln:
+- `board = esp-wrover-kit` (WROVER-E/PSRAM-Klasse; stabilere Basiskonfiguration als generisches `esp32dev`).
+- Ethernet via Arduino-`ETH.h`/IDF-Driver mit W5500-Pfad, daher Build-Defines:
+  - `ETH_PHY_TYPE=ETH_PHY_W5500`
+  - `ETH_PHY_ADDR=1`
+- Keine erzwungenen TFT_eSPI-Setup-Includes (`-include ...TFT_eSPI...`) im Ethernet/GNSS-Profil.
+
+Warum:
+- W5500 wird im Projekt explizit über `ETH.begin(...)` initialisiert; die PHY-Defines halten die Konfiguration im Buildprofil nachvollziehbar.
+- TFT_eSPI ist für GNSS/ETH-Builds kein Pflichtbestandteil; erzwungene Includes führen unnötig zu Header-Abhängigkeiten.
+
+### ESP32-S3 (Environment `T-ETH-Lite-ESP32S3`)
+
+Pflichtregeln:
+- S3-spezifische Build-Flags bleiben unverändert.
+- Für GNSS-Buildup auf S3 wird ein eigener Pfad `gnss_buildup_s3` geführt.
+
+Warum:
+- So bleibt der bisherige S3-Workflow kompatibel, während `gnss_buildup` normativ den ESP32-WROVER-E-Pfad abdeckt.

@@ -38,7 +38,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
-#include <FreeRTOS.h>
+#include <freertos/FreeRTOS.h>
 
 // ===================================================================
 // Configuration

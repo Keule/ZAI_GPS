@@ -16,7 +16,7 @@
  */
 
 #include <Arduino.h>
-#include <FreeRTOS.h>
+#include <freertos/FreeRTOS.h>
 #include <esp_task_wdt.h>
 #include <esp_ota_ops.h>
 #include <cstdio>
