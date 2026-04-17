@@ -29,3 +29,30 @@ Es wurde ein klar aktivierbarer GNSS-Buildup-Modus mit reduziertem Initialisieru
 ## Verifikation
 - Buildaufruf für `gnss_buildup` versucht (`pio run -e gnss_buildup` / `python3 -m platformio run -e gnss_buildup`), jedoch in der Umgebung ohne installiertes PlatformIO-CLI/-Modul nicht ausführbar.
 - Regressionstest für Standard-Environment aus gleichem Grund hier nicht lokal ausführbar; Änderungen sind auf klar getrennte Moduspfade begrenzt.
+Offene Fragen / Probleme
+- Keine inhaltlichen Blocker für den Backlog-Stand.
+- Rollenhinweis: `backlog/README.md` weist Task-Neuanlage dem KI-Planer zu; Umsetzung erfolgte hier auf explizite Arbeitsanweisung.
+
+---
+
+Task-ID: TASK-019B
+Titel: PlatformIO-Environment `gnss_buildup` für GNSS-Buildup
+Datum: 2026-04-17
+
+Umsetzung
+- Neues PlatformIO-Environment `gnss_buildup` auf Basis `env:T-ETH-Lite-ESP32S3` in `platformio.ini` ergänzt.
+- Für das Profil wurden ausschließlich Comm+GNSS-Flags gesetzt:
+  - `-DFEAT_PROFILE_COMM_ONLY`
+  - `-DFEAT_COMM`
+  - `-DFEAT_GNSS`
+- Damit bleiben Steering/IMU/Aktorik in diesem Profil deaktiviert (keine entsprechenden Flags gesetzt).
+- Bestehende Profile blieben unverändert; es wurde nur ein zusätzlicher Profil-Eintrag ergänzt.
+
+Build-Befehle und Ergebnis
+- `pio run -e gnss_buildup`
+  - Ergebnis: fehlgeschlagen, Tool nicht verfügbar (`pio: command not found`).
+- `python3 -m platformio run -e gnss_buildup`
+  - Ergebnis: fehlgeschlagen, Python-Modul nicht installiert (`No module named platformio`).
+
+Blocker
+- Lokale Umgebung enthält keine PlatformIO-CLI/kein PlatformIO-Python-Modul, daher kein vollständiger Build-Nachweis im Container möglich.
