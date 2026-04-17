@@ -46,8 +46,12 @@ Dieses Dokument definiert, wie ein Plan-Agent Aufgaben in **unabhängige** und *
 2. Der KI-Planer erstellt den Branch `task/<Task-ID>` vom aktuellen Entwicklungszweig.
 3. KI-Entwickler checken den Task-Branch aus, ändern ausschließlich Code und legen ihren Report unter `reports/<Task-ID>/<dev-name>.md` gemäß `templates/dev-report.md` an.
 4. KI-Entwickler eröffnen Pull Requests gegen den jeweiligen Task-Branch (nicht gegen `main` oder `gnss_integration`).
-5. KI-Reviewer und Mensch sichten die PRs, werten die Reports aus, integrieren die Erkenntnisse in Dokumentation/Backlog und schließen den Task.
-6. Nach Abschluss wird der Task-Branch in den Entwicklungszweig (`gnss_integration`) gemergt.
+5. Vor PR-Freigabe prüfen KI-Reviewer und/oder KI-Planer explizit:
+   - Existiert eine Report-Datei für die Task-ID unter `reports/<Task-ID>/<dev-name>.md`?
+   - Ist das Template vollständig ausgefüllt (mindestens: Zusammenfassung, geänderte Dateien, Tests/Build, offene Fragen)?
+   - Falls nein: PR nicht freigeben, Task-Status mindestens `blocked` belassen.
+6. KI-Reviewer und Mensch sichten die PRs, werten die Reports aus, integrieren die Erkenntnisse in Dokumentation/Backlog und schließen den Task.
+7. Nach Abschluss wird der Task-Branch in den Entwicklungszweig (`gnss_integration`) gemergt.
 
 ---
 
