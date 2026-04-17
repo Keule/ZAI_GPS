@@ -81,6 +81,18 @@ Anschließend im `backlog/index.yaml` registrieren.
    - Normative Regeln stehen in `README.md`, Prozess-, Architektur- und Protokolldokumenten.
    - Handover-Dateien dienen zur Übergabe, nicht als verbindliche Quelle.
 
+
+## 2e) Prozessabweichung
+**Trigger:**
+- falscher Branch,
+- fehlender Entwickler-Report,
+- Rollenverstoß (z. B. KI-Entwickler ändert Prozess-/Doku-Dateien).
+
+**Pflichtreaktion:**
+- Der KI-Planer legt umgehend einen Nacharbeits-Task an.
+- Der Task enthält mindestens: klare AC, Owner und eine konkrete Deadline.
+- Der Task wird in `backlog/index.yaml` sichtbar registriert und bis zur Erledigung nachverfolgt.
+
 ## 3) Umsetzung
 1. Kleine, nachvollziehbare Änderungen.
 2. Architekturgrenzen respektieren:

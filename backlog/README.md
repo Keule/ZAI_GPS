@@ -38,6 +38,11 @@ Jede Datei in `backlog/tasks/` muss folgende Felder enthalten:
 - Epics referenzieren Tasks per ID, Tasks referenzieren ihr Epic in den Links.
 
 
+
+- Prozess-/Hygiene-Nacharbeit: Ergänze im Task-Titel oder Kontext den Marker `[#process-hygiene]` für alle Nacharbeits-Tasks aus Prozessabweichungen.
+  - Zweck: Sichtbarkeit im Index und einfache Nachverfolgung über Suche/Filter.
+  - Gilt insbesondere für Trigger wie falscher Branch, fehlender Report oder Rollenverstoß.
+
 ## Validierung
 
 - Optionaler Konsistenzcheck: `python3 tools/validate_backlog_index.py` (benötigt `PyYAML`).

@@ -36,3 +36,13 @@ Einheitliche Beschreibung einer umsetzbaren Arbeitseinheit.
 - Owner: Firmware-Team
 - Status: in_progress
 ```
+
+
+## Template-Snippet: Nacharbeits-Task
+```md
+## Nacharbeit (bei Prozessabweichung)
+- Ursache:
+- Betroffene Task-ID/PR:
+- Korrekturmaßnahme:
+- Präventionsmaßnahme:
+```
