@@ -177,6 +177,6 @@ tasks:
     epic_id: EPIC-003
     status: open
     priority: medium
-    execution_mode: firmware_only
+    delivery_mode: firmware_only
     task_category: platform_reuse
     dependencies: []
