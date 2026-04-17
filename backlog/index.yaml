@@ -42,6 +42,7 @@ epics:
     task_ids:
       - TASK-006
       - TASK-011
+      - TASK-012
 
   - id: EPIC-004
     title: Feature Expansion
@@ -166,6 +167,16 @@ tasks:
     epic_id: EPIC-003
     status: open
     priority: low
+    execution_mode: firmware_only
+    task_category: platform_reuse
+    dependencies: []
+
+  - id: TASK-012
+    title: Technische Dokumentation und Architekturartefakte konsolidieren und aktuell halten
+    file: backlog/tasks/TASK-012-doku-architekturpflege.md
+    epic_id: EPIC-003
+    status: open
+    priority: medium
     execution_mode: firmware_only
     task_category: platform_reuse
     dependencies: []
