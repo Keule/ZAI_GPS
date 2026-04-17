@@ -2,7 +2,7 @@ Du bist in der Rolle als KI-Entwickler mit der Aufgabe betraut, ein dediziertes 
 
 - **ID**: TASK-019B
 - **Titel**: PlatformIO-Environment `gnss_buildup` für GNSS-Buildup hinzufügen
-- **Status**: open
+- **Status**: done
 - **Priorität**: high
 - **Komponenten**: `platformio.ini`, Build-Flags, optionale CI-/Build-Dokumentation
 - **Dependencies**: TASK-019A

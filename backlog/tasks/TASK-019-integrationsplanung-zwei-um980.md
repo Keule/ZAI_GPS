@@ -2,10 +2,10 @@
 
 - **ID**: TASK-019
 - **Titel**: Integrationsplanung für zwei UM980-Module erstellen
-- **Status**: open
+- **Status**: in_progress
 - **Priorität**: high
 - **Komponenten**: `docs/plans/`, `src/hal_esp32/`, `src/logic/`, UART-/RTCM-Datenpfad, Konfigurationsmanagement
-- **Dependencies**: TASK-013, TASK-014, TASK-015, TASK-017
+- **Dependencies**: TASK-013, TASK-014A, TASK-015, TASK-017
 - **AC**:
   - Ein umsetzbarer Integrationsplan für den Parallelbetrieb von zwei UM980 liegt als Dokument vor (Topologie, Rollenverteilung, Datenflüsse, Fallback-Verhalten).
   - Die Schnittstellen zwischen HAL, Netzwerk und PGN-Pipeline sind mit klaren Verantwortlichkeiten, Änderungsbedarf und Risiken beschrieben.
@@ -22,3 +22,12 @@
   - `docs/Handover2.md#8-offene-aufgaben--todos`
 - **delivery_mode**: mixed
 - **task_category**: feature_expansion
+
+
+## Planer-Update (2026-04-17)
+
+- Konsolidierung der gemergten Umsetzung TASK-019A..019E abgeschlossen (Status `done`).
+- Restumfang für TASK-019 bleibt **offen** und fokussiert auf:
+  - produktive Dual-UM980-Failover-Logik im Runtime-Pfad,
+  - Labor-/Feldvalidierung mit reproduzierbaren Messkriterien.
+- Folge-Tasks: `TASK-019F` (Failover-Logik) und `TASK-019G` (Labor-/Feldvalidierung).

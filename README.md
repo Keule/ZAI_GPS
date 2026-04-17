@@ -67,6 +67,14 @@ Dieses Repository ist der **kanonische Einstieg** für das Projekt `ZAI_GPS`.
 >
 > Änderungen dürfen diese Grenze nicht implizit verschieben.
 
+## GNSS-Buildup (kurz, normativ)
+
+Für GNSS-Diagnose/Bringup ist das dedizierte PlatformIO-Profil `gnss_buildup` zu verwenden.
+
+- Zweck: reduzierter Init-Pfad (Comm + GNSS), UART-Mirror für schnelle Diagnose.
+- Verbindliche Doku: [`docs/process/GNSS_BUILDUP.md`](docs/process/GNSS_BUILDUP.md).
+- Finale UART-Pins (Board): UART1 `TX48/RX45`, UART2 `TX2/RX1`.
+
 ## Build & Smoke lokal
 
 ```bash

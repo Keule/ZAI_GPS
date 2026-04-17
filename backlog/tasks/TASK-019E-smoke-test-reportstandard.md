@@ -2,7 +2,7 @@ Du bist in der Rolle als KI-Entwickler mit der Aufgabe betraut, einen verbindlic
 
 - **ID**: TASK-019E
 - **Titel**: Smoke-Test-Reportstandard für GNSS-Buildup festlegen
-- **Status**: open
+- **Status**: done
 - **Priorität**: medium
 - **Komponenten**: `templates/`, `reports/`, Test-/Validierungsdokumentation
 - **Dependencies**: TASK-019B, TASK-019C, TASK-019D

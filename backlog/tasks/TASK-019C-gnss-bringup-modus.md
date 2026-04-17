@@ -2,7 +2,7 @@ Du bist in der Rolle als KI-Entwickler mit der Aufgabe betraut, einen GNSS-Bring
 
 - **ID**: TASK-019C
 - **Titel**: GNSS-Bringup-Modus für kontrollierte Initialisierung implementierbar spezifizieren
-- **Status**: open
+- **Status**: done
 - **Priorität**: high
 - **Komponenten**: `src/`, `include/`, GNSS-Init-Pfade, Logging/State-Handling
 - **Dependencies**: TASK-019B

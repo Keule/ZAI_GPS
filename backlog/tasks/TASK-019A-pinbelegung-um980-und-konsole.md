@@ -2,7 +2,7 @@ Du bist in der Rolle als KI-Entwickler mit der Aufgabe betraut, die Pinbelegung 
 
 - **ID**: TASK-019A
 - **Titel**: Pinbelegung für UM980/GNSS-Buildup und Console-Mirror festlegen
-- **Status**: open
+- **Status**: done
 - **Priorität**: high
 - **Komponenten**: `boards/`, `include/`, `src/hal_esp32/`, UART-Pinmapping, Board-Dokumentation
 - **Dependencies**: TASK-019

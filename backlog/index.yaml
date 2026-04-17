@@ -66,6 +66,8 @@ epics:
       - TASK-019C
       - TASK-019D
       - TASK-019E
+      - TASK-019F
+      - TASK-019G
 
 tasks:
   - id: TASK-001
@@ -301,7 +303,7 @@ tasks:
     title: Integrationsplanung für zwei UM980-Module erstellen
     file: backlog/tasks/TASK-019-integrationsplanung-zwei-um980.md
     epic_id: EPIC-004
-    status: open
+    status: in_progress
     priority: high
     delivery_mode: mixed
     task_category: feature_expansion
@@ -315,7 +317,7 @@ tasks:
     title: Pinbelegung für UM980/GNSS-Buildup und Console-Mirror festlegen
     file: backlog/tasks/TASK-019A-pinbelegung-um980-und-konsole.md
     epic_id: EPIC-004
-    status: open
+    status: done
     priority: high
     delivery_mode: firmware_only
     task_category: feature_expansion
@@ -326,7 +328,7 @@ tasks:
     title: PlatformIO-Environment `gnss_buildup` für GNSS-Buildup hinzufügen
     file: backlog/tasks/TASK-019B-platformio-environment-gnss-buildup.md
     epic_id: EPIC-004
-    status: open
+    status: done
     priority: high
     delivery_mode: firmware_only
     task_category: feature_expansion
@@ -337,7 +339,7 @@ tasks:
     title: GNSS-Bringup-Modus für kontrollierte Initialisierung implementierbar spezifizieren
     file: backlog/tasks/TASK-019C-gnss-bringup-modus.md
     epic_id: EPIC-004
-    status: open
+    status: done
     priority: high
     delivery_mode: mixed
     task_category: feature_expansion
@@ -348,7 +350,7 @@ tasks:
     title: UART1/2 nach Console spiegeln (diagnostischer Mirror-Pfad)
     file: backlog/tasks/TASK-019D-uart1-uart2-console-mirror.md
     epic_id: EPIC-004
-    status: open
+    status: done
     priority: medium
     delivery_mode: mixed
     task_category: feature_expansion
@@ -360,7 +362,7 @@ tasks:
     title: Smoke-Test-Reportstandard für GNSS-Buildup festlegen
     file: backlog/tasks/TASK-019E-smoke-test-reportstandard.md
     epic_id: EPIC-004
-    status: open
+    status: done
     priority: medium
     delivery_mode: firmware_only
     task_category: feature_expansion
@@ -368,3 +370,28 @@ tasks:
       - TASK-019B
       - TASK-019C
       - TASK-019D
+
+  - id: TASK-019F
+    title: Dual-UM980 Failover-Logik für Primär/Sekundär-Betrieb umsetzen
+    file: backlog/tasks/TASK-019F-dual-um980-failover-logik.md
+    epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: mixed
+    task_category: feature_expansion
+    dependencies:
+      - TASK-019C
+      - TASK-019D
+      - TASK-017
+
+  - id: TASK-019G
+    title: Labor- und Feldvalidierung für Dual-UM980 inklusive Smoke-/Langlauftests
+    file: backlog/tasks/TASK-019G-dual-um980-labor-feldvalidierung.md
+    epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: hardware_required
+    task_category: feature_expansion
+    dependencies:
+      - TASK-019E
+      - TASK-019F

@@ -2,7 +2,7 @@ Du bist in der Rolle als KI-Entwickler mit der Aufgabe betraut, das UART1/2→Co
 
 - **ID**: TASK-019D
 - **Titel**: UART1/2 nach Console spiegeln (diagnostischer Mirror-Pfad)
-- **Status**: open
+- **Status**: done
 - **Priorität**: medium
 - **Komponenten**: UART-Read/Write-Pfade, Logging-Ausgabe, Konfig-Flags für Mirror
 - **Dependencies**: TASK-019A, TASK-019C
