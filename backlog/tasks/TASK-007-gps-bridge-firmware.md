@@ -1,17 +1,30 @@
-# TASK-007 GPS-Bridge Firmware
+# TASK-007 GPS-Bridge vorbereiten
 
 - **ID**: TASK-007
-- **Titel**: Zweite ESP32-Firmware für GPS-Bridge (PGN 214) erstellen
+- **Titel**: Basis für zweite ESP32-GPS-Bridge-Firmware (PGN 214) vorbereiten
 - **Status**: open
-- **Priorität**: low
-- **Komponenten**: neue firmware app, network stack, PGN 214 encoder
+- **Priorität**: medium
+- **Komponenten**: zweite firmware app, network stack, PGN-214 encoder, Build-Konfiguration
 - **Dependencies**: TASK-006
+- **Kontext/Problem**:
+  - Für eine entkoppelte GPS-Bridge fehlt ein belastbares Startgerüst inkl. Datenpfad und Build-Setup.
+  - Ohne vorbereitete Struktur ist eine iterative Inbetriebnahme auf Hardware aufwendig.
+- **Scope (in)**:
+  - Projekt-/Build-Skelett für die Bridge-Firmware anlegen.
+  - Eingangspfad für GPS-Daten definieren und an PGN-214-Encoder anbinden.
+  - UDP-Ausgabepfad zu AgIO konfigurierbar vorbereiten.
+- **Nicht-Scope (out)**:
+  - Vollständige Serienreife inkl. Langzeit-Hardwaretests.
+  - Erweiterte Diagnose-/Monitoring-Features außerhalb des Basispfads.
 - **AC**:
   - GPS-Daten werden empfangen und in PGN 214 konvertiert.
   - Versand an AgIO über definierten UDP-Pfad erfolgt stabil.
   - Basisintegrationstest mit AgIO erfolgreich.
+- **Verifikation/Test**:
+  - Reproduzierbarer Build der Bridge-Firmware.
+  - Kurzer End-to-End-Test (Input GPS -> PGN 214 -> UDP an AgIO) dokumentiert.
 - **Owner**: platform-team
 - **Links**:
-  - docs/Handover2.md#8-offene-aufgaben--todos
-  - backlog/epics/EPIC-004-feature-expansion.md
+  - `docs/Handover2.md#8-offene-aufgaben--todos`
+  - `backlog/epics/EPIC-004-feature-expansion.md`
 - **execution_mode**: mixed
