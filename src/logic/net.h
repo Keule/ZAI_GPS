@@ -24,6 +24,12 @@ void netPollReceive(void);
 /// Should be called at ~10 Hz from commTask.
 void netSendAogFrames(void);
 
+/// Update GNSS status from UM980 parser/state before PGN 214 encoding.
+/// Thread-safe via global StateLock.
+void netUpdateUm980Status(uint8_t um980_fix_type,
+                          bool rtcm_active,
+                          uint32_t differential_age_ms);
+
 /// Internal: process a single decoded frame.
 void netProcessFrame(uint8_t src, uint8_t pgn,
                      const uint8_t* payload, size_t payload_len);

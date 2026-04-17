@@ -54,6 +54,11 @@ epics:
       - TASK-009
       - TASK-010
       - TASK-013
+      - TASK-014
+      - TASK-015
+      - TASK-016
+      - TASK-017
+      - TASK-018
 
 tasks:
   - id: TASK-001
@@ -205,3 +210,73 @@ tasks:
     dependencies:
       - TASK-013
 
+    title: RTCM-Forwarder Architektur, Datenfluss und Schnittstellen spezifizieren
+    file: backlog/tasks/TASK-013-rtcm-forwarder-design-und-schnittstellen.md
+    epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-006
+      - TASK-007
+
+  - id: TASK-014
+    title: RTCM-Forwarding über GNSS-UART in der HAL implementieren
+    file: backlog/tasks/TASK-014-hal-gnss-rtcm-uart-forwarding.md
+    epic_id: EPIC-004
+    status: open
+    priority: medium
+    delivery_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-013
+
+  - id: TASK-015
+    title: UDP-basierten RTCM-Empfang mit robuster Pufferung implementieren
+    file: backlog/tasks/TASK-015-udp-rtcm-receiver-und-buffering.md
+    epic_id: EPIC-004
+    status: open
+    priority: medium
+    delivery_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-013
+
+  - id: TASK-016
+    title: PGN-214 um FixQuality/Age-Integration für RTCM-gestützte Korrekturdaten erweitern
+    file: backlog/tasks/TASK-016-pgn214-fixquality-age-integration.md
+    epic_id: EPIC-004
+    status: open
+    priority: medium
+    delivery_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-013
+
+  - id: TASK-017
+    title: RTCM-Ende-zu-Ende Validierung mit AgIO und U-M980 durchführen
+    file: backlog/tasks/TASK-017-rtcm-validierung-agiou-m980.md
+    epic_id: EPIC-004
+    status: open
+    priority: medium
+    delivery_mode: hardware_required
+    task_category: feature_expansion
+    dependencies:
+      - TASK-014
+      - TASK-015
+      - TASK-016
+
+  - id: TASK-018
+    title: RTCM-Forwarder dokumentieren und Handover-Artefakte ergänzen
+    file: backlog/tasks/TASK-018-doku-rtcm-forwarder-und-handover.md
+    epic_id: EPIC-004
+    status: open
+    priority: low
+    delivery_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-014
+      - TASK-015
+      - TASK-016
+      - TASK-017

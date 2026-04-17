@@ -72,6 +72,13 @@ struct NavigationState {
     // --- Speed safety ---
     float    gps_speed_kmh;          // current GPS speed [km/h] from PGN 254
 
+    // --- GNSS/UM980 status for PGN 214 ---
+    uint8_t  gps_fix_quality;        // AOG PGN214 fix quality code (0/1/2/4/5)
+    int16_t  gps_diff_age_x100_ms;   // Differential age encoded as ms*100 (saturated int16)
+    uint8_t  um980_fix_type;         // Raw UM980 fix type / GGA quality code for diagnostics
+    bool     um980_rtcm_active;      // true when RTCM corrections are currently active
+    uint32_t um980_status_timestamp_ms; // last UM980 status update timestamp [ms]
+
     // --- PID output (for status reporting) ---
     uint16_t pid_output;      // current PID output (actuator command)
 
