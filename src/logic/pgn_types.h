@@ -106,6 +106,10 @@ namespace aog_port {
 
     /// NMEA data port (unused in steer firmware)
     constexpr uint16_t NMEA = 29999;
+
+    /// RTCM correction stream listen port (AgIO/NTRIP bridge -> module).
+    /// This port is intentionally separate from AOG PGN traffic.
+    constexpr uint16_t RTCM_LISTEN = 2233;
 }
 
 // ===================================================================

@@ -70,6 +70,7 @@
 // one for sending (from port 5126 to AgIO port 9999).
 static WiFiUDP ethUDP_recv;  // Listen socket – bound to port 8888 (receives from AgIO)
 static WiFiUDP ethUDP_send;  // Send socket – sends FROM port 5126 TO AgIO port 9999
+static WiFiUDP ethUDP_rtcm;  // Listen socket – bound to RTCM port (raw correction bytes)
 
 // Static IP configuration
 static IPAddress s_local_ip(192, 168, 1, 70);
@@ -1238,6 +1239,11 @@ static void onEthEvent(WiFiEvent_t event) {
         ethUDP_recv.begin(aog_port::AGIO_LISTEN);
         hal_log("ETH: UDP listening on port %u (AgIO sends here)", aog_port::AGIO_LISTEN);
 
+        // Start dedicated RTCM UDP listener (raw bytestream, no AOG framing).
+        ethUDP_rtcm.begin(aog_port::RTCM_LISTEN);
+        hal_log("ETH: UDP listening on RTCM port %u (AgIO/NTRIP correction input)",
+                aog_port::RTCM_LISTEN);
+
         // Start send UDP socket from port 5126 (our source port)
         // Reference: portMy = 5126
         ethUDP_send.begin(aog_port::STEER);
@@ -1250,6 +1256,7 @@ static void onEthEvent(WiFiEvent_t event) {
         s_eth_has_ip = false;
         ethUDP_recv.stop();
         ethUDP_send.stop();
+        ethUDP_rtcm.stop();
         break;
 
     case ARDUINO_EVENT_ETH_STOP:
@@ -1258,6 +1265,7 @@ static void onEthEvent(WiFiEvent_t event) {
         s_eth_has_ip = false;
         ethUDP_recv.stop();
         ethUDP_send.stop();
+        ethUDP_rtcm.stop();
         break;
 
     default:
@@ -1347,6 +1355,29 @@ int hal_net_receive(uint8_t* buf, size_t max_len, uint16_t* out_port) {
         *out_port = static_cast<uint16_t>(ethUDP_recv.remotePort());
     }
     return read;
+}
+
+int hal_net_receive_rtcm(uint8_t* buf, size_t max_len, uint16_t* out_port) {
+    if (!s_eth_has_ip) return 0;
+
+    int packet_size = ethUDP_rtcm.parsePacket();
+    if (packet_size <= 0) return 0;
+
+    if (static_cast<size_t>(packet_size) > max_len) {
+        packet_size = static_cast<int>(max_len);
+    }
+
+    int read = ethUDP_rtcm.read(buf, packet_size);
+    if (out_port) {
+        *out_port = static_cast<uint16_t>(ethUDP_rtcm.remotePort());
+    }
+    return read;
+}
+
+size_t hal_gnss_rtcm_write(const uint8_t* data, size_t len) {
+    (void)data;
+    // TODO: route to dedicated GNSS UART when GNSS HAL is integrated.
+    return len;
 }
 
 bool hal_net_is_connected(void) {
