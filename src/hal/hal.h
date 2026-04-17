@@ -241,6 +241,18 @@ void hal_net_send(const uint8_t* data, size_t len, uint16_t port);
 /// @return number of bytes received, or 0 if nothing available
 int hal_net_receive(uint8_t* buf, size_t max_len, uint16_t* out_port);
 
+/// Poll for a received RTCM UDP datagram from the dedicated RTCM socket.
+/// @param buf      buffer to receive into
+/// @param max_len  buffer size
+/// @param out_port receives the source UDP port (host byte order)
+/// @return number of bytes received, or 0 if nothing available
+int hal_net_receive_rtcm(uint8_t* buf, size_t max_len, uint16_t* out_port);
+
+/// Forward RTCM correction bytes to the GNSS receiver transport.
+/// Implementations may accept partial writes for non-blocking behavior.
+/// @return number of bytes accepted for forwarding
+size_t hal_gnss_rtcm_write(const uint8_t* data, size_t len);
+
 /// Check if Ethernet link is up.
 bool hal_net_is_connected(void);
 

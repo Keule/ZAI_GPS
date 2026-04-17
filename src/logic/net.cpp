@@ -56,6 +56,14 @@ static const uint32_t SEND_INTERVAL_MS = 100;  // 10 Hz
 static uint32_t s_last_invalid_log_ms = 0;
 static uint32_t s_last_unhandled_log_ms = 0;
 
+// RTCM raw-bytestream buffering + telemetry
+static constexpr size_t RTCM_RING_CAPACITY = 4096;
+static uint8_t s_rtcm_ring[RTCM_RING_CAPACITY];
+static size_t s_rtcm_head = 0;
+static size_t s_rtcm_tail = 0;
+static size_t s_rtcm_size = 0;
+static NetRtcmTelemetry s_rtcm_tm;
+
 static int16_t scaleToInt16(float value, float scale) {
     const float scaled = value * scale;
     if (scaled > 32767.0f) return 32767;
@@ -84,6 +92,91 @@ void netInit(void) {
     LOGI("NET", "dest IP = %u.%u.%u.%u",
             g_net_cfg.dest_ip[0], g_net_cfg.dest_ip[1],
             g_net_cfg.dest_ip[2], g_net_cfg.dest_ip[3]);
+}
+
+static size_t rtcmRingWrite(const uint8_t* data, size_t len) {
+    if (len == 0) return 0;
+    const size_t free_space = RTCM_RING_CAPACITY - s_rtcm_size;
+    const size_t to_copy = (len < free_space) ? len : free_space;
+    if (to_copy == 0) return 0;
+
+    const size_t first_chunk = ((s_rtcm_head + to_copy) <= RTCM_RING_CAPACITY)
+        ? to_copy
+        : (RTCM_RING_CAPACITY - s_rtcm_head);
+    memcpy(&s_rtcm_ring[s_rtcm_head], data, first_chunk);
+
+    const size_t second_chunk = to_copy - first_chunk;
+    if (second_chunk > 0) {
+        memcpy(&s_rtcm_ring[0], data + first_chunk, second_chunk);
+    }
+
+    s_rtcm_head = (s_rtcm_head + to_copy) % RTCM_RING_CAPACITY;
+    s_rtcm_size += to_copy;
+    return to_copy;
+}
+
+static size_t rtcmRingPeekLinear(const uint8_t** out_ptr) {
+    if (s_rtcm_size == 0) {
+        *out_ptr = nullptr;
+        return 0;
+    }
+
+    *out_ptr = &s_rtcm_ring[s_rtcm_tail];
+    const size_t linear = RTCM_RING_CAPACITY - s_rtcm_tail;
+    return (s_rtcm_size < linear) ? s_rtcm_size : linear;
+}
+
+static void rtcmRingPop(size_t len) {
+    if (len >= s_rtcm_size) {
+        s_rtcm_head = 0;
+        s_rtcm_tail = 0;
+        s_rtcm_size = 0;
+        return;
+    }
+
+    s_rtcm_tail = (s_rtcm_tail + len) % RTCM_RING_CAPACITY;
+    s_rtcm_size -= len;
+}
+
+static void netPollRtcmReceiveAndForward(void) {
+    uint8_t rtcm_buf[aog_frame::MAX_FRAME];
+
+    while (true) {
+        uint16_t src_port = 0;
+        const int rx_len = hal_net_receive_rtcm(rtcm_buf, sizeof(rtcm_buf), &src_port);
+        if (rx_len <= 0) break;
+
+        s_rtcm_tm.rx_bytes += static_cast<uint32_t>(rx_len);
+        s_rtcm_tm.last_activity_ms = hal_millis();
+
+        const size_t written = rtcmRingWrite(rtcm_buf, static_cast<size_t>(rx_len));
+        if (written < static_cast<size_t>(rx_len)) {
+            s_rtcm_tm.dropped_packets++;
+            s_rtcm_tm.overflow_bytes += static_cast<uint32_t>(static_cast<size_t>(rx_len) - written);
+            LOGW("NET", "RTCM ring overflow: dropped %u bytes from port %u (fill=%u/%u)",
+                 static_cast<unsigned>(static_cast<size_t>(rx_len) - written),
+                 src_port,
+                 static_cast<unsigned>(s_rtcm_size),
+                 static_cast<unsigned>(RTCM_RING_CAPACITY));
+        }
+    }
+
+    while (s_rtcm_size > 0) {
+        const uint8_t* chunk = nullptr;
+        const size_t chunk_len = rtcmRingPeekLinear(&chunk);
+        if (!chunk || chunk_len == 0) break;
+
+        const size_t accepted = hal_gnss_rtcm_write(chunk, chunk_len);
+        if (accepted == 0) break;
+        if (accepted > chunk_len) break;
+
+        rtcmRingPop(accepted);
+        s_rtcm_tm.forwarded_bytes += static_cast<uint32_t>(accepted);
+        if (accepted < chunk_len) {
+            s_rtcm_tm.partial_writes++;
+            break;
+        }
+    }
 }
 
 // ===================================================================
@@ -230,6 +323,8 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
 // Poll for received UDP frames
 // ===================================================================
 void netPollReceive(void) {
+    netPollRtcmReceiveAndForward();
+
     uint8_t rx_buf[aog_frame::MAX_FRAME];
 
     while (true) {
@@ -262,6 +357,11 @@ void netPollReceive(void) {
             }
         }
     }
+}
+
+void netGetRtcmTelemetry(NetRtcmTelemetry* out) {
+    if (!out) return;
+    *out = s_rtcm_tm;
 }
 
 // ===================================================================

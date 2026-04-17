@@ -13,6 +13,15 @@
 
 #include "pgn_types.h"
 
+struct NetRtcmTelemetry {
+    uint32_t rx_bytes = 0;
+    uint32_t dropped_packets = 0;
+    uint32_t last_activity_ms = 0;
+    uint32_t forwarded_bytes = 0;
+    uint32_t partial_writes = 0;
+    uint32_t overflow_bytes = 0;
+};
+
 /// Initialise network (W5500 Ethernet via HAL).
 void netInit(void);
 
@@ -27,3 +36,6 @@ void netSendAogFrames(void);
 /// Internal: process a single decoded frame.
 void netProcessFrame(uint8_t src, uint8_t pgn,
                      const uint8_t* payload, size_t payload_len);
+
+/// Snapshot RTCM receive/forward telemetry counters.
+void netGetRtcmTelemetry(NetRtcmTelemetry* out);
