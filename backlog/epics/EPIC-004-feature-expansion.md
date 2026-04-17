@@ -9,3 +9,4 @@ Geplante Funktionsausbauten außerhalb des Kernbetriebs umsetzen.
 - TASK-009
 - TASK-010
 - TASK-013
+- TASK-019

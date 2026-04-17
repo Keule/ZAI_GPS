@@ -60,6 +60,7 @@ epics:
       - TASK-016
       - TASK-017
       - TASK-018
+      - TASK-019
 
 tasks:
   - id: TASK-001
@@ -290,3 +291,18 @@ tasks:
       - TASK-015
       - TASK-016
       - TASK-017
+
+  - id: TASK-019
+    title: Integrationsplanung für zwei UM980-Module erstellen
+    file: backlog/tasks/TASK-019-integrationsplanung-zwei-um980.md
+    epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: mixed
+    task_category: feature_expansion
+    dependencies:
+      - TASK-013
+      - TASK-014
+      - TASK-015
+      - TASK-017
+
