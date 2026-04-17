@@ -28,6 +28,8 @@ constexpr uint32_t k_stats_interval_ms = 1000;
 constexpr uint32_t k_reset_low_ms = 10;
 constexpr uint32_t k_reset_settle_ms = 20;
 constexpr uint8_t k_spi_mode_3 = 3;
+constexpr uint8_t k_degraded_enter_fail_streak = 5;
+constexpr uint8_t k_degraded_exit_ok_streak = 3;
 uint32_t s_last_detect_ms = 0;
 uint32_t s_last_read_ms = 0;
 uint32_t s_last_ads_ms = 0;
@@ -37,6 +39,9 @@ uint32_t s_read_fail = 0;
 bool s_last_detect_ok = false;
 bool s_prev_detect_ok = false;
 bool s_has_prev_detect = false;
+bool s_degraded_mode = false;
+uint8_t s_fail_streak = 0;
+uint8_t s_ok_streak = 0;
 
 struct BringupModeCase {
     uint32_t freq_hz;
@@ -115,6 +120,9 @@ bool imuBringupModeEnabled(void) {
 
 void imuInit(void) {
     hal_imu_begin();
+    s_degraded_mode = false;
+    s_fail_streak = 0;
+    s_ok_streak = 0;
     LOGI("IMU", "initialised (BNO085 SPI)");
 }
 
@@ -124,10 +132,26 @@ bool imuUpdate(void) {
     float heading = 9999.0f;
 
     if (!hal_imu_read(&yaw_rate, &roll, &heading)) {
+        s_fail_streak = s_fail_streak < 255 ? (uint8_t)(s_fail_streak + 1) : s_fail_streak;
+        s_ok_streak = 0;
+        if (!s_degraded_mode && s_fail_streak >= k_degraded_enter_fail_streak) {
+            s_degraded_mode = true;
+            hal_log("IMU: degraded mode ENTER (read_fail_streak=%u, fallback heading=9999 roll=8888)",
+                    (unsigned)s_fail_streak);
+        }
         StateLock lock;
+        g_nav.yaw_rate_dps = 0.0f;
+        g_nav.roll_deg = 0.0f;
         g_nav.imu_quality_ok = false;
         g_nav.heading_quality_ok = false;
         return false;
+    }
+
+    s_fail_streak = 0;
+    s_ok_streak = s_ok_streak < 255 ? (uint8_t)(s_ok_streak + 1) : s_ok_streak;
+    if (s_degraded_mode && s_ok_streak >= k_degraded_exit_ok_streak) {
+        s_degraded_mode = false;
+        hal_log("IMU: degraded mode EXIT (ok_streak=%u)", (unsigned)s_ok_streak);
     }
 
     const uint32_t now_ms = hal_millis();

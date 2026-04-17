@@ -10,6 +10,7 @@
 #include <Arduino.h>
 #include <BnoSPIBus.h>
 #include <SPI.h>
+#include <cmath>
 
 #include "logic/log_config.h"
 
@@ -28,8 +29,12 @@ namespace {
 constexpr uint32_t kBno085SpiHz = 6000000UL;
 constexpr uint16_t kBno085GamePeriodMs = 10;
 constexpr uint16_t kBno085GeoPeriodMs = 50;
-constexpr uint32_t kHeadingBootMs = 2500;
-constexpr uint16_t kHeadingBootMinSamples = 10;
+constexpr uint32_t kImuFreshTimeoutUs = 300000UL;
+constexpr uint32_t kHeadingCalMinDurationMs = 3000;
+constexpr uint32_t kHeadingCalMaxDurationMs = 12000;
+constexpr uint16_t kHeadingCalMinSamples = 30;
+constexpr float kHeadingCalMinConcentration = 0.80f;
+constexpr float kHeadingCalStationaryYawRateDps = 12.0f;
 constexpr float kRadToDeg = 57.2957795f;
 constexpr float kDegToRad = 0.0174532925f;
 
@@ -61,6 +66,8 @@ float s_heading_boot_sin = 0.0f;
 float s_heading_boot_cos = 0.0f;
 float s_heading_boot_mag_deg = 0.0f;
 float s_heading_boot_game_deg = 0.0f;
+uint32_t s_heading_cal_restart_count = 0;
+bool s_heading_cal_started = false;
 bool s_game_yaw_valid = false;
 bool s_geo_yaw_valid = false;
 bool s_geo_yaw_new = false;
@@ -97,10 +104,12 @@ bool enableRuntimeReports() {
     s_geo_yaw_valid = false;
     s_geo_yaw_new = false;
     s_heading_ready = false;
-    s_heading_boot_start_ms = millis();
+    s_heading_boot_start_ms = 0;
     s_heading_boot_samples = 0;
     s_heading_boot_sin = 0.0f;
     s_heading_boot_cos = 0.0f;
+    s_heading_cal_started = false;
+    s_heading_cal_restart_count = 0;
     s_imu_last_data_us = 0;
     s_heading_last_us = 0;
     hal_log("ESP32: 7Semi BNO085 reports requested geo=%s/%ums game=%s/%ums poll=%s (boot_heading=%lums/%u samples)",
@@ -109,8 +118,8 @@ bool enableRuntimeReports() {
             game_ok ? "OK" : "NOACK",
             (unsigned)kBno085GamePeriodMs,
             s_reports_enabled ? "ON" : "OFF",
-            (unsigned long)kHeadingBootMs,
-            (unsigned)kHeadingBootMinSamples);
+            (unsigned long)kHeadingCalMinDurationMs,
+            (unsigned)kHeadingCalMinSamples);
     return s_reports_enabled;
 }
 
@@ -179,27 +188,66 @@ float yawDegFromQuaternion(float i, float j, float k, float real) {
     return normalize360(atan2f(t0, t1) * kRadToDeg);
 }
 
+void resetHeadingCalibrationWindow(uint32_t now_ms, const char* reason) {
+    s_heading_boot_start_ms = now_ms;
+    s_heading_boot_samples = 0;
+    s_heading_boot_sin = 0.0f;
+    s_heading_boot_cos = 0.0f;
+    s_heading_cal_restart_count++;
+    hal_log("IMU-CAL: heading window reset reason=%s restart=%lu",
+            reason,
+            (unsigned long)s_heading_cal_restart_count);
+}
+
 void updateHeadingBootstrap(uint32_t now_ms) {
     if (s_heading_ready || !s_geo_yaw_valid || !s_geo_yaw_new || !s_game_yaw_valid) return;
     s_geo_yaw_new = false;
+
+    const bool stationary = fabsf(s_imu_yaw_cache) <= kHeadingCalStationaryYawRateDps;
+    if (!s_heading_cal_started) {
+        if (!stationary) return;
+        s_heading_boot_start_ms = now_ms;
+        s_heading_boot_samples = 0;
+        s_heading_boot_sin = 0.0f;
+        s_heading_boot_cos = 0.0f;
+        s_heading_cal_started = true;
+        hal_log("IMU-CAL: heading start precond=stationary yaw_rate<=%.1f dps",
+                kHeadingCalStationaryYawRateDps);
+    }
+
+    if (!stationary) {
+        resetHeadingCalibrationWindow(now_ms, "motion");
+        return;
+    }
 
     const float geo_rad = s_geo_yaw_cache * kDegToRad;
     s_heading_boot_sin += sinf(geo_rad);
     s_heading_boot_cos += cosf(geo_rad);
     s_heading_boot_samples++;
 
-    const bool enough_time = (now_ms - s_heading_boot_start_ms) >= kHeadingBootMs;
-    const bool enough_samples = s_heading_boot_samples >= kHeadingBootMinSamples;
-    if (enough_time && enough_samples) {
+    const uint32_t elapsed_ms = now_ms - s_heading_boot_start_ms;
+    const bool enough_time = elapsed_ms >= kHeadingCalMinDurationMs;
+    const bool enough_samples = s_heading_boot_samples >= kHeadingCalMinSamples;
+    const float vec_mag = sqrtf((s_heading_boot_sin * s_heading_boot_sin) +
+                                (s_heading_boot_cos * s_heading_boot_cos));
+    const float concentration =
+        (s_heading_boot_samples > 0) ? (vec_mag / static_cast<float>(s_heading_boot_samples)) : 0.0f;
+    if (enough_time && enough_samples && concentration >= kHeadingCalMinConcentration) {
         s_heading_boot_mag_deg = normalize360(atan2f(s_heading_boot_sin, s_heading_boot_cos) * kRadToDeg);
         s_heading_boot_game_deg = s_game_yaw_cache;
         s_imu_heading_cache = s_heading_boot_mag_deg;
         s_heading_ready = true;
-        hal_log("IMU-HEADING: boot lock mag=%.1f deg game0=%.1f deg samples=%u window=%lums",
+        hal_log("IMU-CAL: heading success mag=%.1f deg game0=%.1f deg samples=%u window=%lums concentration=%.2f",
                 s_heading_boot_mag_deg,
                 s_heading_boot_game_deg,
                 (unsigned)s_heading_boot_samples,
-                (unsigned long)(now_ms - s_heading_boot_start_ms));
+                (unsigned long)elapsed_ms,
+                concentration);
+        return;
+    }
+
+    if (elapsed_ms >= kHeadingCalMaxDurationMs) {
+        resetHeadingCalibrationWindow(now_ms, "low_concentration");
     }
 }
 
@@ -377,13 +425,13 @@ bool hal_imu_read(float* yaw_rate_dps, float* roll_deg, float* heading_deg) {
                 s_imu_yaw_cache,
                 s_imu_roll_cache,
                 (unsigned)s_heading_boot_samples,
-                (unsigned)kHeadingBootMinSamples,
+                (unsigned)kHeadingCalMinSamples,
                 (unsigned long)s_diag_read_ok,
                 (unsigned long)s_diag_read_wait);
     }
 #endif
 
-    if (!s_imu_cache_valid || s_imu_last_data_us == 0 || (now_us - s_imu_last_data_us) > 500000UL) {
+    if (!s_imu_cache_valid || s_imu_last_data_us == 0 || (now_us - s_imu_last_data_us) > kImuFreshTimeoutUs) {
         return false;
     }
 
@@ -408,19 +456,35 @@ bool hal_imu_probe_once(uint8_t* out_response) {
 
 bool hal_imu_detect_boot_qualified(HalImuDetectStats* out) {
     HalImuDetectStats local = {};
-    local.samples = 1;
-    local.present = s_bno08x_ready;
-    local.last_response = s_bno08x_ready ? 0x01 : 0x00;
-    if (s_bno08x_ready) {
-        local.ok_count = 1;
-        local.other_count = 1;
-    } else {
-        local.zero_count = 1;
-    }
+    constexpr uint16_t kDetectSamples = 20;
+    constexpr uint16_t kDetectMinOk = 18;
+    constexpr uint32_t kDetectGapMs = 15;
 
-    hal_log("ESP32: IMU boot check via 7Semi example SPI: present=%s reports=%s",
+    for (uint16_t i = 0; i < kDetectSamples; i++) {
+        uint8_t rsp = 0x00;
+        const bool ok = hal_imu_probe_once(&rsp);
+        local.samples++;
+        local.last_response = rsp;
+        if (!ok) {
+            if (rsp == 0xFF) local.ff_count++;
+            else if (rsp == 0x00) local.zero_count++;
+            else local.other_count++;
+        } else {
+            local.ok_count++;
+        }
+        delay(kDetectGapMs);
+    }
+    local.present = local.ok_count >= kDetectMinOk;
+
+    hal_log("ESP32: IMU boot check via 7Semi example SPI: present=%s ok=%u/%u ff=%u zero=%u other=%u last=0x%02X limit[min_ok=%u]",
             local.present ? "YES" : "NO",
-            s_reports_enabled ? "OK" : "FAIL");
+            (unsigned)local.ok_count,
+            (unsigned)local.samples,
+            (unsigned)local.ff_count,
+            (unsigned)local.zero_count,
+            (unsigned)local.other_count,
+            (unsigned)local.last_response,
+            (unsigned)kDetectMinOk);
 
     if (out) {
         *out = local;

@@ -342,9 +342,16 @@ sollten diese Messages beim nächsten Flash-Versuch sichtbar sein.**
 
 ### Mittlere Priorität
 
-- [ ] **BNO085 IMU Integration:** Hardware ist noch nicht angeschlossen. `hal_imu_begin()`,
-  `hal_imu_read()`, `hal_imu_detect()` existieren aber sind nicht produktiv getestet.
-  Kalibrierungs-Procedure für Heading/_roll_offset fehlt.
+- [~] **BNO085 IMU Integration:** Basis stabilisiert, Hardware-Feinabnahme offen.
+  Implementiert:
+  - reproduzierbare Boot-Detection-Grenzwerte (`20` Samples, `min_ok=18`),
+  - stabilisierter Read-Timeout (`300 ms` Freshness),
+  - dokumentierte Heading-Kalibriersequenz:
+    Start nur bei stationärer Lage (`|yaw_rate| <= 12 dps`), min. `3000 ms`,
+    Erfolg bei `>=30` Samples und Konzentration `>=0.80`, Timeout/Restart nach `12000 ms`,
+  - degradierter Runtime-Fallback statt falscher IMU-Werte
+    (Enter nach `5` Read-Fehlern, Exit nach `3` Erfolgslesungen).
+  Offen: Hardware-Testlauf mit reproduzierbaren Messreihen (Kalibrierwerte/Logs archivieren).
 - [ ] **Hardware-Watchdog:** ESP32 Task Watchdog ist aktiv (`esp_task_wdt_reset()`),
   aber ein externer Hardware-Watchdog fehlt.
 - [ ] **PGN-Bibliothek auslagern:** PGN-Codec, Types, Registry sollen in eine separate

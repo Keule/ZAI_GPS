@@ -89,7 +89,7 @@ tasks:
     title: BNO085-Pfad auf echter Hardware integrieren und kalibrieren
     file: backlog/tasks/TASK-004-bno085-integration-produktiv.md
     epic_id: EPIC-002
-    status: open
+    status: in_progress
     priority: medium
     delivery_mode: hardware_required
     task_category: sensor_safety
