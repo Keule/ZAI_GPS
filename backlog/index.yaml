@@ -45,6 +45,7 @@ epics:
       - TASK-012
       - TASK-013
       - TASK-014
+      - TASK-020
 
   - id: EPIC-004
     title: Feature Expansion
@@ -395,3 +396,14 @@ tasks:
     dependencies:
       - TASK-019E
       - TASK-019F
+
+  - id: TASK-020
+    title: TFT_eSPI-Setup216 und LilyGO-T-ETH-Lite-ESP32 Treiber-Einbindung für reproduzierbare Builds planen
+    file: backlog/tasks/TASK-020-tft-espi-und-lilygo-eth-lite-treiber-integration-planen.md
+    epic_id: EPIC-003
+    status: open
+    priority: medium
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-013
