@@ -112,6 +112,28 @@
 #define SAFETY_IN       4
 
 // ---------------------------------------------------------------------------
+// GNSS UART bring-up matrix (TASK-019A)
+//
+// Board constraints (ESP32-S3R8):
+//   - GPIO 26..37: reserved by Octal PSRAM (must not be used)
+//   - GPIO 38..42: output-only (must not be used as UART RX)
+//
+// Selected assignment:
+//   - UART1 (GNSS/RTCM primary): TX=48, RX=45
+//   - UART2 (GNSS/Console mirror): TX=2, RX=1
+// ---------------------------------------------------------------------------
+#define GNSS_UART1_TX   48
+#define GNSS_UART1_RX   45
+#define GNSS_UART2_TX    2
+#define GNSS_UART2_RX    1
+
+// Optional GNSS sideband lines (not wired on current board revision)
+#define GNSS1_PPS_PIN   -1
+#define GNSS1_EN_PIN    -1
+#define GNSS2_PPS_PIN   -1
+#define GNSS2_EN_PIN    -1
+
+// ---------------------------------------------------------------------------
 // Logging switch (active LOW, internal pull-up)
 //
 // GPIO 46 is an ESP32-S3 strapping pin, but works for this active-LOW input:

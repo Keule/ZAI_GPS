@@ -13,6 +13,9 @@ void hal_esp32_init_all(void);
 /// Initialise only the subsystems needed for IMU bring-up diagnostics.
 void hal_esp32_init_imu_bringup(void);
 
+/// Initialise only communication + GNSS RTCM UART for GNSS bring-up diagnostics.
+void hal_esp32_init_gnss_buildup(void);
+
 /// Check if the shared SPI bus is currently busy (SD card access).
 /// Sensor reads should be skipped when this returns true.
 bool hal_spi_busy(void);
