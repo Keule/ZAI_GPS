@@ -55,12 +55,17 @@ epics:
       - TASK-009
       - TASK-010
       - TASK-013
-      - TASK-014
+      - TASK-014A
       - TASK-015
       - TASK-016
       - TASK-017
       - TASK-018
       - TASK-019
+      - TASK-019A
+      - TASK-019B
+      - TASK-019C
+      - TASK-019D
+      - TASK-019E
 
 tasks:
   - id: TASK-001
@@ -232,7 +237,7 @@ tasks:
       - TASK-006
       - TASK-007
 
-  - id: TASK-014
+  - id: TASK-014A
     title: RTCM-Forwarding über GNSS-UART in der HAL implementieren
     file: backlog/tasks/TASK-014-hal-gnss-rtcm-uart-forwarding.md
     epic_id: EPIC-004
@@ -274,7 +279,7 @@ tasks:
     delivery_mode: hardware_required
     task_category: feature_expansion
     dependencies:
-      - TASK-014
+      - TASK-014A
       - TASK-015
       - TASK-016
 
@@ -287,7 +292,7 @@ tasks:
     delivery_mode: firmware_only
     task_category: feature_expansion
     dependencies:
-      - TASK-014
+      - TASK-014A
       - TASK-015
       - TASK-016
       - TASK-017
@@ -302,7 +307,64 @@ tasks:
     task_category: feature_expansion
     dependencies:
       - TASK-013
-      - TASK-014
+      - TASK-014A
       - TASK-015
       - TASK-017
 
+  - id: TASK-019A
+    title: Pinbelegung für UM980/GNSS-Buildup und Console-Mirror festlegen
+    file: backlog/tasks/TASK-019A-pinbelegung-um980-und-konsole.md
+    epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-019
+
+  - id: TASK-019B
+    title: PlatformIO-Environment `gnss_buildup` für GNSS-Buildup hinzufügen
+    file: backlog/tasks/TASK-019B-platformio-environment-gnss-buildup.md
+    epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-019A
+
+  - id: TASK-019C
+    title: GNSS-Bringup-Modus für kontrollierte Initialisierung implementierbar spezifizieren
+    file: backlog/tasks/TASK-019C-gnss-bringup-modus.md
+    epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: mixed
+    task_category: feature_expansion
+    dependencies:
+      - TASK-019B
+
+  - id: TASK-019D
+    title: UART1/2 nach Console spiegeln (diagnostischer Mirror-Pfad)
+    file: backlog/tasks/TASK-019D-uart1-uart2-console-mirror.md
+    epic_id: EPIC-004
+    status: open
+    priority: medium
+    delivery_mode: mixed
+    task_category: feature_expansion
+    dependencies:
+      - TASK-019A
+      - TASK-019C
+
+  - id: TASK-019E
+    title: Smoke-Test-Reportstandard für GNSS-Buildup festlegen
+    file: backlog/tasks/TASK-019E-smoke-test-reportstandard.md
+    epic_id: EPIC-004
+    status: open
+    priority: medium
+    delivery_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-019B
+      - TASK-019C
+      - TASK-019D
