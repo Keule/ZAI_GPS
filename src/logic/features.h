@@ -98,6 +98,19 @@
 #define FEAT_CFG_RAW_PID_STEER 0
 #endif
 
+// Zusätzliche Compile-Time-Capabilities (SPI/UART), optional per -D übersteuerbar.
+#if defined(FEAT_CAP_SENSOR_SPI2)
+#define FEAT_CFG_RAW_CAP_SENSOR_SPI2 1
+#else
+#define FEAT_CFG_RAW_CAP_SENSOR_SPI2 0
+#endif
+
+#if defined(FEAT_GNSS_UART_MIRROR) || defined(FEAT_CAP_GNSS_UART_MIRROR)
+#define FEAT_CFG_RAW_CAP_GNSS_UART_MIRROR 1
+#else
+#define FEAT_CFG_RAW_CAP_GNSS_UART_MIRROR 0
+#endif
+
 // Profil-Defaults (falls Profil aktiv, aber einzelne Raw-Flags fehlen)
 #define FEAT_CFG_PROF_COMM          (FEAT_CFG_PROFILE_COMM_ONLY || FEAT_CFG_PROFILE_SENSOR_FRONT || FEAT_CFG_PROFILE_ACTOR_REAR || FEAT_CFG_PROFILE_FULL_STEER)
 #define FEAT_CFG_PROF_GNSS          (0)
@@ -149,6 +162,24 @@
 #endif
 
 #define FEAT_STEER_ALL (FEAT_COMM && FEAT_STEER_SENSOR && FEAT_STEER_ACTOR && FEAT_MACHINE_ACTOR)
+
+// Abgeleitete Zusatz-Capabilities (Compile-Time-Gating für zusätzliche Interfaces)
+#if defined(FEAT_GNSS_BUILDUP)
+#define FEAT_CFG_MODE_GNSS_BUILDUP 1
+#else
+#define FEAT_CFG_MODE_GNSS_BUILDUP 0
+#endif
+
+#define FEAT_CFG_MOD_NEEDS_SENSOR_SPI2 (FEAT_STEER_SENSOR || FEAT_STEER_ACTOR || FEAT_IMU || FEAT_MACHINE_ACTOR)
+#define FEAT_CFG_MOD_NEEDS_GNSS_UART_MIRROR (FEAT_GNSS && FEAT_CFG_MODE_GNSS_BUILDUP)
+
+#ifndef FEAT_CAP_SENSOR_SPI2
+#define FEAT_CAP_SENSOR_SPI2 (FEAT_CFG_RAW_CAP_SENSOR_SPI2 || FEAT_CFG_MOD_NEEDS_SENSOR_SPI2)
+#endif
+
+#ifndef FEAT_CAP_GNSS_UART_MIRROR
+#define FEAT_CAP_GNSS_UART_MIRROR (FEAT_CFG_RAW_CAP_GNSS_UART_MIRROR && FEAT_CFG_MOD_NEEDS_GNSS_UART_MIRROR)
+#endif
 
 static_assert(FEAT_COMM, "FEAT_COMM muss aktiv sein (mindestens Ethernet/UDP Kommunikation).");
 

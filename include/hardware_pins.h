@@ -111,7 +111,7 @@
 // ---------------------------------------------------------------------------
 // Safety input (active LOW)
 // ---------------------------------------------------------------------------
-#define SAFETY_IN       4
+#define SAFETY_IN       39
 
 // ---------------------------------------------------------------------------
 // GNSS UART bring-up matrix (TASK-019A)
@@ -124,16 +124,25 @@
 //   - UART1 (GNSS/RTCM primary): TX=48, RX=45
 //   - UART2 (GNSS/Console mirror): TX=2, RX=1
 // ---------------------------------------------------------------------------
-#define GNSS_UART1_TX   48
-#define GNSS_UART1_RX   45
-#define GNSS_UART2_TX    2
-#define GNSS_UART2_RX    1
+#define GNSS_UART1_TX   2
+#define GNSS_UART1_RX   4
+#define GNSS_UART2_TX    33
+#define GNSS_UART2_RX    35
+
+// ---------------------------------------------------------------------------
+// Init-path pin claim matrix (TASK-024, canonical intent)
+//
+// common_boot : SAFETY_IN + SENS_SPI_{SCK,MISO,MOSI}
+// imu_bringup : common_boot + IMU_{INT,RST,WAKE} + CS_{IMU,STEER_ANG,ACT}
+// full_init   : imu_bringup + ETH_{SCK,MISO,MOSI,CS,INT,RST}
+// gnss_buildup: common_boot + ETH_{SCK,MISO,MOSI,CS,INT,RST} + GNSS_UARTx_{RX,TX}
+// ---------------------------------------------------------------------------
 
 // GNSS console mirror defaults (diagnostic read-only sniffing in gnss_buildup)
 inline constexpr uint32_t GNSS_MIRROR_BAUD = 115200;
-inline constexpr int8_t GNSS_MIRROR_UART1_RX_PIN = 44;
+inline constexpr int8_t GNSS_MIRROR_UART1_RX_PIN = 4;
 inline constexpr int8_t GNSS_MIRROR_UART1_TX_PIN = -1;
-inline constexpr int8_t GNSS_MIRROR_UART2_RX_PIN = 2;
+inline constexpr int8_t GNSS_MIRROR_UART2_RX_PIN = 35;
 inline constexpr int8_t GNSS_MIRROR_UART2_TX_PIN = -1;
 
 // Optional GNSS sideband lines (not wired on current board revision)

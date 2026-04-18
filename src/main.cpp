@@ -68,7 +68,7 @@ static inline bool shouldLogPeriodic(uint32_t now_ms, uint32_t* last_ms, uint32_
 // ===================================================================
 // GNSS UART mirror (diagnostic bring-up path)
 // ===================================================================
-#if defined(FEAT_GNSS_UART_MIRROR)
+#if FEAT_CAP_GNSS_UART_MIRROR
 static constexpr bool MAIN_GNSS_UART_MIRROR_ENABLED = true;
 #else
 static constexpr bool MAIN_GNSS_UART_MIRROR_ENABLED = false;
@@ -238,7 +238,9 @@ static void controlTaskFunc(void* param) {
     uint32_t ctrl_dbg_count = 0;
     uint32_t ctrl_freq_start = hal_millis();
     uint32_t log_divider = 0;
+#if FEAT_CAP_SENSOR_SPI2
     uint32_t last_spi_tm_ms = 0;
+#endif
 
     for (;;) {
         // ----------------------------- Input / Processing -----------------------------
@@ -266,6 +268,7 @@ static void controlTaskFunc(void* param) {
         }
 
         const uint32_t now_ms = hal_millis();
+#if FEAT_CAP_SENSOR_SPI2
         if (LOG_SPI_TIMING_INTERVAL_MS > 0 && now_ms - last_spi_tm_ms >= LOG_SPI_TIMING_INTERVAL_MS) {
             last_spi_tm_ms = now_ms;
             HalSpiTelemetry tm = {};
@@ -300,6 +303,7 @@ static void controlTaskFunc(void* param) {
                     (unsigned long)tm.imu_deadline_miss,
                     (unsigned long)tm.was_deadline_miss);
         }
+#endif
 
         // Maintain fixed 200 Hz timing with minimal jitter.
         vTaskDelayUntil(&next_wake, interval);
