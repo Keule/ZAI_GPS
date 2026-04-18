@@ -29,6 +29,7 @@
 #include "hal_impl.h"
 #include "hal/hal.h"
 #include "hardware_pins.h"
+#include "logic/features.h"
 #include "logic/pgn_types.h"
 #include "logic/log_config.h"
 
@@ -1431,12 +1432,29 @@ static void hal_esp32_common_boot_init(void) {
     // Safety pin
     pinMode(SAFETY_IN, INPUT_PULLUP);
 
-    // SPI sensor bus (FSPI / SPI2_HOST) - SCK=16, MISO=15, MOSI=17
-    hal_sensor_spi_init();
+}
+
+static bool hal_esp32_requires_sensor_spi(void) {
+    return feat::imu() || feat::sensor() || feat::actor();
+}
+
+static void hal_esp32_init_sensor_bus_if_needed(void) {
+    if (hal_esp32_requires_sensor_spi()) {
+        hal_sensor_spi_init();
+        hal_log("ESP32: sensor SPI init enabled (imu=%s was=%s actor=%s)",
+                feat::imu() ? "Y" : "N",
+                feat::sensor() ? "Y" : "N",
+                feat::actor() ? "Y" : "N");
+        return;
+    }
+
+    hal_log("ESP32: sensor SPI init skipped (no active SPI-capable module)");
 }
 
 void hal_esp32_init_imu_bringup(void) {
     hal_esp32_common_boot_init();
+    // Bring-up explicitly validates shared SPI interactions.
+    hal_sensor_spi_init();
 
     // IMU + steering-angle ADC for SPI cross-device diagnostics.
     // Keep actuator/network disabled in bring-up mode.
@@ -1490,11 +1508,26 @@ void hal_esp32_init_gnss_buildup(void) {
 
 void hal_esp32_init_all(void) {
     hal_esp32_common_boot_init();
+    hal_esp32_init_sensor_bus_if_needed();
 
-    // IMU, steer angle, actuator
-    hal_imu_begin();
-    hal_steer_angle_begin();
-    hal_actuator_begin();
+    // Capability-driven boot init (only initialise subsystems required by active modules).
+    if (feat::imu()) {
+        hal_imu_begin();
+    } else {
+        hal_log("ESP32: IMU init skipped (module capability inactive)");
+    }
+
+    if (feat::sensor()) {
+        hal_steer_angle_begin();
+    } else {
+        hal_log("ESP32: steer-angle init skipped (module capability inactive)");
+    }
+
+    if (feat::actor()) {
+        hal_actuator_begin();
+    } else {
+        hal_log("ESP32: actuator init skipped (module capability inactive)");
+    }
 
     // Network (W5500 via ETH driver)
     hal_net_init();
