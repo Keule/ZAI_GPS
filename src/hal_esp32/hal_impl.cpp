@@ -1440,15 +1440,20 @@ static bool hal_esp32_requires_sensor_spi(void) {
 
 static void hal_esp32_init_sensor_bus_if_needed(void) {
     if (hal_esp32_requires_sensor_spi()) {
-        hal_sensor_spi_init();
-        hal_log("ESP32: sensor SPI init enabled (imu=%s was=%s actor=%s)",
-                feat::imu() ? "Y" : "N",
-                feat::sensor() ? "Y" : "N",
-                feat::actor() ? "Y" : "N");
-        return;
+        #if FEAT_CAP_SENSOR_SPI2
+            hal_sensor_spi_init();
+            hal_log("ESP32: sensor SPI init enabled (imu=%s was=%s actor=%s)",
+                    feat::imu() ? "Y" : "N",
+                    feat::sensor() ? "Y" : "N",
+                    feat::actor() ? "Y" : "N");
+            return;
+        #else
+            hal_log("ESP32: sensor SPI capability disabled at compile time (FEAT_CAP_SENSOR_SPI2=0)");
+        #endif
     }
 
     hal_log("ESP32: sensor SPI init skipped (no active SPI-capable module)");
+    // SPI sensor bus (FSPI / SPI2_HOST) - nur wenn Compile-Time-Capability aktiv.
 }
 
 void hal_esp32_init_imu_bringup(void) {
