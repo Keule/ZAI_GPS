@@ -32,6 +32,7 @@
 #include "logic/imu.h"
 #include "logic/modules.h"
 #include "logic/net.h"
+#include "logic/ntrip.h"
 #include "logic/sd_ota.h"
 #include "logic/sd_logger.h"
 
@@ -336,15 +337,24 @@ static void commTaskFunc(void* param) {
     for (;;) {
         // ---------------------------------- Input -----------------------------------
         netPollReceive();
+#if FEAT_ENABLED(FEAT_NTRIP)
+        ntripReadRtcm();
+#endif
 
         // -------------------------------- Processing --------------------------------
         if (!s_gnss_buildup_active) {
             modulesUpdateStatus();
         }
+#if FEAT_ENABLED(FEAT_NTRIP)
+        ntripTick();
+#endif
 
         // ---------------------------------- Output ----------------------------------
         netSendAogFrames();
         gnssMirrorPoll();
+#if FEAT_ENABLED(FEAT_NTRIP)
+        ntripForwardRtcm();
+#endif
 
         if (MAIN_VERBOSE_TASK_DBG) {
             // Heartbeat DBG every 5s (= every 500 iterations)

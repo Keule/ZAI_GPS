@@ -141,7 +141,20 @@ inline constexpr int8_t GNSS_MIRROR_UART1_RX_PIN = GNSS_UART1_RX;
 inline constexpr int8_t GNSS_MIRROR_UART1_TX_PIN = GNSS_UART1_TX;
 inline constexpr int8_t GNSS_MIRROR_UART2_RX_PIN = GNSS_UART2_RX;
 inline constexpr int8_t GNSS_MIRROR_UART2_TX_PIN = GNSS_UART2_TX;
+
 // ---------------------------------------------------------------------------
+// GNSS Receiver configuration — TASK-025
+// Compile-time receiver list (board-specific).
+// GNSS_RX_MAX is defined in hal.h (default: 2).
+// ---------------------------------------------------------------------------
+
+// NOTE: GNSS_RX_CONFIGS is not constexpr here because it depends on
+// GNSS_RX_MAX which may differ per build environment.
+// The actual configuration is applied in ntrip.cpp via ntripInit().
+// Default configuration for this board (ESP32-S3):
+//   inst 0: UART1 (TX48/RX45) = primary GNSS receiver
+//   inst 1: UART2 (TX2/RX1)  = secondary GNSS receiver
+
 // Logging switch (active LOW, internal pull-up)
 //
 // GPIO 46 is an ESP32-S3 strapping pin, but works for this active-LOW input:

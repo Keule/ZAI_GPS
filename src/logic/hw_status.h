@@ -26,7 +26,8 @@ enum HwSubsystem : uint8_t {
     HW_WAS       = 2,   ///< Wheel Angle Sensor (steer angle) failure
     HW_ACTUATOR  = 3,   ///< Actuator communication failure
     HW_SAFETY    = 4,   ///< Safety circuit triggered (KICK)
-    HW_COUNT     = 5    ///< Number of monitored subsystems
+    HW_GNSS      = 5,   ///< GNSS subsystem (NTRIP/RTCM) failure — TASK-025
+    HW_COUNT     = 6    ///< Number of monitored subsystems
 };
 
 // ===================================================================

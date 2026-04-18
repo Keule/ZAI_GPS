@@ -218,6 +218,55 @@ bool hal_gnss_rtcm_is_ready(void);
 uint32_t hal_gnss_rtcm_drop_count(void);
 
 // ===================================================================
+// GNSS UART (indexed, multi-receiver support) — TASK-025
+// ===================================================================
+/// Maximum number of GNSS receivers (compile-time, board-specific).
+#ifndef GNSS_RX_MAX
+#define GNSS_RX_MAX 2
+#endif
+
+/// Initialise GNSS UART for a specific receiver instance.
+/// @param inst    receiver index (0..GNSS_RX_MAX-1)
+/// @param baud    UART baud rate (e.g. 115200).
+/// @param rx_pin  UART RX GPIO, or -1 for default.
+/// @param tx_pin  UART TX GPIO.
+/// @return true on success.
+bool hal_gnss_uart_begin(uint8_t inst, uint32_t baud, int8_t rx_pin, int8_t tx_pin);
+
+/// Write RTCM data to a specific GNSS receiver instance.
+/// @return number of bytes accepted by UART driver.
+size_t hal_gnss_uart_write(uint8_t inst, const uint8_t* data, size_t len);
+
+/// Check if a GNSS receiver instance is initialised and ready.
+bool hal_gnss_uart_is_ready(uint8_t inst);
+
+// ===================================================================
+// TCP Client (NTRIP over Ethernet) — TASK-025
+// ===================================================================
+
+/// Open a TCP connection to host:port over Ethernet.
+/// @return true on success.
+bool hal_tcp_connect(const char* host, uint16_t port);
+
+/// Send data over the TCP connection.
+/// @return number of bytes sent, or 0 on error.
+size_t hal_tcp_write(const uint8_t* data, size_t len);
+
+/// Read available data from the TCP connection (non-blocking).
+/// @return number of bytes read, or 0 if nothing available.
+int hal_tcp_read(uint8_t* buf, size_t max_len);
+
+/// Check how many bytes are available to read from the TCP connection.
+/// @return number of available bytes, or -1 if not connected.
+int hal_tcp_available(void);
+
+/// Check if TCP connection is currently active.
+bool hal_tcp_connected(void);
+
+/// Close the TCP connection.
+void hal_tcp_disconnect(void);
+
+// ===================================================================
 // Network (W5500 Ethernet)
 // ===================================================================
 

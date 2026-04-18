@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 // ---------------------------------------------------------------------------
@@ -106,7 +107,73 @@ public:
 };
 
 // ---------------------------------------------------------------------------
-// Simple scoped lock for arbitrary lock/unlock function pointers.
+// NTRIP state — TASK-025
+// ---------------------------------------------------------------------------
+/// NTRIP connection state machine states.
+enum class NtripConnState : uint8_t {
+    IDLE           = 0,   ///< Not started / idle
+    CONNECTING     = 1,   ///< TCP connect in progress
+    AUTHENTICATING = 2,   ///< HTTP request sent, waiting for response
+    CONNECTED      = 3,   ///< Connected, receiving RTCM stream
+    ERROR          = 4,   ///< Error state, will transition to IDLE for reconnect
+    DISCONNECTED   = 5    ///< Clean disconnect, will reconnect after delay
+};
+
+/// NTRIP client configuration.
+struct NtripConfig {
+    char     host[64];          ///< NTRIP caster hostname or IP
+    uint16_t port;              ///< NTRIP caster port
+    char     mountpoint[48];    ///< NTRIP mountpoint (e.g. "VRS")
+    char     user[32];          ///< NTRIP username (empty = no auth)
+    char     password[32];      ///< NTRIP password
+    uint32_t reconnect_delay_ms; ///< Delay before reconnect after error (default 5000)
+};
+
+/// NTRIP client runtime state and statistics.
+struct NtripState {
+    NtripConnState conn_state;       ///< Current state machine state
+    uint32_t       state_enter_ms;   ///< millis() when current state was entered
+    uint32_t       last_rtcm_ms;     ///< millis() of last RTCM data received
+    uint32_t       rx_bytes;         ///< Total RTCM bytes received from caster
+    uint32_t       forwarded_bytes;  ///< Total RTCM bytes forwarded to GNSS receivers
+    uint32_t       connect_failures; ///< Count of failed connection attempts
+    uint8_t        last_http_status; ///< Last HTTP response code (0 = no response)
+    char           last_error[64];   ///< Last error description (empty = none)
+};
+
+/// GNSS receiver RTCM source type.
+enum class RtcmSource : uint8_t {
+    LOCAL = 0,   ///< Gets RTCM from local NTRIP client
+    OWN   = 1    ///< Gets RTCM independently (e.g. remote receiver)
+};
+
+/// GNSS receiver configuration (compile-time, board-specific).
+struct GnssRxConfig {
+    uint8_t    uart_inst;        ///< UART instance (0=UART0, 1=UART1, 2=UART2)
+    int8_t     tx_pin;           ///< UART TX GPIO
+    int8_t     rx_pin;           ///< UART RX GPIO (-1 = unbound)
+    uint32_t   baud;             ///< UART baud rate
+    RtcmSource rtcm_source;      ///< Where this receiver gets RTCM from
+};
+
+/// Per-receiver runtime state.
+struct GnssRxState {
+    bool     ready;              ///< true after successful hal_gnss_uart_begin()
+    uint32_t forwarded_bytes;    ///< Total RTCM bytes forwarded to this receiver
+    uint32_t drop_count;         ///< Total bytes dropped (UART buffer full)
+};
+
+/// Maximum NTRIP RTCM buffer size (ring buffer for RTCM data).
+static constexpr size_t NTRIP_RTCM_BUF_SIZE = 2048;
+
+// ---------------------------------------------------------------------------
+// Global instances — TASK-025
+// ---------------------------------------------------------------------------
+extern NtripConfig g_ntrip_config;
+extern NtripState  g_ntrip;
+
+// ---------------------------------------------------------------------------
+// Scoped lock for arbitrary lock/unlock function pointers.
 // ---------------------------------------------------------------------------
 template <void (*LockFn)(), void (*UnlockFn)()>
 class ScopedLock {

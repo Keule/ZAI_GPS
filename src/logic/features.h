@@ -181,6 +181,23 @@
 #define FEAT_CAP_GNSS_UART_MIRROR (FEAT_CFG_RAW_CAP_GNSS_UART_MIRROR && FEAT_CFG_MOD_NEEDS_GNSS_UART_MIRROR)
 #endif
 
+// -------------------------------------------------------------------
+// NTRIP-Client Capability — TASK-025
+// Abhaengig von FEAT_GNSS && FEAT_COMM (braucht Ethernet + GNSS UART).
+// Kann per -DFEAT_NTRIP aktiviert werden.
+// -------------------------------------------------------------------
+#if defined(FEAT_NTRIP)
+#define FEAT_CFG_RAW_NTRIP 1
+#else
+#define FEAT_CFG_RAW_NTRIP 0
+#endif
+
+#define FEAT_NTRIP_NORM (FEAT_CFG_RAW_NTRIP && FEAT_GNSS && FEAT_COMM)
+
+#ifndef FEAT_NTRIP
+#define FEAT_NTRIP (FEAT_NTRIP_NORM)
+#endif
+
 static_assert(FEAT_COMM, "FEAT_COMM muss aktiv sein (mindestens Ethernet/UDP Kommunikation).");
 
 // -------------------------------------------------------------------
@@ -224,4 +241,5 @@ inline constexpr bool sensor()        { return FEAT_ENABLED(FEAT_STEER_SENSOR); 
 inline constexpr bool actor()         { return FEAT_ENABLED(FEAT_STEER_ACTOR); }   // legacy helper
 inline constexpr bool control()       { return FEAT_ENABLED(FEAT_MACHINE_ACTOR); }
 inline constexpr bool pid()           { return FEAT_ENABLED(FEAT_PID); }
+inline constexpr bool ntrip()         { return FEAT_ENABLED(FEAT_NTRIP); }
 }  // namespace feat

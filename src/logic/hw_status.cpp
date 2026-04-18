@@ -51,7 +51,8 @@ static const char* const s_subsys_names[HW_COUNT] = {
     "IMU",          // HW_IMU
     "Steer Angle",  // HW_WAS
     "Actuator",     // HW_ACTUATOR
-    "Safety"        // HW_SAFETY
+    "Safety",       // HW_SAFETY
+    "GNSS"          // HW_GNSS — TASK-025
 };
 
 // ===================================================================

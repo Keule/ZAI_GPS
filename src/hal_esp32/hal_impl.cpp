@@ -607,6 +607,205 @@ uint32_t hal_gnss_rtcm_drop_count(void) {
 }
 
 // ===================================================================
+// GNSS UART (indexed, multi-receiver) — TASK-025
+// ===================================================================
+// Per-instance state for GNSS receivers 1..GNSS_RX_MAX-1.
+// inst=0 is backed by the legacy single-UART variables above.
+static HardwareSerial* s_gnss_uart_inst[GNSS_RX_MAX] = {};
+static bool   s_gnss_uart_inst_ready[GNSS_RX_MAX] = {};
+static uint32_t s_gnss_uart_inst_drop[GNSS_RX_MAX] = {};
+static SemaphoreHandle_t s_gnss_uart_inst_mutex[GNSS_RX_MAX] = {};
+
+/// Map inst index to HardwareSerial pointer.
+/// inst=0 returns the legacy s_gnss_rtcm_uart.
+/// inst=1..GNSS_RX_MAX-1 return s_gnss_uart_inst[inst].
+static HardwareSerial* gnssUartForInst(uint8_t inst) {
+    if (inst == 0) return s_gnss_rtcm_uart;
+    if (inst >= GNSS_RX_MAX) return nullptr;
+    return s_gnss_uart_inst[inst];
+}
+
+bool hal_gnss_uart_begin(uint8_t inst, uint32_t baud, int8_t rx_pin, int8_t tx_pin) {
+    if (inst >= GNSS_RX_MAX) {
+        LOGE("HAL", "GNSS UART begin: inst %u out of range (max=%u)",
+             static_cast<unsigned>(inst), static_cast<unsigned>(GNSS_RX_MAX));
+        return false;
+    }
+
+    // inst=0: delegate to legacy API for full backward compatibility.
+    if (inst == 0) {
+        return hal_gnss_rtcm_begin(baud, rx_pin, tx_pin);
+    }
+
+    // inst>=1: use new per-instance path.
+    if (baud == 0) {
+        LOGE("HAL", "GNSS UART begin: inst %u baud must be > 0", static_cast<unsigned>(inst));
+        return false;
+    }
+    if (tx_pin < 0) {
+        LOGE("HAL", "GNSS UART begin: inst %u TX pin must be >= 0", static_cast<unsigned>(inst));
+        return false;
+    }
+    if (rx_pin >= 38 && rx_pin <= 42) {
+        LOGE("HAL", "GNSS UART begin: inst %u RX pin %d is output-only on ESP32-S3",
+             static_cast<unsigned>(inst), rx_pin);
+        return false;
+    }
+
+    // Resolve UART peripheral: inst maps to UART number inst+1 for now.
+    // UART1=inst unused (claimed by legacy), UART2=inst1, etc.
+    // For ESP32-S3: UART0, UART1, UART2 available.
+    HardwareSerial* uart = nullptr;
+    uint8_t uart_num = 0;
+    if (inst == 1) {
+        uart = &Serial2;
+        uart_num = 2;
+    } else {
+        LOGE("HAL", "GNSS UART begin: inst %u has no UART mapping", static_cast<unsigned>(inst));
+        return false;
+    }
+
+    if (!s_gnss_uart_inst_mutex[inst]) {
+        s_gnss_uart_inst_mutex[inst] = xSemaphoreCreateMutex();
+    }
+    if (s_gnss_uart_inst_mutex[inst]) {
+        xSemaphoreTake(s_gnss_uart_inst_mutex[inst], portMAX_DELAY);
+    }
+
+    if (!claimGnssUartPins(uart_num, rx_pin, tx_pin)) {
+        if (s_gnss_uart_inst_mutex[inst]) {
+            xSemaphoreGive(s_gnss_uart_inst_mutex[inst]);
+        }
+        return false;
+    }
+
+    uart->begin(baud, SERIAL_8N1, rx_pin, tx_pin);
+    s_gnss_uart_inst[inst] = uart;
+    s_gnss_uart_inst_ready[inst] = true;
+    s_gnss_uart_inst_drop[inst] = 0;
+
+    if (s_gnss_uart_inst_mutex[inst]) {
+        xSemaphoreGive(s_gnss_uart_inst_mutex[inst]);
+    }
+
+    LOGI("HAL", "GNSS UART inst%u ready (UART%u, baud=%lu, rx=%d, tx=%d)",
+         static_cast<unsigned>(inst), static_cast<unsigned>(uart_num),
+         static_cast<unsigned long>(baud), rx_pin, tx_pin);
+    return true;
+}
+
+size_t hal_gnss_uart_write(uint8_t inst, const uint8_t* data, size_t len) {
+    if (!data || len == 0) return 0;
+
+    // inst=0: delegate to legacy API.
+    if (inst == 0) {
+        return hal_gnss_rtcm_write(data, len);
+    }
+
+    if (inst >= GNSS_RX_MAX) return 0;
+
+    if (!s_gnss_uart_inst_mutex[inst]) {
+        s_gnss_uart_inst_mutex[inst] = xSemaphoreCreateMutex();
+    }
+    if (s_gnss_uart_inst_mutex[inst]) {
+        xSemaphoreTake(s_gnss_uart_inst_mutex[inst], portMAX_DELAY);
+    }
+
+    if (!s_gnss_uart_inst_ready[inst] || !s_gnss_uart_inst[inst]) {
+        s_gnss_uart_inst_drop[inst] += static_cast<uint32_t>(len);
+        if (s_gnss_uart_inst_mutex[inst]) {
+            xSemaphoreGive(s_gnss_uart_inst_mutex[inst]);
+        }
+        return 0;
+    }
+
+    const size_t written = s_gnss_uart_inst[inst]->write(data, len);
+    if (s_gnss_uart_inst_mutex[inst]) {
+        xSemaphoreGive(s_gnss_uart_inst_mutex[inst]);
+    }
+
+    if (written < len) {
+        s_gnss_uart_inst_drop[inst] += static_cast<uint32_t>(len - written);
+    }
+    return written;
+}
+
+bool hal_gnss_uart_is_ready(uint8_t inst) {
+    if (inst == 0) return s_gnss_rtcm_ready;
+    if (inst >= GNSS_RX_MAX) return false;
+    return s_gnss_uart_inst_ready[inst];
+}
+
+// ===================================================================
+// TCP Client (NTRIP over Ethernet) — TASK-025
+// ===================================================================
+// Uses WiFiClient which works with the ESP-IDF ETH network interface.
+// W5500 has max 8 sockets; NTRIP TCP uses one additional socket.
+// WiFi.h is already included at the top of this file.
+
+static WiFiClient s_tcp_client;
+static bool s_tcp_connected = false;
+
+bool hal_tcp_connect(const char* host, uint16_t port) {
+    if (!host || host[0] == '\0') {
+        LOGE("HAL-TCP", "connect failed: host is null or empty");
+        return false;
+    }
+
+    LOGI("HAL-TCP", "connecting to %s:%u", host, static_cast<unsigned>(port));
+    s_tcp_client.setTimeout(5000);  // 5s connect timeout
+    const bool ok = s_tcp_client.connect(host, port);
+    if (ok) {
+        s_tcp_connected = true;
+        LOGI("HAL-TCP", "connected to %s:%u", host, static_cast<unsigned>(port));
+    } else {
+        s_tcp_connected = false;
+        LOGW("HAL-TCP", "connect to %s:%u failed", host, static_cast<unsigned>(port));
+    }
+    return ok;
+}
+
+size_t hal_tcp_write(const uint8_t* data, size_t len) {
+    if (!data || len == 0) return 0;
+    if (!s_tcp_connected || !s_tcp_client.connected()) {
+        s_tcp_connected = false;
+        return 0;
+    }
+    return s_tcp_client.write(data, len);
+}
+
+int hal_tcp_read(uint8_t* buf, size_t max_len) {
+    if (!buf || max_len == 0) return 0;
+    if (!s_tcp_connected || !s_tcp_client.connected()) {
+        s_tcp_connected = false;
+        return 0;
+    }
+    return s_tcp_client.read(buf, max_len);
+}
+
+int hal_tcp_available(void) {
+    if (!s_tcp_connected || !s_tcp_client.connected()) {
+        s_tcp_connected = false;
+        return -1;
+    }
+    return s_tcp_client.available();
+}
+
+bool hal_tcp_connected(void) {
+    if (!s_tcp_connected) return false;
+    if (!s_tcp_client.connected()) {
+        s_tcp_connected = false;
+        return false;
+    }
+    return true;
+}
+
+void hal_tcp_disconnect(void) {
+    s_tcp_client.stop();
+    s_tcp_connected = false;
+}
+
+// ===================================================================
 // Timing
 // ===================================================================
 uint32_t hal_millis(void) {
