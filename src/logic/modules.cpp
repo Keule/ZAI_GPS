@@ -61,19 +61,6 @@ static bool isModuleActive(const AogModuleInfo& mod) {
 // Init – detect all hardware
 // ===================================================================
 void modulesInit(void) {
-#if defined(FEAT_GNSS_BUILDUP)
-    // GNSS bring-up profile: module registry path is intentionally disabled.
-    // No SPI/IMU/WAS/actuator detection should run in this mode.
-    std::memset(&s_hw, 0, sizeof(s_hw));
-    for (uint8_t i = 0; i < AOG_MOD_COUNT; i++) {
-        s_modules[i].enabled = false;
-        s_modules[i].hw_detected = false;
-    }
-    s_startup_errors_pending = false;
-    hal_log("MODULES: GNSS buildup active -> module detection disabled");
-    return;
-#endif
-
     hal_log("MODULES: === Hardware Detection ===");
 
     // --- Detect individual subsystems ---
@@ -167,10 +154,6 @@ bool modulesHwOk(AogModuleId id) {
 // Send hello replies for ALL enabled modules
 // ===================================================================
 void modulesSendHellos(void) {
-#if defined(FEAT_GNSS_BUILDUP)
-    return;
-#endif
-
     uint8_t buf[64];
 
     for (uint8_t i = 0; i < AOG_MOD_COUNT; i++) {
@@ -217,10 +200,6 @@ void modulesSendHellos(void) {
 // Send subnet replies for ALL enabled modules
 // ===================================================================
 void modulesSendSubnetReplies(void) {
-#if defined(FEAT_GNSS_BUILDUP)
-    return;
-#endif
-
     uint8_t buf[64];
 
     for (uint8_t i = 0; i < AOG_MOD_COUNT; i++) {
@@ -242,10 +221,6 @@ void modulesSendSubnetReplies(void) {
 // Send startup error messages for failed hardware
 // ===================================================================
 void modulesSendStartupErrors(void) {
-#if defined(FEAT_GNSS_BUILDUP)
-    return;
-#endif
-
     if (!s_startup_errors_pending) return;
     const bool net_connected = hal_net_is_connected();
     if (!net_connected) {
@@ -313,10 +288,6 @@ void modulesSendStartupErrors(void) {
 // Update dynamic hardware status (late detection)
 // ===================================================================
 void modulesUpdateStatus(void) {
-#if defined(FEAT_GNSS_BUILDUP)
-    return;
-#endif
-
     if (!feat::control()) return;
 
     // Safety circuit: dynamic monitoring

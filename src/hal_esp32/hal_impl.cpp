@@ -44,9 +44,7 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <Preferences.h>    // NVS flash storage for calibration
-#if !defined(FEAT_GNSS_BUILDUP)
 #include "driver_ads1118.h"  // libdriver ADS1118
-#endif
 #include <cstring>
 
 // ===================================================================
@@ -616,10 +614,6 @@ bool hal_safety_ok(void) {
 // SPI Sensors / Actuator - SPI Bus 2 (FSPI / SPI2_HOST)
 // ===================================================================
 void hal_sensor_spi_init(void) {
-#if defined(FEAT_GNSS_BUILDUP)
-    // GNSS bring-up profile: SPI bus remains disabled.
-    return;
-#else
     sensorSPI.begin(SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI, -1);
     if (!s_spi_bus_mutex) {
         s_spi_bus_mutex = xSemaphoreCreateMutex();
@@ -651,24 +645,16 @@ void hal_sensor_spi_init(void) {
     s_was_cache_valid = false;
     hal_log("ESP32: sensor SPI initialised on FSPI/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
             SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
-#endif
 }
 
 void hal_sensor_spi_deinit(void) {
-#if defined(FEAT_GNSS_BUILDUP)
-    return;
-#else
     spiBeginCritical();
     sensorSPI.end();
     spiEndCritical();
     hal_log("ESP32: shared SPI released (FSPI peripheral free)");
-#endif
 }
 
 void hal_sensor_spi_reinit(void) {
-#if defined(FEAT_GNSS_BUILDUP)
-    return;
-#else
     // Ensure the bus is fully released before re-initialising.
     // The OTA code creates a LOCAL SPIClass(FSPI) which can leave
     // the FSPI peripheral in an inconsistent state.  Calling end()
@@ -708,7 +694,6 @@ void hal_sensor_spi_reinit(void) {
     hal_log("ESP32: shared SPI re-initialised on FSPI/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
             SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
     hal_imu_on_sensor_spi_reinit();
-#endif
 }
 
 void hal_sensor_spi_get_telemetry(HalSpiTelemetry* out) {
@@ -751,7 +736,6 @@ void hal_sensor_spi_get_telemetry(HalSpiTelemetry* out) {
     }
 }
 
-#if !defined(FEAT_GNSS_BUILDUP)
 void hal_imu_get_spi_info(HalImuSpiInfo* out) {
     if (!out) return;
     out->sck_pin = SENS_SPI_SCK;
@@ -771,12 +755,10 @@ void hal_imu_set_spi_config(uint32_t freq_hz, uint8_t mode) {
             (unsigned long)k_spi_cfg_imu.freq_hz,
             (unsigned)k_spi_cfg_imu.mode);
 }
-#endif
 
 // ===================================================================
 // ADS1118 - 16-Bit ADC for steering angle potentiometer
 // ===================================================================
-#if !defined(FEAT_GNSS_BUILDUP)
 // Uses libdriver/ads1118 (lib/ads1118/src/) for initialisation only.
 // For runtime reads, we bypass the libdriver and read raw ADC data
 // directly via SPI to avoid the "range is invalid" bug in the
@@ -1210,35 +1192,6 @@ bool hal_steer_angle_is_calibrated(void) {
 
     return s_calibrated;
 }
-#else
-void hal_steer_angle_begin(void) {
-    hal_log("ESP32: GNSS buildup -> steer angle init disabled");
-}
-
-bool hal_steer_angle_detect(void) {
-    return false;
-}
-
-void hal_steer_angle_calibrate(void) {
-    hal_log("ESP32: GNSS buildup -> steer calibration disabled");
-}
-
-float hal_steer_angle_read_deg(void) {
-    return 0.0f;
-}
-
-int16_t hal_steer_angle_read_raw(void) {
-    return 0;
-}
-
-uint8_t hal_steer_angle_read_sensor_byte(void) {
-    return 0;
-}
-
-bool hal_steer_angle_is_calibrated(void) {
-    return false;
-}
-#endif
 
 // ===================================================================
 // Actuator - SPI Bus 2 (FSPI / SPI2_HOST)
@@ -1349,48 +1302,22 @@ void hal_net_init(void) {
     // Register Ethernet event handler
     WiFi.onEvent(onEthEvent);
 
-    bool init_ok = false;
-
-#if CONFIG_IDF_TARGET_ESP32
-    // ESP32 target: follow LilyGO pattern and prefer the macro-driven ETH.begin()
-    // variant (RMII/W5500 depending on board-level ETH_* defines).
-    #if defined(ETH_PHY_TYPE) && defined(ETH_PHY_ADDR) && defined(ETH_PHY_MDC) && defined(ETH_PHY_MDIO) && defined(ETH_PHY_POWER) && defined(ETH_CLK_MODE)
-        hal_log("ETH: initialising ESP32 ETH via macro profile (PHY=%d ADDR=%d MDC=%d MDIO=%d PWR=%d CLK_MODE=%d)",
-                ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_MDC, ETH_PHY_MDIO, ETH_PHY_POWER, ETH_CLK_MODE);
-        init_ok = ETH.begin((eth_phy_type_t)ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_MDC, ETH_PHY_MDIO, ETH_PHY_POWER, ETH_CLK_MODE);
-    #else
-        // Fallback for ESP32 boards wired with W5500 via SPI (same call signature as S3).
-        hal_log("ETH: initialising ESP32 W5500 via SPI fallback (SCK=%d MISO=%d MOSI=%d CS=%d INT=%d RST=%d)",
-                ETH_SCK, ETH_MISO, ETH_MOSI, ETH_CS, ETH_INT, ETH_RST);
-        init_ok = ETH.begin(
-            ETH_PHY_W5500,
-            1,
-            ETH_CS,
-            ETH_INT,
-            ETH_RST,
-            SPI3_HOST,
-            ETH_SCK,
-            ETH_MISO,
-            ETH_MOSI
-        );
-    #endif
-#else
-    // ESP32-S3 target: onboard W5500 over SPI3_HOST.
     hal_log("ETH: initialising W5500 on SPI3_HOST (SCK=%d MISO=%d MOSI=%d CS=%d INT=%d RST=%d)...",
             ETH_SCK, ETH_MISO, ETH_MOSI, ETH_CS, ETH_INT, ETH_RST);
 
-    init_ok = ETH.begin(
-        ETH_PHY_W5500,
-        1,
-        ETH_CS,
-        ETH_INT,
-        ETH_RST,
-        SPI3_HOST,
-        ETH_SCK,
-        ETH_MISO,
-        ETH_MOSI
+    // Initialise W5500 via ESP-IDF ETH driver
+    // Parameters: phy_type, phy_addr, cs, irq, rst, spi_host, sck, miso, mosi
+    bool init_ok = ETH.begin(
+        ETH_PHY_W5500,   // PHY type
+        1,                // PHY address (must be 1 for this board)
+        ETH_CS,           // Chip Select    = GPIO 9
+        ETH_INT,          // Interrupt      = GPIO 13
+        ETH_RST,          // Reset          = GPIO 14
+        SPI3_HOST,        // SPI peripheral
+        ETH_SCK,          // SPI Clock      = GPIO 10
+        ETH_MISO,         // SPI MISO       = GPIO 11
+        ETH_MOSI          // SPI MOSI       = GPIO 12
     );
-#endif
 
     if (!init_ok) {
         hal_log("ETH: FAILED - W5500 not detected! Check SPI connections.");
@@ -1504,13 +1431,8 @@ static void hal_esp32_common_boot_init(void) {
     // Safety pin
     pinMode(SAFETY_IN, INPUT_PULLUP);
 
-#if !defined(FEAT_GNSS_BUILDUP)
     // SPI sensor bus (FSPI / SPI2_HOST) - SCK=16, MISO=15, MOSI=17
     hal_sensor_spi_init();
-#else
-    // GNSS bring-up profile: keep full sensor/SPI stack disabled.
-    hal_log("ESP32: GNSS buildup -> sensor SPI init skipped");
-#endif
 }
 
 void hal_esp32_init_imu_bringup(void) {

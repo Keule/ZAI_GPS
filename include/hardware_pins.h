@@ -49,18 +49,17 @@
 #pragma once
 
 #include <cstdint>
-#include "board_profile/board_profile_select.h"
 
 // ---------------------------------------------------------------------------
 // SPI Bus 1: Ethernet - W5500 (managed by ESP-IDF ETH driver on SPI3_HOST)
 // These pins are fixed by the board design - DO NOT CHANGE.
 // ---------------------------------------------------------------------------
-#define ETH_SCK        BOARD_ETH_SCK
-#define ETH_MISO       BOARD_ETH_MISO
-#define ETH_MOSI       BOARD_ETH_MOSI
-#define ETH_CS         BOARD_ETH_CS
-#define ETH_INT        BOARD_ETH_INT
-#define ETH_RST        BOARD_ETH_RST
+#define ETH_SCK        10
+#define ETH_MISO       11
+#define ETH_MOSI       12
+#define ETH_CS          9
+#define ETH_INT        13
+#define ETH_RST        14
 
 // ---------------------------------------------------------------------------
 // SPI Bus 2: Sensor Bus (FSPI = SPI2_HOST)
