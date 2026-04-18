@@ -349,6 +349,127 @@ struct GnssUartPins {
     int8_t tx;
 };
 
+struct PinClaimEntry {
+    int pin;
+    const char* owner;
+};
+
+static constexpr size_t HAL_PIN_CLAIM_CAPACITY = 32;
+static PinClaimEntry s_pin_claims[HAL_PIN_CLAIM_CAPACITY] = {};
+static size_t s_pin_claim_count = 0;
+static const char* s_pin_claim_path = "unset";
+
+static void pinClaimsReset(const char* path_name) {
+    s_pin_claim_count = 0;
+    s_pin_claim_path = path_name ? path_name : "unset";
+}
+
+static const PinClaimEntry* pinClaimFind(int pin) {
+    for (size_t i = 0; i < s_pin_claim_count; ++i) {
+        if (s_pin_claims[i].pin == pin) {
+            return &s_pin_claims[i];
+        }
+    }
+    return nullptr;
+}
+
+static bool pinClaimsAddBatch(const PinClaimEntry* entries, size_t count, const char* path_name) {
+    if (!entries || count == 0) return true;
+
+    for (size_t i = 0; i < count; ++i) {
+        const int pin = entries[i].pin;
+        if (pin < 0) continue;
+
+        const PinClaimEntry* existing = pinClaimFind(pin);
+        if (existing) {
+            LOGE("HAL", "Pin claim conflict on GPIO %d (%s vs %s, init_path=%s)",
+                 pin,
+                 existing->owner,
+                 entries[i].owner,
+                 path_name ? path_name : s_pin_claim_path);
+            return false;
+        }
+
+        for (size_t j = 0; j < i; ++j) {
+            if (entries[j].pin == pin) {
+                LOGE("HAL", "Pin claim conflict on GPIO %d within same claim batch (%s, init_path=%s)",
+                     pin,
+                     entries[i].owner,
+                     path_name ? path_name : s_pin_claim_path);
+                return false;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        const int pin = entries[i].pin;
+        if (pin < 0) continue;
+        if (s_pin_claim_count >= HAL_PIN_CLAIM_CAPACITY) {
+            LOGE("HAL", "Pin claim table overflow while claiming GPIO %d (%s, init_path=%s)",
+                 pin,
+                 entries[i].owner,
+                 path_name ? path_name : s_pin_claim_path);
+            return false;
+        }
+        s_pin_claims[s_pin_claim_count++] = entries[i];
+    }
+
+    return true;
+}
+
+static bool claimCommonInitPins(void) {
+    static constexpr PinClaimEntry claims[] = {
+        {SAFETY_IN, "safety-input"},
+        {SENS_SPI_SCK, "sensor-spi-sck"},
+        {SENS_SPI_MISO, "sensor-spi-miso"},
+        {SENS_SPI_MOSI, "sensor-spi-mosi"},
+    };
+    return pinClaimsAddBatch(claims, sizeof(claims) / sizeof(claims[0]), s_pin_claim_path);
+}
+
+static bool claimImuSteerInitPins(void) {
+    static constexpr PinClaimEntry claims[] = {
+        {IMU_INT, "imu-int"},
+        {IMU_RST, "imu-rst"},
+        {IMU_WAKE, "imu-wake"},
+        {CS_IMU, "imu-cs"},
+        {CS_STEER_ANG, "steer-angle-cs"},
+        {CS_ACT, "actuator-cs"},
+    };
+    return pinClaimsAddBatch(claims, sizeof(claims) / sizeof(claims[0]), s_pin_claim_path);
+}
+
+static bool claimEthPins(void) {
+    static constexpr PinClaimEntry claims[] = {
+        {ETH_SCK, "eth-sck"},
+        {ETH_MISO, "eth-miso"},
+        {ETH_MOSI, "eth-mosi"},
+        {ETH_CS, "eth-cs"},
+        {ETH_INT, "eth-int"},
+        {ETH_RST, "eth-rst"},
+    };
+    return pinClaimsAddBatch(claims, sizeof(claims) / sizeof(claims[0]), s_pin_claim_path);
+}
+
+static bool claimGnssUartPins(uint8_t uart_num, int rx_pin, int tx_pin) {
+    if (tx_pin < 0) {
+        LOGE("HAL", "GNSS RTCM claim failed: UART%u TX unresolved", static_cast<unsigned>(uart_num));
+        return false;
+    }
+    if (rx_pin >= 38 && rx_pin <= 42) {
+        LOGE("HAL", "GNSS RTCM claim failed: UART%u RX pin %d is output-only on ESP32-S3",
+             static_cast<unsigned>(uart_num),
+             rx_pin);
+        return false;
+    }
+
+    const PinClaimEntry claims[] = {
+        {rx_pin, "gnss-rtcm-rx"},
+        {tx_pin, "gnss-rtcm-tx"},
+    };
+    return pinClaimsAddBatch(claims, sizeof(claims) / sizeof(claims[0]), s_pin_claim_path);
+}
+
 static HardwareSerial* gnssUartForNum(uint8_t uart_num) {
     switch (uart_num) {
     case 1: return &Serial1;
@@ -1436,6 +1557,11 @@ static void hal_esp32_common_boot_init(void) {
 }
 
 void hal_esp32_init_imu_bringup(void) {
+    pinClaimsReset("imu_bringup");
+    if (!claimCommonInitPins() || !claimImuSteerInitPins()) {
+        LOGE("HAL", "Pin claim failure in IMU bring-up path; init aborted");
+        return;
+    }
     hal_esp32_common_boot_init();
 
     // IMU + steering-angle ADC for SPI cross-device diagnostics.
@@ -1447,7 +1573,7 @@ void hal_esp32_init_imu_bringup(void) {
 }
 
 void hal_esp32_init_gnss_buildup(void) {
-    hal_esp32_common_boot_init();
+    pinClaimsReset("gnss_buildup");
 
 #if defined(GNSS_BUILDUP_RTCM_UART_NUM)
     constexpr uint8_t k_rtcm_uart_num = GNSS_BUILDUP_RTCM_UART_NUM;
@@ -1464,31 +1590,80 @@ void hal_esp32_init_gnss_buildup(void) {
 #if defined(GNSS_BUILDUP_RTCM_RX_PIN)
     constexpr int8_t k_rtcm_rx_pin = static_cast<int8_t>(GNSS_BUILDUP_RTCM_RX_PIN);
 #else
-    constexpr int8_t k_rtcm_rx_pin = 45;
+    constexpr int8_t k_rtcm_rx_pin = GNSS_UART1_RX;
 #endif
 
 #if defined(GNSS_BUILDUP_RTCM_TX_PIN)
     constexpr int8_t k_rtcm_tx_pin = static_cast<int8_t>(GNSS_BUILDUP_RTCM_TX_PIN);
 #else
-    constexpr int8_t k_rtcm_tx_pin = 48;
+    constexpr int8_t k_rtcm_tx_pin = GNSS_UART1_TX;
 #endif
+
+    if (!claimCommonInitPins() || !claimEthPins()) {
+        LOGE("HAL", "Pin claim failure in GNSS buildup path (common/ETH pins); init aborted");
+        return;
+    }
+
+    const GnssUartPins defaults = gnssUartPinsForNum(k_rtcm_uart_num);
+    int resolved_rx_pin = (k_rtcm_rx_pin < 0) ? static_cast<int>(defaults.rx) : static_cast<int>(k_rtcm_rx_pin);
+    int resolved_tx_pin = (k_rtcm_tx_pin < 0) ? static_cast<int>(defaults.tx) : static_cast<int>(k_rtcm_tx_pin);
+
+    bool use_default_uart_pins = false;
+    if (!claimGnssUartPins(k_rtcm_uart_num, resolved_rx_pin, resolved_tx_pin)) {
+        const bool custom_pins_requested =
+            (resolved_rx_pin != static_cast<int>(defaults.rx)) ||
+            (resolved_tx_pin != static_cast<int>(defaults.tx));
+        if (custom_pins_requested) {
+            LOGW("HAL", "GNSS RTCM pin claim conflict on custom pins (rx=%d tx=%d), fallback to UART%u defaults (rx=%d tx=%d)",
+                 resolved_rx_pin,
+                 resolved_tx_pin,
+                 static_cast<unsigned>(k_rtcm_uart_num),
+                 static_cast<int>(defaults.rx),
+                 static_cast<int>(defaults.tx));
+            use_default_uart_pins = true;
+            resolved_rx_pin = static_cast<int>(defaults.rx);
+            resolved_tx_pin = static_cast<int>(defaults.tx);
+        } else {
+            LOGE("HAL", "GNSS RTCM pin claim conflict on default UART%u pins; UART init disabled",
+                 static_cast<unsigned>(k_rtcm_uart_num));
+            return;
+        }
+    }
+
+    if (use_default_uart_pins) {
+        pinClaimsReset("gnss_buildup");
+        if (!claimCommonInitPins() || !claimEthPins() ||
+            !claimGnssUartPins(k_rtcm_uart_num, resolved_rx_pin, resolved_tx_pin)) {
+            LOGE("HAL", "GNSS RTCM fallback pin claim failed; UART init disabled");
+            return;
+        }
+    }
+
+    hal_esp32_common_boot_init();
 
     // Communication path required for RTCM ingress (ETH UDP).
     hal_net_init();
 
     // Dedicated RTCM egress over GNSS UART.
     hal_esp32_gnss_rtcm_set_uart(k_rtcm_uart_num);
-    const bool gnss_uart_ok = hal_gnss_rtcm_begin(k_rtcm_baud, k_rtcm_rx_pin, k_rtcm_tx_pin);
+    const bool gnss_uart_ok = hal_gnss_rtcm_begin(k_rtcm_baud,
+                                                  static_cast<int8_t>(resolved_rx_pin),
+                                                  static_cast<int8_t>(resolved_tx_pin));
     hal_log("ESP32: GNSS buildup HAL init %s (ETH=%s, UART%u baud=%lu rx=%d tx=%d)",
             gnss_uart_ok ? "complete" : "degraded",
             hal_net_is_connected() ? "UP" : "DOWN",
             static_cast<unsigned>(k_rtcm_uart_num),
             static_cast<unsigned long>(k_rtcm_baud),
-            static_cast<int>(k_rtcm_rx_pin),
-            static_cast<int>(k_rtcm_tx_pin));
+            resolved_rx_pin,
+            resolved_tx_pin);
 }
 
 void hal_esp32_init_all(void) {
+    pinClaimsReset("full_init");
+    if (!claimCommonInitPins() || !claimImuSteerInitPins() || !claimEthPins()) {
+        LOGE("HAL", "Pin claim failure in full init path; init aborted");
+        return;
+    }
     hal_esp32_common_boot_init();
 
     // IMU, steer angle, actuator
