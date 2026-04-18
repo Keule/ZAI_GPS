@@ -129,6 +129,15 @@
 #define GNSS_UART2_TX    2
 #define GNSS_UART2_RX    1
 
+// ---------------------------------------------------------------------------
+// Init-path pin claim matrix (TASK-024, canonical intent)
+//
+// common_boot : SAFETY_IN + SENS_SPI_{SCK,MISO,MOSI}
+// imu_bringup : common_boot + IMU_{INT,RST,WAKE} + CS_{IMU,STEER_ANG,ACT}
+// full_init   : imu_bringup + ETH_{SCK,MISO,MOSI,CS,INT,RST}
+// gnss_buildup: common_boot + ETH_{SCK,MISO,MOSI,CS,INT,RST} + GNSS_UARTx_{RX,TX}
+// ---------------------------------------------------------------------------
+
 // GNSS console mirror defaults (diagnostic read-only sniffing in gnss_buildup)
 inline constexpr uint32_t GNSS_MIRROR_BAUD = 115200;
 inline constexpr int8_t GNSS_MIRROR_UART1_RX_PIN = 44;
