@@ -47,6 +47,9 @@ epics:
       - TASK-014
       - TASK-020
       - TASK-021
+      - TASK-022
+      - TASK-023
+      - TASK-024
 
   - id: EPIC-004
     title: Feature Expansion
@@ -413,9 +416,42 @@ tasks:
     title: KI-Planer soll in neuem Branch einen Umsetzungsplan für compile-time/runtime Capabilities und Pin-Zuweisung erstellen
     file: backlog/tasks/TASK-021-planungsauftrag-capability-init-und-pin-zuweisung.md
     epic_id: EPIC-003
-    status: open
+    status: done
     priority: high
     delivery_mode: firmware_only
     task_category: platform_reuse
     dependencies:
       - TASK-020
+
+  - id: TASK-022
+    title: Compile-Time-Gating für zusätzliche SPI/UART-Capabilities umsetzen und Pflicht-Onboarding Teil 1 in klickbare Codex-Task-Prompts integrieren
+    file: backlog/tasks/TASK-022-capabilities-compile-time-gating-und-onboarding-prompts.md
+    epic_id: EPIC-003
+    status: done
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-021
+
+  - id: TASK-023
+    title: Zusätzliche SPI/UART-Capabilities nur bei Modulbedarf initialisieren und Onboarding-Compliance im Codex-Task-Promptpfad verifizieren
+    file: backlog/tasks/TASK-023-capabilities-boot-init-gating-und-onboarding-prompts.md
+    epic_id: EPIC-003
+    status: done
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-022
+
+  - id: TASK-024
+    title: Pin-Claims und Pin-Zuweisung pro Capability-Initialisierungspfad verbindlich und konfliktarm umsetzen
+    file: backlog/tasks/TASK-024-pin-claims-und-zuweisung-pro-init-pfad.md
+    epic_id: EPIC-003
+    status: done
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-023

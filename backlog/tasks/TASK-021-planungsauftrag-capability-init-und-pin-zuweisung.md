@@ -2,7 +2,7 @@
 
 - **ID**: TASK-021
 - **Titel**: KI-Planer soll in neuem Branch einen Umsetzungsplan für compile-time/runtime Capabilities und Pin-Zuweisung erstellen
-- **Status**: open
+- **Status**: done
 - **Priorität**: high
 - **Komponenten**: `backlog/tasks/`, `backlog/index.yaml`, `src/logic/features.h`, `src/main.cpp`, `src/hal_esp32/*`, `include/hardware_pins.h`, `platformio.ini`
 - **Dependencies**: TASK-020
