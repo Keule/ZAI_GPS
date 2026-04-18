@@ -43,4 +43,3 @@
 - `hardware_pins.h` bleibt Quelle für allgemeine Board-/Bus-Pins (ETH, Sensorik). TFT/ETH-bezogene Defines werden getrennt in `include/board_profile/*` geführt, um Kollisionen und Kopplung gering zu halten.
 - Kompilierbare Board-Auswahl erfolgt über bestehende PlatformIO-Environments und Board-Makros (`LILYGO_T_ETH_LITE_ESP32`, `LILYGO_T_ETH_LITE_ESP32S3`); Die Code-Auswahl erfolgt über bestehende Board-Makros und einen zentralen Header-Dispatcher (`board_profile_select.h`).
 - Vor Implementierung ist eine Pin-/Bus-Verträglichkeitsprüfung Pflicht (insbesondere W5500 auf SPI3_HOST vs. TFT-Bus/CS), damit Ethernet-Pfad stabil bleibt.
-- ETH-Initialisierungspfad pro Target muss explizit unterschieden werden (ESP32: macro-/profilbasiert, ESP32-S3: W5500-SPI-Pfad).
