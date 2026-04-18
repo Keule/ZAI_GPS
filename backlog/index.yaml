@@ -46,6 +46,7 @@ epics:
       - TASK-013
       - TASK-014
       - TASK-020
+      - TASK-021
 
   - id: EPIC-004
     title: Feature Expansion
@@ -407,3 +408,14 @@ tasks:
     task_category: platform_reuse
     dependencies:
       - TASK-013
+
+  - id: TASK-021
+    title: KI-Planer soll in neuem Branch einen Umsetzungsplan für compile-time/runtime Capabilities und Pin-Zuweisung erstellen
+    file: backlog/tasks/TASK-021-planungsauftrag-capability-init-und-pin-zuweisung.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-020
