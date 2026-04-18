@@ -31,7 +31,7 @@
 #include "log_ext.h"
 
 #include <cstring>
-#include <cstdlib>
+#include <cstdio>
 
 // ===================================================================
 // Base64 encoding for NTRIP Basic Auth
@@ -146,7 +146,7 @@ static size_t buildNtripRequest(char* buf, size_t buf_max) {
     const NtripConfig& cfg = g_ntrip_config;
 
     // Start with GET request line
-    int n = std::snprintf(buf, buf_max,
+    int n = snprintf(buf, buf_max,
         "GET /%s HTTP/1.0\r\n"
         "User-Agent: AgSteer NTRIP Client v1.0\r\n",
         cfg.mountpoint);
@@ -157,19 +157,19 @@ static size_t buildNtripRequest(char* buf, size_t buf_max) {
     // Add Basic Auth if credentials are present
     if (cfg.user[0] != '\0') {
         char credentials[96];
-        std::snprintf(credentials, sizeof(credentials), "%s:%s", cfg.user, cfg.password);
+        snprintf(credentials, sizeof(credentials), "%s:%s", cfg.user, cfg.password);
 
         char encoded[128];
         base64Encode(credentials, strlen(credentials), encoded, sizeof(encoded));
 
-        n = std::snprintf(buf + pos, buf_max - pos,
+        n = snprintf(buf + pos, buf_max - pos,
             "Authorization: Basic %s\r\n", encoded);
         if (n < 0 || static_cast<size_t>(n) >= buf_max - pos) return 0;
         pos += static_cast<size_t>(n);
     }
 
     // End headers
-    n = std::snprintf(buf + pos, buf_max - pos,
+    n = snprintf(buf + pos, buf_max - pos,
         "Accept: */*\r\n"
         "Connection: close\r\n"
         "\r\n");
@@ -201,7 +201,7 @@ static bool parseNtripResponse(const char* resp, size_t len, uint8_t* out_status
     }
 
     if (found_401) {
-        *out_status = 401;
+        *out_status = 1;  // 1 = auth failure sentinel
         return false;
     }
 
