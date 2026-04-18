@@ -14,6 +14,16 @@ Kurzleitfaden für sauberes Arbeiten über Chats/Agenten/Umgebungen hinweg.
    - Was ist in scope / out of scope?
    - Welche Dateien werden voraussichtlich geändert?
 
+## 1a) Pre-Work-Check (verpflichtend, vor der ersten Änderung)
+1. Task-Kontext prüfen (Task-ID einsetzen):
+   - `python3 tools/check_task_context.py --task-id <Task-ID>`
+2. Erwartetes Ergebnis:
+   - aktueller Branch ist exakt `task/<Task-ID>`.
+   - Verzeichnis `reports/<Task-ID>/` existiert.
+3. Bei Abweichung **sofort stoppen und eskalieren**:
+   - falscher Branch (z. B. `gnss_integration`) ist für Task-Arbeit nicht zulässig.
+   - fehlender Report-Ordner muss vor Start angelegt oder durch Planer/Verantwortliche geklärt werden.
+
 ## 2) Planung vor Umsetzung
 1. Task klassifizieren:
    - `independent` oder `dependent`.
@@ -71,6 +81,18 @@ Anschließend im `backlog/index.yaml` registrieren.
    - Normative Regeln stehen in `README.md`, Prozess-, Architektur- und Protokolldokumenten.
    - Handover-Dateien dienen zur Übergabe, nicht als verbindliche Quelle.
 
+
+## 2e) Prozessabweichung
+**Trigger:**
+- falscher Branch,
+- fehlender Entwickler-Report,
+- Rollenverstoß (z. B. KI-Entwickler ändert Prozess-/Doku-Dateien).
+
+**Pflichtreaktion:**
+- Der KI-Planer legt umgehend einen Nacharbeits-Task an.
+- Der Task enthält mindestens: klare AC, Owner und eine konkrete Deadline.
+- Der Task wird in `backlog/index.yaml` sichtbar registriert und bis zur Erledigung nachverfolgt.
+
 ## 3) Umsetzung
 1. Kleine, nachvollziehbare Änderungen.
 2. Architekturgrenzen respektieren:
@@ -95,12 +117,28 @@ Anschließend im `backlog/index.yaml` registrieren.
    - KI-Entwickler ändern keine Prozess- oder Doku-Dateien.
    - Prozess-/Doku-Änderungen obliegen KI-Planer, KI-Reviewer und Mensch.
 
+## 4a) Definition of Done (KI-Entwickler) — verbindlich
+Ein Task gilt für KI-Entwickler **nur dann** als `done`, wenn ein vollständiger Entwickler-Report vorhanden ist:
+
+- Pflicht-Artefakt: `reports/<Task-ID>/<dev-name>.md`
+- Verbindliche Vorlage: `templates/dev-report.md`
+- Ohne Report-Datei darf der Task-Status **nicht** `done` sein.
+- Fehlender Report ⇒ Task-Status mindestens `blocked` (nicht `done`).
+
 ## 5) Session-Ende / Handover
 1. `templates/session-handover.md` ausfüllen:
    - erledigt / offen / blocker / nächster konkreter Schritt.
 2. Task-Status aktualisieren.
 3. Referenzen dokumentieren:
    - betroffene Dateien, Commits/PR, offene Risiken.
+
+## 5a) Optionaler PR-/CI-Check für Task-Branches
+- Ziel: PRs mit Task-Arbeit auf `gnss_integration` verhindern.
+- Manuell vor PR:
+  - `python3 tools/check_task_context.py --task-id <Task-ID>`
+- Optional in CI (Beispielidee):
+  - bei Task-PRs den Check als Pflichtschritt ausführen,
+  - Build fehlschlagen lassen, wenn Branch nicht `task/<Task-ID>` ist oder `reports/<Task-ID>/` fehlt.
 
 ## 6) Umgebungswechsel (Codex ↔ ChatGPT ↔ z.ai)
 Beim Wechsel immer aktiv mitgeben:

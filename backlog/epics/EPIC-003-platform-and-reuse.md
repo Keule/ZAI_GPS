@@ -8,3 +8,4 @@ Wiederverwendbarkeit und Engineering-Qualität der Plattform erhöhen.
 - TASK-011
 - TASK-012
 - TASK-014
+- TASK-020
