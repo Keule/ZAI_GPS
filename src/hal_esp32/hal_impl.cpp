@@ -514,6 +514,11 @@ bool hal_gnss_rtcm_begin(uint32_t baud, int8_t rx_pin, int8_t tx_pin) {
         LOGE("HAL", "GNSS RTCM begin failed: baud must be > 0");
         return false;
     }
+    if (tx_pin < 0) {
+        LOGE("HAL", "GNSS RTCM begin failed: TX pin must be >= 0");
+        return false;
+    }
+
     if (!s_gnss_rtcm_mutex) {
         s_gnss_rtcm_mutex = xSemaphoreCreateMutex();
     }
@@ -1460,13 +1465,13 @@ void hal_net_init(void) {
     #endif
 
     if (!init_ok) {
-        hal_log("ETH: FAILED - W5500 not detected! Check SPI connections.");
+        hal_log("ETH: FAILED - Check Configuration.");
         s_w5500_detected = false;
         return;
     }
 
     s_w5500_detected = true;
-    hal_log("ETH: W5500 chip detected OK");
+    hal_log("ETH: chip detected OK");
 
     // Configure static IP address
     if (!ETH.config(s_local_ip, s_gateway, s_subnet, s_dns, s_dns)) {
@@ -1563,10 +1568,12 @@ static void hal_esp32_common_boot_init(void) {
     // goes to USB CDC — user would only see half the output.
     Serial.setDebugOutput(true);
 
-    hal_log("ESP32-S3 AgSteer starting...");
+    hal_log("ESP32 AgSteer starting...");
 
     // Mutex
     hal_mutex_init();
+
+    hal_log("ESP32 seting safety pin input...");
 
     // Safety pin
     pinMode(SAFETY_IN, INPUT_PULLUP);
