@@ -60,6 +60,7 @@ epics:
       - TASK-009
       - TASK-010
       - TASK-013
+      - TASK-014
       - TASK-014A
       - TASK-015
       - TASK-016
@@ -71,8 +72,6 @@ epics:
       - TASK-019C
       - TASK-019D
       - TASK-019E
-      - TASK-019F
-      - TASK-019G
 
 tasks:
   - id: TASK-001
@@ -244,6 +243,7 @@ tasks:
       - TASK-006
       - TASK-007
 
+  - id: TASK-014
   - id: TASK-014A
     title: RTCM-Forwarding über GNSS-UART in der HAL implementieren
     file: backlog/tasks/TASK-014-hal-gnss-rtcm-uart-forwarding.md
@@ -286,6 +286,7 @@ tasks:
     delivery_mode: hardware_required
     task_category: feature_expansion
     dependencies:
+      - TASK-014
       - TASK-014A
       - TASK-015
       - TASK-016

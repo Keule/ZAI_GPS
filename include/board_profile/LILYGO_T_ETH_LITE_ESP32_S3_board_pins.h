@@ -45,6 +45,7 @@
  */
 
 #pragma once
+#include <cstdint>
 #define BOARD_PROFILE_NAME "lilygo_t_eth_lite_esp32_s3"
 // ---------------------------------------------------------------------------
 // SPI Bus 1: Ethernet - W5500 (managed by ESP-IDF ETH driver on SPI3_HOST)
@@ -134,6 +135,12 @@
 #define GNSS2_PPS_PIN   -1
 #define GNSS2_EN_PIN    -1
 
+// GNSS console mirror defaults (diagnostic read-only sniffing in gnss_buildup)
+inline constexpr uint32_t GNSS_MIRROR_BAUD = 115200;
+inline constexpr int8_t GNSS_MIRROR_UART1_RX_PIN = GNSS_UART1_RX;
+inline constexpr int8_t GNSS_MIRROR_UART1_TX_PIN = GNSS_UART1_TX;
+inline constexpr int8_t GNSS_MIRROR_UART2_RX_PIN = GNSS_UART2_RX;
+inline constexpr int8_t GNSS_MIRROR_UART2_TX_PIN = GNSS_UART2_TX;
 // ---------------------------------------------------------------------------
 // Logging switch (active LOW, internal pull-up)
 //
