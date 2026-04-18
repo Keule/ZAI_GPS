@@ -67,8 +67,6 @@ epics:
       - TASK-019C
       - TASK-019D
       - TASK-019E
-      - TASK-019F
-      - TASK-019G
 
 tasks:
   - id: TASK-001
