@@ -43,6 +43,12 @@ Jede Datei in `backlog/tasks/` muss folgende Felder enthalten:
   - Zweck: Sichtbarkeit im Index und einfache Nachverfolgung über Suche/Filter.
   - Gilt insbesondere für Trigger wie falscher Branch, fehlender Report oder Rollenverstoß.
 
+
+## Task-Abschluss
+
+- Nach Merge einer Task setzt der KI-Planer den Status in **Task-Datei und `backlog/index.yaml` synchron** auf `done`.
+- Bei abgeschlossenen Task-Ketten (z. B. compile-time -> boot-init -> pin-zuweisung) sind die abhängigen Tasks in korrekter Reihenfolge zu schließen.
+
 ## Validierung
 
 - Optionaler Konsistenzcheck: `python3 tools/validate_backlog_index.py` (benötigt `PyYAML`).

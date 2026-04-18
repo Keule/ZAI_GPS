@@ -24,6 +24,17 @@ Kurzleitfaden für sauberes Arbeiten über Chats/Agenten/Umgebungen hinweg.
    - falscher Branch (z. B. `gnss_integration`) ist für Task-Arbeit nicht zulässig.
    - fehlender Report-Ordner muss vor Start angelegt oder durch Planer/Verantwortliche geklärt werden.
 
+
+## 1b) Pflicht-Onboarding in Codex-Task-Buttons (verbindlich)
+Wenn Aufgaben über klickbare Codex-Buttons/Prompt-Vorlagen gestartet werden, MUSS der Prompt standardmäßig den Pflicht-Onboarding-Block enthalten:
+1. `README.md` (Agenten-Teil)
+2. `docs/process/PLAN_AGENT.md`
+3. `docs/process/QUICKSTART_WORKFLOW.md`
+
+Regel:
+- Fehlt der Block im Button-Prompt, gilt der Start als Prozessabweichung und ist wie in **2e) Prozessabweichung** nachzuarbeiten.
+- Der Onboarding-Block darf durch Template-Refactoring oder UI-Umformatierung nicht entfernt werden (Regression Guard).
+
 ## 2) Planung vor Umsetzung
 1. Task klassifizieren:
    - `independent` oder `dependent`.

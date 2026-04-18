@@ -67,6 +67,12 @@ Dieses Repository ist der **kanonische Einstieg** für das Projekt `ZAI_GPS`.
 >
 > Änderungen dürfen diese Grenze nicht implizit verschieben.
 
+
+## Prozess-Update (Stand: 2026-04-18)
+
+- Capability-Steuerung für optionale SPI/UART-Pfade wird über Backlog-Tasks in der Kette **Compile-Time → Boot-Init → Pin-Claiming** geführt (TASK-022 bis TASK-024, abgeschlossen).
+- Für über Chat gestartete KI-Entwickler-Aufgaben gilt: klickbare Codex-Buttons müssen den Pflicht-Onboarding-Block enthalten (`README.md`, `docs/process/PLAN_AGENT.md`, `docs/process/QUICKSTART_WORKFLOW.md`).
+
 ## GNSS-Buildup (kurz, normativ)
 
 Für GNSS-Diagnose/Bringup ist das dedizierte PlatformIO-Profil `gnss_buildup` zu verwenden.

@@ -45,13 +45,3 @@ pio run -e T-ETH-Lite-ESP32S3 -t upload
 ```
 
 Im Code erfolgt die Auswahl zentral über `include/board_profile/board_profile_select.h` per `#if defined(LILYGO_T_ETH_LITE_...)` und bindet dann das passende `tft_eth_profile_*` Headerfile ein.
-
-### Konkreter Codepfad (ETH-Init je Variante)
-
-In `hal_net_init()` wird die Initialisierung jetzt je Zielvariante verzweigt:
-
-- **ESP32 (`CONFIG_IDF_TARGET_ESP32`)**: bevorzugt der makrobasierte LilyGO-Pfad (`ETH_PHY_*`, `ETH_CLK_MODE`).
-- **ESP32-S3**: W5500 über SPI3_HOST mit expliziten Pins (`ETH_CS`, `ETH_INT`, `ETH_RST`, `ETH_SCK`, `ETH_MISO`, `ETH_MOSI`).
-
-Damit läuft die Auswahl sowohl über PlatformIO-Environment/Makros als auch über den konkreten Target-Zweig im Quellcode.
-

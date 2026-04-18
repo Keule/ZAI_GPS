@@ -30,6 +30,7 @@ Dieses Dokument definiert, wie ein Plan-Agent Aufgaben in **unabhängige** und *
 ### KI-Entwickler
 
 - Arbeitet ausschließlich auf einem zugewiesenen `task/<Task-ID>`-Branch.
+- Bei Start über Codex-Task-Buttons muss der Prompt verpflichtend den Onboarding-Block enthalten (`README.md`, `docs/process/PLAN_AGENT.md`, `docs/process/QUICKSTART_WORKFLOW.md`).
 - Darf nur Code-Artefakte ändern (Source, Skripte, Konfiguration).
 - Darf keine Prozess- oder Doku-Dateien ändern.
 - Muss pro Task einen Report unter `reports/<Task-ID>/<dev-name>.md` anlegen und dafür das verbindliche Template `templates/dev-report.md` verwenden.

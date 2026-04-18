@@ -51,15 +51,6 @@
 #include <cstdint>
 #include "board_profile/board_profile_select.h"
 
-
-
-
-// Optional GNSS sideband lines (not wired on current board revision)
-#define GNSS1_PPS_PIN   -1
-#define GNSS1_EN_PIN    -1
-#define GNSS2_PPS_PIN   -1
-#define GNSS2_EN_PIN    -1
-
 // ---------------------------------------------------------------------------
 // Firmware OTA files on SD card
 // ---------------------------------------------------------------------------
