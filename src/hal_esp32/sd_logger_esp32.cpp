@@ -540,11 +540,6 @@ void sdLoggerMaintInit(void) {
     }
 }
 
-bool sdLoggerPsramBufferActive(void) {
-    return s_psram_active;
-}
-
-uint32_t sdLoggerPsramBufferCount(void) {
-    if (!s_psram_active) return 0;
-    return sdLoggerGetBufferCount();
-}
+// sdLoggerPsramBufferActive() and sdLoggerPsramBufferCount() are
+// defined in sd_logger.cpp — they check s_ring_buf != s_ring_buf_static.
+// No ESP32-specific duplicate needed here.
