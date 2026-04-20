@@ -21,7 +21,7 @@
 #include <esp_ota_ops.h>
 #include <cstdio>
 
-#include "hardware_pins.h"
+#include "fw_config.h"
 #include "hal/hal.h"
 #include "hal_esp32/hal_impl.h"
 #include "logic/control.h"
@@ -35,6 +35,7 @@
 #include "logic/ntrip.h"
 #include "logic/sd_ota.h"
 #include "logic/sd_logger.h"
+#include "logic/runtime_config.h"
 
 #include "logic/log_config.h"
 #undef LOG_LOCAL_LEVEL          // Arduino.h already defined it via esp_log.h
@@ -47,6 +48,7 @@
 // ===================================================================
 static TaskHandle_t s_control_task_handle = nullptr;
 static TaskHandle_t s_comm_task_handle = nullptr;
+static TaskHandle_t s_maint_task_handle = nullptr;
 static bool s_imu_bringup_active = false;
 static bool s_gnss_buildup_active = false;
 
@@ -345,9 +347,6 @@ static void commTaskFunc(void* param) {
         if (!s_gnss_buildup_active) {
             modulesUpdateStatus();
         }
-#if FEAT_ENABLED(FEAT_NTRIP)
-        ntripTick();
-#endif
 
         // ---------------------------------- Output ----------------------------------
         netSendAogFrames();
@@ -424,6 +423,34 @@ static void commTaskFunc(void* param) {
     }
 }
 
+
+// ===================================================================
+// Maintenance Task – blocking/background operations (Core 0, low prio)
+// ===================================================================
+static void maintTaskFunc(void* param) {
+    (void)param;
+    hal_log("Maint: task started on core %d", xPortGetCoreID());
+
+    const TickType_t interval = pdMS_TO_TICKS(2000);
+    TickType_t next_wake = xTaskGetTickCount();
+    bool last_eth = hal_net_is_connected();
+
+    for (;;) {
+#if FEAT_ENABLED(FEAT_NTRIP)
+        ntripConnectTick();
+#endif
+        sdLoggerMaintTick();
+
+        const bool eth_now = hal_net_is_connected();
+        if (eth_now != last_eth) {
+            last_eth = eth_now;
+            hal_log("Maint: ETH link %s", eth_now ? "up" : "down");
+        }
+
+        vTaskDelayUntil(&next_wake, interval);
+    }
+}
+
 // ===================================================================
 // Arduino setup()
 // ===================================================================
@@ -489,13 +516,15 @@ void setup() {
         //   password   : Password
         // -----------------------------------------------------------------
         ntripInit();
-        ntripSetConfig(
-            "caster.example.com",   // <-- TODO: your caster host
-            2101,                   // <-- TODO: your caster port
-            "VRS",                  // <-- TODO: your mountpoint
-            "user",                 // <-- TODO: your username
-            "pass"                  // <-- TODO: your password
-        );
+        RuntimeConfig rt_cfg = {};
+        softConfigLoadDefaults(&rt_cfg);
+        (void)softConfigLoadOverrides(&rt_cfg);
+        ntripSetConfig(rt_cfg.ntrip_host,
+                       rt_cfg.ntrip_port,
+                       rt_cfg.ntrip_mountpoint,
+                       rt_cfg.ntrip_user,
+                       rt_cfg.ntrip_password);
+        (void)moduleActivate("NTRIP");
         hal_log("Main: NTRIP client configured (host=%s, port=%u, mp=%s)",
                 g_ntrip_config.host,
                 static_cast<unsigned>(g_ntrip_config.port),
@@ -511,7 +540,16 @@ void setup() {
             &s_comm_task_handle,
             0
         );
-        hal_log("Main: GNSS buildup reduced init done (comm task only).");
+        xTaskCreatePinnedToCore(
+            maintTaskFunc,
+            "maint",
+            4096,
+            nullptr,
+            1,
+            &s_maint_task_handle,
+            0
+        );
+        hal_log("Main: GNSS buildup reduced init done (comm + maint task).");
         return;
     }
 
@@ -541,6 +579,16 @@ void setup() {
 
     // Initialise module system – detect hardware for all modules
     modulesInit();
+
+#if FEAT_ENABLED(FEAT_NTRIP)
+    RuntimeConfig rt_cfg = {};
+    softConfigLoadDefaults(&rt_cfg);
+    (void)softConfigLoadOverrides(&rt_cfg);
+    ntripInit();
+    ntripSetConfig(rt_cfg.ntrip_host, rt_cfg.ntrip_port, rt_cfg.ntrip_mountpoint,
+                   rt_cfg.ntrip_user, rt_cfg.ntrip_password);
+    (void)moduleActivate("NTRIP");
+#endif
 
     // Initialise control system (PID controller with default gains).
     // NOTE: HAL-level init (imu, steer angle, actuator) was already done
@@ -640,12 +688,22 @@ void setup() {
         "comm",
         4096,
         nullptr,
-        configMAX_PRIORITIES - 3,  // slightly lower priority
+        configMAX_PRIORITIES - 3,
         &s_comm_task_handle,
-        0   // Core 0
+        0
     );
 
-    hal_log("Main: tasks created, entering main loop");
+    xTaskCreatePinnedToCore(
+        maintTaskFunc,
+        "maint",
+        4096,
+        nullptr,
+        1,
+        &s_maint_task_handle,
+        0
+    );
+
+    hal_log("Main: tasks created (ctrl/comm/maint), entering main loop");
 }
 
 // ===================================================================

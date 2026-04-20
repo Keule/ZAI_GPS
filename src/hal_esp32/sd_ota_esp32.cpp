@@ -17,7 +17,7 @@
  */
 
 #include "hal/hal.h"
-#include "hardware_pins.h"
+#include "fw_config.h"
 #include "logic/sd_ota.h"
 
 #include "logic/log_config.h"

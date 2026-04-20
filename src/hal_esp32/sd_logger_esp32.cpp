@@ -25,7 +25,7 @@
  */
 
 #include "hal/hal.h"
-#include "hardware_pins.h"
+#include "fw_config.h"
 #include "logic/sd_logger.h"
 #include "logic/global_state.h"
 
@@ -58,9 +58,6 @@ static const size_t CSV_LINE_MAX = 160;
 // ===================================================================
 // State
 // ===================================================================
-
-/// FreeRTOS task handle
-static TaskHandle_t s_logger_task_handle = nullptr;
 
 /// Current switch state (true = logging active)
 static volatile bool s_logging_active = false;
@@ -255,108 +252,97 @@ static void sdBusRelease(void) {
  * The overhead is minimal (~100 ms total) and guarantees the sensor
  * SPI is available between flushes.
  */
-static void loggerTaskFunc(void* param) {
-    (void)param;
-    LOGI("SDL", "task started on core %d (priority=lowest)", xPortGetCoreID());
+void sdLoggerMaintTick(void) {
+    static bool was_active = false;
+    static uint32_t last_switch_change_ms = 0;
+    static bool last_switch_raw = false;
+    static bool init_done = false;
 
-    bool was_active = false;
-    uint32_t last_switch_change_ms = 0;
-    bool last_switch_raw = sdLoggerReadSwitch();
-
-    for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(LOGGER_INTERVAL_MS));
-
-        // Read switch with simple debounce
-        bool switch_raw = sdLoggerReadSwitch();
-        uint32_t now = millis();
-        if (switch_raw != last_switch_raw) {
-            last_switch_change_ms = now;
-            last_switch_raw = switch_raw;
-        }
-        bool switch_debounced = switch_raw;
-
-        // State machine: switch ON -> start logging, switch OFF -> stop
-        if (switch_debounced && !was_active) {
-            // --- TRANSITION: OFF -> ON ---
-            LOGI("SDL", "switch ON – starting logging session");
-
-            sdBusClaim();
-
-            // Init SD card on shared SPI2_HOST
-            SPIClass sdSPI(FSPI);
-            sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
-
-            if (SD.begin(SD_CS, sdSPI, 4000000, "/sd", 5)) {
-                LOGI("SDL", "SD card mounted OK");
-                openLogFile();
-                s_logging_active = true;
-                s_session_flush_total = 0;
-                s_last_flush_count = 0;
-                s_last_overflow = 0;
-            } else {
-                LOGE("SDL", "ERROR – SD card init failed");
-                s_logging_active = false;
-            }
-
-            SD.end();
-            sdSPI.end();
-
-            sdBusRelease();
-            was_active = true;
-
-        } else if (!switch_debounced && was_active) {
-            // --- TRANSITION: ON -> OFF ---
-            LOGI("SDL", "switch OFF – stopping logging session");
-            LOGI("SDL", "session stats: %lu records flushed, %lu buffer overflows",
-                    (unsigned long)s_session_flush_total,
-                    (unsigned long)sdLoggerGetOverflowCount() - s_last_overflow);
-
-            s_logging_active = false;
-            was_active = false;
-
-        } else if (switch_debounced && was_active) {
-            // --- ACTIVE: flush ring buffer to SD ---
-            if (!sdLoggerHasRecords()) continue;
-
-            sdBusClaim();
-
-            // Re-init SD (we close it after each flush)
-            SPIClass sdSPI(FSPI);
-            sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
-
-            if (SD.begin(SD_CS, sdSPI, 4000000, "/sd", 5)) {
-                // Re-open the log file in append mode
-                char path[32];
-                snprintf(path, sizeof(path), "/log_%03lu.csv", (unsigned long)s_file_counter);
-                s_log_file = SD.open(path, FILE_APPEND);
-
-                if (s_log_file) {
-                    uint32_t flushed = flushBufferToSD();
-                    sdLoggerIncrementFlushed(flushed);
-                    s_session_flush_total += flushed;
-
-                    if (flushed > 0) {
-                        uint32_t buf_remaining = sdLoggerGetBufferCount();
-                        uint32_t overflows = sdLoggerGetOverflowCount();
-                        LOGI("SDL", "flushed %lu records (buf=%lu, overflow=%lu)",
-                                (unsigned long)flushed,
-                                (unsigned long)buf_remaining,
-                                (unsigned long)overflows);
-                    }
-
-                    s_log_file.close();
-                }
-            } else {
-                LOGE("SDL", "ERROR – SD card re-init failed during flush");
-            }
-
-            SD.end();
-            sdSPI.end();
-
-            sdBusRelease();
-        }
-        // else: switch OFF and was_active=false -> nothing to do (idle)
+    if (!init_done) {
+        last_switch_raw = sdLoggerReadSwitch();
+        init_done = true;
     }
+
+    // Read switch with simple debounce
+    bool switch_raw = sdLoggerReadSwitch();
+    uint32_t now = millis();
+    if (switch_raw != last_switch_raw) {
+        last_switch_change_ms = now;
+        last_switch_raw = switch_raw;
+    }
+    const bool switch_debounced = (now - last_switch_change_ms >= SWITCH_DEBOUNCE_MS)
+        ? switch_raw
+        : was_active;
+
+    if (switch_debounced && !was_active) {
+        LOGI("SDL", "switch ON – starting logging session");
+
+        sdBusClaim();
+        SPIClass sdSPI(FSPI);
+        sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
+
+        if (SD.begin(SD_CS, sdSPI, 4000000, "/sd", 5)) {
+            LOGI("SDL", "SD card mounted OK");
+            openLogFile();
+            s_logging_active = true;
+            s_session_flush_total = 0;
+            s_last_flush_count = 0;
+            s_last_overflow = 0;
+        } else {
+            LOGE("SDL", "ERROR – SD card init failed");
+            s_logging_active = false;
+        }
+
+        SD.end();
+        sdSPI.end();
+        sdBusRelease();
+        was_active = true;
+        return;
+    }
+
+    if (!switch_debounced && was_active) {
+        LOGI("SDL", "switch OFF – stopping logging session");
+        LOGI("SDL", "session stats: %lu records flushed, %lu buffer overflows",
+             (unsigned long)s_session_flush_total,
+             (unsigned long)sdLoggerGetOverflowCount() - s_last_overflow);
+        s_logging_active = false;
+        was_active = false;
+        return;
+    }
+
+    if (!(switch_debounced && was_active)) return;
+    if (!sdLoggerHasRecords()) return;
+
+    sdBusClaim();
+    SPIClass sdSPI(FSPI);
+    sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
+
+    if (SD.begin(SD_CS, sdSPI, 4000000, "/sd", 5)) {
+        char path[32];
+        snprintf(path, sizeof(path), "/log_%03lu.csv", (unsigned long)s_file_counter);
+        s_log_file = SD.open(path, FILE_APPEND);
+
+        if (s_log_file) {
+            uint32_t flushed = flushBufferToSD();
+            sdLoggerIncrementFlushed(flushed);
+            s_session_flush_total += flushed;
+            if (flushed > 0) {
+                uint32_t buf_remaining = sdLoggerGetBufferCount();
+                uint32_t overflows = sdLoggerGetOverflowCount();
+                LOGI("SDL", "flushed %lu records (buf=%lu, overflow=%lu)",
+                     (unsigned long)flushed,
+                     (unsigned long)buf_remaining,
+                     (unsigned long)overflows);
+            }
+            s_log_file.close();
+        }
+    } else {
+        LOGE("SDL", "ERROR – SD card re-init failed during flush");
+    }
+
+    SD.end();
+    sdSPI.end();
+    sdBusRelease();
 }
 
 // ===================================================================
@@ -370,17 +356,6 @@ void sdLoggerInit(void) {
 
     s_logging_active = false;
 
-    // Create the logger task on Core 0 with LOWEST priority.
-    xTaskCreatePinnedToCore(
-        loggerTaskFunc,
-        "logger",
-        4096,
-        nullptr,
-        1,              // LOWEST priority
-        &s_logger_task_handle,
-        0               // Core 0
-    );
-
-    LOGI("SDL", "initialised (flush interval = %lu ms, log rate = 10 Hz)",
+    LOGI("SDL", "initialised for maintTask (tick interval target=%lu ms)",
             (unsigned long)LOGGER_INTERVAL_MS);
 }

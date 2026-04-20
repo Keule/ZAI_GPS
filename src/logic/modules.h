@@ -59,6 +59,17 @@ struct AogModuleInfo {
     bool     hw_detected;  ///< Hardware detected and operational
 };
 
+
+enum ModState : int8_t {
+    MOD_UNAVAILABLE = -1,
+    MOD_OFF = 0,
+    MOD_ON = 1,
+};
+
+ModState moduleGetState(const char* module_name);
+bool moduleActivate(const char* module_name);
+bool moduleDeactivate(const char* module_name);
+
 // ===================================================================
 // Initialise module system.
 // Runs hardware detection for all subsystems, logs results,

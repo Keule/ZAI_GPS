@@ -28,7 +28,7 @@
 
 #include "hal_impl.h"
 #include "hal/hal.h"
-#include "hardware_pins.h"
+#include "fw_config.h"
 #include "logic/features.h"
 #include "logic/pgn_types.h"
 #include "logic/log_config.h"

@@ -29,7 +29,7 @@ void ntripInit(void);
 
 /// State machine tick — call from commTask processing phase.
 /// Handles state transitions, reconnect timing, and error recovery.
-void ntripTick(void);
+void ntripConnectTick(void);
 
 // ===================================================================
 // NTRIP data flow

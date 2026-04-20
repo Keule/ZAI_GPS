@@ -276,7 +276,7 @@ NtripState ntripGetState(void) {
     return g_ntrip;
 }
 
-void ntripTick(void) {
+void ntripConnectTick(void) {
     // Snapshot current state (under lock)
     NtripConnState state;
     uint32_t state_enter_ms;
@@ -434,7 +434,7 @@ void ntripTick(void) {
         // Report GNSS subsystem error via HW monitoring.
         hwStatusSetFlag(HW_GNSS, HW_SEV_WARNING);
 
-        // Reconnect after delay.
+        // Reconnect is triggered from maintTask via ntripConnectTick().
         if (elapsed >= reconnect_delay_ms) {
             hal_tcp_disconnect();
             ntripEnterState(NtripConnState::CONNECTING);

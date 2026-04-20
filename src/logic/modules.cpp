@@ -301,3 +301,31 @@ void modulesUpdateStatus(void) {
         }
     }
 }
+
+
+ModState moduleGetState(const char* module_name) {
+    if (!module_name) return MOD_UNAVAILABLE;
+    for (uint8_t i = 0; i < AOG_MOD_COUNT; i++) {
+        const AogModuleInfo& mod = s_modules[i];
+        if (std::strcmp(mod.name, module_name) != 0) continue;
+        if (!mod.enabled || !mod.hw_detected) return MOD_UNAVAILABLE;
+        return MOD_ON;
+    }
+    if (std::strcmp(module_name, "NTRIP") == 0) {
+#if FEAT_ENABLED(FEAT_NTRIP)
+        return MOD_ON;
+#else
+        return MOD_UNAVAILABLE;
+#endif
+    }
+    return MOD_UNAVAILABLE;
+}
+
+bool moduleActivate(const char* module_name) {
+    return moduleGetState(module_name) != MOD_UNAVAILABLE;
+}
+
+bool moduleDeactivate(const char* module_name) {
+    (void)module_name;
+    return true;
+}

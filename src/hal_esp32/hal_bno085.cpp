@@ -4,7 +4,7 @@
  */
 
 #include "hal/hal.h"
-#include "hardware_pins.h"
+#include "fw_config.h"
 
 #include <7Semi_BNO08x.h>
 #include <Arduino.h>

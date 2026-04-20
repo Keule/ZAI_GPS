@@ -59,6 +59,9 @@ typedef struct {
 /// at a known priority level).
 void sdLoggerInit(void);
 
+/// Execute one maintenance logger cycle (called from maintTask).
+void sdLoggerMaintTick(void);
+
 /// Buffer one log record.
 ///
 /// Called from the control loop (200 Hz). Internally subsamples
