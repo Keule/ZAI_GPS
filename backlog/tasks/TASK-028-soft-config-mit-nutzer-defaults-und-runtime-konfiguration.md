@@ -2,7 +2,7 @@
 
 - **ID**: TASK-028
 - **Titel**: `soft_config.h` mit Nutzer-Defaults, dreiwertigem ModState und `RuntimeConfig` einfuehren
-- **Status**: done
+- **Status**: open
 - **Priorität**: medium
 - **Komponenten**: include/soft_config.h, src/logic/runtime_config.h, src/logic/runtime_config.cpp, src/logic/modules.cpp, src/main.cpp
 - **Dependencies**: TASK-027

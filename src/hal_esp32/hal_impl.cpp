@@ -5,11 +5,11 @@
  * Hardware:
  *   - MCU: ESP32-S3-WROOM-1
  *   - Ethernet: W5500 over SPI3_HOST (GPIO 9/10/11/12/13/14) via ESP-IDF ETH driver
- *   - Sensor SPI (FSPI/SPI2_HOST): SCK=47, MISO=21, MOSI=38
+ *   - Sensor SPI (FSPI/SPI2_HOST): SCK=16, MISO=15, MOSI=17
  *     - ADS1118 ADC (steer angle): CS=18
- *     - BNO085 IMU: CS=40
- *     - Actuator: CS=16
- *   - IMU sideband wiring: INT=46, RST=41, WAKE=15
+ *     - BNO085 IMU: CS=47
+ *     - Actuator: CS=40
+ *   - IMU sideband wiring: INT=45, RST=48, WAKE=38
  *   - SD Card (FSPI, OTA only): SCK=7, MISO=5, MOSI=6, CS=42
  *   - Safety: GPIO4 active LOW
  *
@@ -28,7 +28,7 @@
 
 #include "hal_impl.h"
 #include "hal/hal.h"
-#include "fw_config.h"
+#include "hardware_pins.h"
 #include "logic/features.h"
 #include "logic/pgn_types.h"
 #include "logic/log_config.h"
@@ -92,8 +92,8 @@ static bool s_eth_has_ip     = false;   // true if ARDUINO_EVENT_ETH_GOT_IP
 // On ESP32-S3 (Arduino Core 2.x):  HSPI = SPI3_HOST (occupied by W5500!)
 //                                  FSPI = SPI2_HOST (free for sensors)
 //
-// Sensor devices on this bus: ADS1118 (CS=18), IMU (CS=40), Actuator (CS=16).
-// Pins: SCK=47, MISO=21, MOSI=38.
+// Sensor devices on this bus: ADS1118 (CS=18), IMU (CS=47), Actuator (CS=40).
+// Pins: SCK=16, MISO=15, MOSI=17.
 //
 // SD card uses the SAME SPI peripheral (FSPI) but DIFFERENT pins (SCK=7, MISO=5, MOSI=6).
 // During OTA updates, FSPI is re-initialised with SD pins via
@@ -469,50 +469,6 @@ static bool claimGnssUartPins(uint8_t uart_num, int rx_pin, int tx_pin) {
         {tx_pin, "gnss-rtcm-tx"},
     };
     return pinClaimsAddBatch(claims, sizeof(claims) / sizeof(claims[0]), s_pin_claim_path);
-}
-
-// ===================================================================
-// Exposed HAL pin-claim functions — TASK-027
-// Used by the feature module system (modules.cpp) for runtime
-// pin-claim arbitration during moduleActivate/moduleDeactivate.
-// ===================================================================
-
-extern "C" bool hal_pin_claim_add(int pin, const char* owner) {
-    if (pin < 0 || !owner) return true;  // negative pins are harmless, skip
-    if (s_pin_claim_count >= HAL_PIN_CLAIM_CAPACITY) {
-        LOGE("HAL-PIN", "claim table overflow for GPIO %d (%s)", pin, owner);
-        return false;
-    }
-    const PinClaimEntry* existing = pinClaimFind(pin);
-    if (existing) {
-        LOGE("HAL-PIN", "conflict on GPIO %d (%s vs %s)", pin, existing->owner, owner);
-        return false;
-    }
-    s_pin_claims[s_pin_claim_count++] = {pin, owner};
-    return true;
-}
-
-extern "C" int hal_pin_claim_release(const char* owner) {
-    if (!owner) return 0;
-    int released = 0;
-    for (size_t i = s_pin_claim_count; i > 0; --i) {
-        if (s_pin_claims[i - 1].owner != nullptr &&
-            std::strcmp(s_pin_claims[i - 1].owner, owner) == 0) {
-            // Remove by shifting remaining entries down
-            for (size_t j = i - 1; j < s_pin_claim_count - 1; ++j) {
-                s_pin_claims[j] = s_pin_claims[j + 1];
-            }
-            s_pin_claim_count--;
-            released++;
-            // Don't decrement i because we shifted entries
-        }
-    }
-    return released;
-}
-
-extern "C" bool hal_pin_claim_check(int pin) {
-    if (pin < 0) return false;
-    return pinClaimFind(pin) != nullptr;
 }
 
 static HardwareSerial* gnssUartForNum(uint8_t uart_num) {
@@ -1145,9 +1101,9 @@ void hal_imu_set_spi_config(uint32_t freq_hz, uint8_t mode) {
 // register read-back, no range validation.
 //
 // Wiring:
-//   ADS1118 DOUT  -> GPIO 21 (MISO)
-//   ADS1118 DIN   -> GPIO 38 (MOSI)
-//   ADS1118 SCLK  -> GPIO 47 (SCK)
+//   ADS1118 DOUT  -> GPIO 15 (MISO)
+//   ADS1118 DIN   -> GPIO 17 (MOSI)
+//   ADS1118 SCLK  -> GPIO 16 (SCK)
 //   ADS1118 CS    -> GPIO 18
 //
 // Calibration:

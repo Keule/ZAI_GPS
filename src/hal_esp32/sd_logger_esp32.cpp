@@ -1,15 +1,12 @@
 /**
  * @file sd_logger_esp32.cpp
- * @brief ESP32-S3 implementation of the SD-Card Data Logger + Maintenance Task.
+ * @brief ESP32-S3 implementation of the SD-Card Data Logger.
  *
  * Platform-specific code for the logger:
  *   - GPIO 47 switch reading (with debounce)
- *   - PSRAM ring buffer allocation (TASK-029)
- *   - FreeRTOS maintTask (lowest priority) — replaces standalone loggerTask
+ *   - FreeRTOS logger task (lowest priority)
  *   - SD card init/deinit on shared SPI2_HOST bus
  *   - CSV file creation and writing
- *   - NTRIP connect/reconnect (TASK-029)
- *   - ETH link monitoring (TASK-029)
  *
  * SPI bus strategy:
  *   The SD card uses SPI2_HOST (FSPI) with pins SCK=7, MISO=5, MOSI=6.
@@ -20,27 +17,20 @@
  *
  *   To prevent the control loop from accessing the bus while SD is active,
  *   a s_spi_busy flag is used:
- *     - maintTask sets flag before SD access, clears after
+ *     - Logger sets flag before SD access, clears after
  *     - Control loop should check hal_spi_busy() and skip sensor reads
  *       when the flag is set (use last known values)
  *
  *   The sensor SPI is unavailable for ~50-200 ms per flush cycle.
- *
- * TASK-029 Architecture:
- *   The maintTask replaces the standalone loggerTask and consolidates
- *   all blocking operations into one low-priority task:
- *     1. PSRAM ring buffer → SD card (every 2 s)
- *     2. NTRIP state machine / connect (every 1 s, blocking OK)
- *     3. ETH link monitoring (on change)
  */
 
 #include "hal/hal.h"
-#include "fw_config.h"
+#include "hardware_pins.h"
 #include "logic/sd_logger.h"
 #include "logic/global_state.h"
 
 #include "logic/log_config.h"
-#define LOG_LOCAL_LEVEL LOG_LEVEL_MAINT
+#define LOG_LOCAL_LEVEL LOG_LEVEL_SDL
 #include "esp_log.h"
 #include "logic/log_ext.h"
 
@@ -49,23 +39,14 @@
 #include <SPI.h>
 #include <SD.h>
 #include <freertos/FreeRTOS.h>
-#include <esp_heap_caps.h>
-
-#if FEAT_ENABLED(FEAT_NTRIP)
-#include "logic/ntrip.h"
-#endif
 
 // ===================================================================
 // Configuration
 // ===================================================================
 
-/// PSRAM ring buffer capacity (power of 2).
-/// 32768 records × 32 bytes = 1 MB = ~53 minutes at 10 Hz.
-#define PSRAM_RING_CAPACITY  32768
-
-/// SD flush interval (ms). The task flushes the ring buffer to SD
-/// at this interval.
-static const uint32_t SD_FLUSH_INTERVAL_MS = 2000;
+/// Logger task interval (ms). The task wakes every N ms to check
+/// the switch and flush the ring buffer to SD.
+static const uint32_t LOGGER_INTERVAL_MS = 2000;
 
 /// Switch debounce time (ms). After a state change, wait this long
 /// before accepting the new state.
@@ -79,7 +60,7 @@ static const size_t CSV_LINE_MAX = 160;
 // ===================================================================
 
 /// FreeRTOS task handle
-static TaskHandle_t s_maint_task_handle = nullptr;
+static TaskHandle_t s_logger_task_handle = nullptr;
 
 /// Current switch state (true = logging active)
 static volatile bool s_logging_active = false;
@@ -94,19 +75,10 @@ static uint32_t s_file_counter = 0;
 /// Sensor reads should be skipped when this is true.
 static volatile bool s_spi_busy = false;
 
-/// PSRAM ring buffer pointer (allocated in sdLoggerPsramInit)
-static SdLogRecord* s_psram_ring = nullptr;
-
-/// PSRAM buffer active flag
-static bool s_psram_active = false;
-
 /// Statistics
 static uint32_t s_last_flush_count = 0;
 static uint32_t s_last_overflow = 0;
 static uint32_t s_session_flush_total = 0;
-
-/// ETH link monitoring state
-static bool s_last_eth_link = false;
 
 // ===================================================================
 // Platform hooks – called from sd_logger.cpp
@@ -189,7 +161,7 @@ static bool openLogFile(void) {
     s_log_file = SD.open(path, FILE_WRITE);
 
     if (!s_log_file) {
-        LOGE("MAINT", "ERROR – cannot create %s", path);
+        LOGE("SDL", "ERROR – cannot create %s", path);
         return false;
     }
 
@@ -198,7 +170,7 @@ static bool openLogFile(void) {
                        "yaw_rate_dps,roll_deg,safety_ok");
     s_log_file.flush();
 
-    LOGI("MAINT", "opened %s", path);
+    LOGI("SDL", "opened %s", path);
     return true;
 }
 
@@ -212,7 +184,7 @@ static uint32_t flushBufferToSD(void) {
 
     char csv_buf[CSV_LINE_MAX];
     uint32_t count = 0;
-    const uint32_t batch_limit = 1024;
+    const uint32_t batch_limit = 512;
 
     while (sdLoggerHasRecords() && count < batch_limit) {
         SdLogRecord rec;
@@ -260,90 +232,19 @@ static void sdBusRelease(void) {
 }
 
 // ===================================================================
-// PSRAM ring buffer allocation — TASK-029
+// Logger task
 // ===================================================================
 
 /**
- * Allocate PSRAM ring buffer for logging.
+ * Main function for the logger FreeRTOS task.
  *
- * Tries to allocate from PSRAM first (~1 MB), falls back to regular
- * heap, and finally falls back to the static buffer in sd_logger.cpp.
+ * Runs at LOWEST priority on Core 0.
+ * Wakes every LOGGER_INTERVAL_MS to:
+ *   1. Check the hardware switch
+ *   2. If switch is ON: flush ring buffer to SD
+ *   3. If switch is OFF: close log file, release SD
  *
- * @return true if a large buffer (PSRAM or heap) was allocated.
- */
-static bool sdLoggerPsramInit(void) {
-    const size_t buf_size = PSRAM_RING_CAPACITY * sizeof(SdLogRecord);
-
-    // Try PSRAM first
-    s_psram_ring = static_cast<SdLogRecord*>(
-        heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM));
-
-    if (s_psram_ring) {
-        LOGI("MAINT", "PSRAM ring buffer allocated: %u KB (%u records)",
-             (unsigned)(buf_size / 1024),
-             (unsigned)PSRAM_RING_CAPACITY);
-    } else {
-        // Fallback: try regular heap
-        LOGW("MAINT", "PSRAM alloc failed (%u bytes), trying regular heap",
-             (unsigned)buf_size);
-        s_psram_ring = static_cast<SdLogRecord*>(malloc(buf_size));
-    }
-
-    if (!s_psram_ring) {
-        LOGW("MAINT", "heap alloc also failed, using static 16 KB buffer");
-        s_psram_active = false;
-        return false;
-    }
-
-    // Redirect the ring buffer in sd_logger.cpp to use this buffer
-    sdLoggerSetExternalBuffer(s_psram_ring, PSRAM_RING_CAPACITY);
-    s_psram_active = true;
-    return true;
-}
-
-// ===================================================================
-// ETH link monitoring — TASK-029
-// ===================================================================
-
-/**
- * Monitor ETH link status and log/report on state changes.
- */
-static void maintEthMonitor(void) {
-    bool eth_link = hal_net_is_connected();
-
-    if (eth_link != s_last_eth_link) {
-        s_last_eth_link = eth_link;
-        if (eth_link) {
-            LOGI("MAINT", "ETH link UP");
-        } else {
-            LOGW("MAINT", "ETH link DOWN");
-        }
-    }
-}
-
-// ===================================================================
-// Maintenance Task — TASK-029 (replaces standalone loggerTask)
-// ===================================================================
-
-/**
- * Main function for the maintenance FreeRTOS task.
- *
- * Runs at LOWEST priority on Core 0, 8 KB stack.
- * Handles three responsibilities:
- *
- *   1. SD card logging:
- *      - Checks hardware switch every 1 s
- *      - Flushes ring buffer to SD every 2 s
- *      - Open/close log file on switch transitions
- *
- *   2. NTRIP connect/reconnect:
- *      - Runs ntripTick() state machine every 1 s
- *      - Blocking TCP connect is OK here (lowest priority)
- *
- *   3. ETH link monitoring:
- *      - Checks link status every 1 s, logs on changes
- *
- * For each SD flush cycle:
+ * For each flush cycle:
  *   1. Claim SPI bus (set s_spi_busy flag)
  *   2. Init SD card on FSPI with SD pins
  *   3. Open/append log file, write records
@@ -354,34 +255,17 @@ static void maintEthMonitor(void) {
  * The overhead is minimal (~100 ms total) and guarantees the sensor
  * SPI is available between flushes.
  */
-static void maintTaskFunc(void* param) {
+static void loggerTaskFunc(void* param) {
     (void)param;
-    LOGI("MAINT", "task started on core %d (priority=1, stack=8 KB)", xPortGetCoreID());
+    LOGI("SDL", "task started on core %d (priority=lowest)", xPortGetCoreID());
 
     bool was_active = false;
     uint32_t last_switch_change_ms = 0;
     bool last_switch_raw = sdLoggerReadSwitch();
-    uint32_t loop_count = 0;
 
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(1000));  // 1 s base interval
-        loop_count++;
+        vTaskDelay(pdMS_TO_TICKS(LOGGER_INTERVAL_MS));
 
-        // -----------------------------------------------------------------
-        // 1. ETH link monitoring (every iteration = 1 s)
-        // -----------------------------------------------------------------
-        maintEthMonitor();
-
-        // -----------------------------------------------------------------
-        // 2. NTRIP state machine (every iteration = 1 s, blocking OK here)
-        // -----------------------------------------------------------------
-#if FEAT_ENABLED(FEAT_NTRIP)
-        ntripTick();
-#endif
-
-        // -----------------------------------------------------------------
-        // 3. SD card logging (every 2nd iteration = 2 s)
-        // -----------------------------------------------------------------
         // Read switch with simple debounce
         bool switch_raw = sdLoggerReadSwitch();
         uint32_t now = millis();
@@ -394,7 +278,7 @@ static void maintTaskFunc(void* param) {
         // State machine: switch ON -> start logging, switch OFF -> stop
         if (switch_debounced && !was_active) {
             // --- TRANSITION: OFF -> ON ---
-            LOGI("MAINT", "log switch ON – starting logging session");
+            LOGI("SDL", "switch ON – starting logging session");
 
             sdBusClaim();
 
@@ -403,14 +287,14 @@ static void maintTaskFunc(void* param) {
             sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
 
             if (SD.begin(SD_CS, sdSPI, 4000000, "/sd", 5)) {
-                LOGI("MAINT", "SD card mounted OK");
+                LOGI("SDL", "SD card mounted OK");
                 openLogFile();
                 s_logging_active = true;
                 s_session_flush_total = 0;
                 s_last_flush_count = 0;
                 s_last_overflow = 0;
             } else {
-                LOGE("MAINT", "ERROR – SD card init failed");
+                LOGE("SDL", "ERROR – SD card init failed");
                 s_logging_active = false;
             }
 
@@ -422,16 +306,16 @@ static void maintTaskFunc(void* param) {
 
         } else if (!switch_debounced && was_active) {
             // --- TRANSITION: ON -> OFF ---
-            LOGI("MAINT", "log switch OFF – stopping logging session");
-            LOGI("MAINT", "session stats: %lu records flushed, %lu buffer overflows",
+            LOGI("SDL", "switch OFF – stopping logging session");
+            LOGI("SDL", "session stats: %lu records flushed, %lu buffer overflows",
                     (unsigned long)s_session_flush_total,
                     (unsigned long)sdLoggerGetOverflowCount() - s_last_overflow);
 
             s_logging_active = false;
             was_active = false;
 
-        } else if (switch_debounced && was_active && (loop_count % 2 == 0)) {
-            // --- ACTIVE: flush ring buffer to SD (every 2 s) ---
+        } else if (switch_debounced && was_active) {
+            // --- ACTIVE: flush ring buffer to SD ---
             if (!sdLoggerHasRecords()) continue;
 
             sdBusClaim();
@@ -454,7 +338,7 @@ static void maintTaskFunc(void* param) {
                     if (flushed > 0) {
                         uint32_t buf_remaining = sdLoggerGetBufferCount();
                         uint32_t overflows = sdLoggerGetOverflowCount();
-                        LOGI("MAINT", "SD flushed %lu records (buf=%lu, overflow=%lu)",
+                        LOGI("SDL", "flushed %lu records (buf=%lu, overflow=%lu)",
                                 (unsigned long)flushed,
                                 (unsigned long)buf_remaining,
                                 (unsigned long)overflows);
@@ -463,7 +347,7 @@ static void maintTaskFunc(void* param) {
                     s_log_file.close();
                 }
             } else {
-                LOGE("MAINT", "ERROR – SD card re-init failed during flush");
+                LOGE("SDL", "ERROR – SD card re-init failed during flush");
             }
 
             SD.end();
@@ -480,61 +364,23 @@ static void maintTaskFunc(void* param) {
 // ===================================================================
 
 void sdLoggerInit(void) {
-    // Legacy init — uses static 16 KB ring buffer, creates standalone loggerTask.
     // Configure logging switch GPIO
     pinMode(LOG_SWITCH_PIN, INPUT_PULLUP);
-    LOGI("MAINT", "legacy init: switch on GPIO %d (active LOW)", LOG_SWITCH_PIN);
+    LOGI("SDL", "switch on GPIO %d (active LOW)", LOG_SWITCH_PIN);
 
     s_logging_active = false;
 
-    // Create the legacy logger task on Core 0 with LOWEST priority.
+    // Create the logger task on Core 0 with LOWEST priority.
     xTaskCreatePinnedToCore(
-        maintTaskFunc,
+        loggerTaskFunc,
         "logger",
         4096,
         nullptr,
         1,              // LOWEST priority
-        &s_maint_task_handle,
+        &s_logger_task_handle,
         0               // Core 0
     );
 
-    LOGI("MAINT", "legacy logger initialised (flush interval = 2000 ms, static 16 KB buffer)");
-}
-
-void sdLoggerMaintInit(void) {
-    // TASK-029 init — PSRAM buffer + combined maintTask.
-    // Configure logging switch GPIO
-    pinMode(LOG_SWITCH_PIN, INPUT_PULLUP);
-    LOGI("MAINT", "switch on GPIO %d (active LOW)", LOG_SWITCH_PIN);
-
-    s_logging_active = false;
-
-    // Allocate PSRAM ring buffer
-    bool psram_ok = sdLoggerPsramInit();
-
-    // Create the maintenance task on Core 0 with LOWEST priority.
-    xTaskCreatePinnedToCore(
-        maintTaskFunc,
-        "maint",
-        8192,           // 8 KB stack (larger: NTRIP + SD + ETH)
-        nullptr,
-        1,              // LOWEST priority
-        &s_maint_task_handle,
-        0               // Core 0
-    );
-
-    if (psram_ok) {
-        LOGI("MAINT", "initialised (PSRAM buffer, SD+NTRIP+ETH)");
-    } else {
-        LOGI("MAINT", "initialised (static buffer fallback, SD+NTRIP+ETH)");
-    }
-}
-
-bool sdLoggerPsramBufferActive(void) {
-    return s_psram_active;
-}
-
-uint32_t sdLoggerPsramBufferCount(void) {
-    if (!s_psram_active) return 0;
-    return sdLoggerGetBufferCount();
+    LOGI("SDL", "initialised (flush interval = %lu ms, log rate = 10 Hz)",
+            (unsigned long)LOGGER_INTERVAL_MS);
 }

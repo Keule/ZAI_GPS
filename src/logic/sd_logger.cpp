@@ -4,15 +4,10 @@
  *
  * The ring buffer is a lock-free single-producer / single-consumer queue:
  *   - Producer: control loop (Core 1) calls sdLoggerRecord()
- *   - Consumer: maintTask (Core 0) calls sdLoggerHasRecords()/sdLoggerReadRecord()
+ *   - Consumer: logger task (Core 0) calls sdLoggerDrainBuffer()
  *
  * The ring buffer uses power-of-2 size so wrap-around can be done
  * with a simple mask instead of modulo.
- *
- * TASK-029: The ring buffer is pointer-based. By default it uses a
- * static fallback buffer (16 KB, 512 records). When a PSRAM buffer
- * is allocated (via sdLoggerSetExternalBuffer()), all operations
- * transparently use the larger buffer.
  *
  * This file is platform-independent – no Arduino/ESP32 headers.
  * Platform-specific code lives in sd_logger_esp32.cpp.
@@ -26,39 +21,31 @@
 // Configuration
 // ===================================================================
 
-/// Default (static fallback) ring buffer size (must be power of 2).
+/// Ring buffer size (must be power of 2).
 /// 512 records × 32 bytes = 16 KB.
 /// At 10 Hz log rate: 51 seconds of buffer before overflow.
-#define LOG_RING_SIZE_DEFAULT   512
+#define LOG_RING_SIZE       512
+#define LOG_RING_MASK       (LOG_RING_SIZE - 1)
 
 /// Log rate divider. The control loop runs at 200 Hz.
 /// A divider of 20 gives a 10 Hz log rate (one record every 100 ms).
 #define LOG_RATE_DIVIDER    20
 
 // ===================================================================
-// Ring buffer – single-producer / single-consumer (pointer-based)
+// Ring buffer – single-producer / single-consumer
 // ===================================================================
 
-/// Static fallback buffer (used when no PSRAM buffer is set).
-static SdLogRecord s_ring_buf_static[LOG_RING_SIZE_DEFAULT];
-
-/// Active buffer pointer (redirected to PSRAM buffer when available).
-static SdLogRecord* s_ring_buf = s_ring_buf_static;
-
-/// Active buffer capacity (power of 2).
-static uint32_t s_ring_capacity = LOG_RING_SIZE_DEFAULT;
-
-/// Active buffer mask (capacity - 1) for fast wrap-around.
-static uint32_t s_ring_mask = LOG_RING_SIZE_DEFAULT - 1;
+/// The ring buffer itself (static allocation).
+static SdLogRecord s_ring_buf[LOG_RING_SIZE];
 
 /// Write index – only modified by the producer (control loop).
 /// After writing to s_ring_buf[s_write_idx], the producer does:
-///   s_write_idx = (s_write_idx + 1) & s_ring_mask;
+///   s_write_idx = (s_write_idx + 1) & LOG_RING_MASK;
 static volatile uint32_t s_write_idx = 0;
 
-/// Read index – only modified by the consumer (maintTask).
+/// Read index – only modified by the consumer (logger task).
 /// After reading from s_ring_buf[s_read_idx], the consumer does:
-///   s_read_idx = (s_read_idx + 1) & s_ring_mask;
+///   s_read_idx = (s_read_idx + 1) & LOG_RING_MASK;
 static volatile uint32_t s_read_idx = 0;
 
 /// Overflow counter – incremented when the producer overwrites
@@ -82,38 +69,12 @@ static volatile uint32_t s_call_counter = 0;
 extern "C" bool sdLoggerReadSwitch(void);
 
 /// Drain the ring buffer: read all pending records and write to SD.
-/// Called by the maintTask. Returns the number of records flushed.
+/// Called by the logger task. Returns the number of records flushed.
 extern "C" uint32_t sdLoggerDrainBuffer(void);
 
 /// Close the current log file and release the SD card.
 /// Called when the switch is turned OFF.
 extern "C" void sdLoggerCloseFile(void);
-
-// ===================================================================
-// External buffer support – TASK-029
-// ===================================================================
-
-/// Set an external ring buffer (e.g. PSRAM-allocated).
-///
-/// After calling this, all ring buffer operations use the provided
-/// buffer instead of the static fallback. The existing indices are
-/// preserved (both producer and consumer pointers wrap at the new
-/// capacity boundary).
-///
-/// @param buf       Pointer to the ring buffer (must be non-null).
-/// @param capacity  Buffer capacity (must be power of 2, non-zero).
-void sdLoggerSetExternalBuffer(SdLogRecord* buf, uint32_t capacity) {
-    if (!buf || capacity == 0) return;
-    if (capacity & (capacity - 1)) return;  // not power of 2
-
-    s_ring_buf = buf;
-    s_ring_capacity = capacity;
-    s_ring_mask = capacity - 1;
-
-    // Clamp indices to new capacity (preserve as many records as possible).
-    s_write_idx = s_write_idx & s_ring_mask;
-    s_read_idx  = s_read_idx  & s_ring_mask;
-}
 
 // ===================================================================
 // Public API – platform-independent
@@ -150,12 +111,12 @@ void sdLoggerRecord(void) {
 
     // Write to ring buffer (no mutex needed – SPSC pattern)
     uint32_t widx = s_write_idx;
-    uint32_t next_widx = (widx + 1) & s_ring_mask;
+    uint32_t next_widx = (widx + 1) & LOG_RING_MASK;
 
     // Check for overflow (consumer hasn't caught up)
     if (next_widx == s_read_idx) {
         // Buffer full – advance read pointer (drop oldest)
-        s_read_idx = (s_read_idx + 1) & s_ring_mask;
+        s_read_idx = (s_read_idx + 1) & LOG_RING_MASK;
         s_overflow_count++;
     }
 
@@ -175,24 +136,11 @@ uint32_t sdLoggerGetBufferCount(void) {
     uint32_t w = s_write_idx;
     uint32_t r = s_read_idx;
     if (w >= r) return w - r;
-    return s_ring_capacity - r + w;
+    return LOG_RING_SIZE - r + w;
 }
 
 // ===================================================================
-// TASK-029: PSRAM buffer diagnostics
-// ===================================================================
-
-bool sdLoggerPsramBufferActive(void) {
-    return s_ring_buf != s_ring_buf_static;
-}
-
-uint32_t sdLoggerPsramBufferCount(void) {
-    if (s_ring_buf == s_ring_buf_static) return 0;
-    return sdLoggerGetBufferCount();
-}
-
-// ===================================================================
-// Buffer access – called from the maintTask (consumer side)
+// Buffer access – called from the logger task (consumer side)
 // ===================================================================
 
 /// Check if there are records waiting in the ring buffer.
@@ -209,7 +157,7 @@ extern "C" bool sdLoggerReadRecord(SdLogRecord* out) {
     }
 
     *out = s_ring_buf[r];
-    s_read_idx = (r + 1) & s_ring_mask;
+    s_read_idx = (r + 1) & LOG_RING_MASK;
     return true;
 }
 

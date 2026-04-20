@@ -2,7 +2,7 @@
 
 - **ID**: TASK-029
 - **Titel**: `maintTask` fuer blocking Operationen einfuehren, SD-Logging auf PSRAM-Buffer umstellen
-- **Status**: done
+- **Status**: open
 - **Priorität**: high
 - **Komponenten**: src/main.cpp, src/hal_esp32/sd_logger_esp32.cpp, src/logic/ntrip.cpp, src/logic/ntrip.h, src/logic/sd_logger.cpp, src/logic/sd_logger.h, src/logic/control.cpp
 - **Dependencies**: TASK-027

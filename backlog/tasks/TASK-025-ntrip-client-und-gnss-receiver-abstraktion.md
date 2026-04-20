@@ -1,7 +1,7 @@
 TASK-025 NTRIP-Client und GNSS-Empfänger-Abstraktion
 ID: TASK-025
 Titel: NTRIP-Client für Single-Base-Caster und konfigurierbare GNSS-Empfänger-Abstraktion implementieren
-Status: done
+Status: open
 Priorität: high
 Komponenten: src/logic/ntrip.h, src/logic/ntrip.cpp, src/hal/hal.h, src/hal_esp32/hal_impl.cpp, src/logic/global_state.h, src/logic/global_state.cpp, src/logic/dependency_policy.h, src/logic/hw_status.h, include/features.h, src/main.cpp
 Dependencies: keine (independent)
@@ -64,14 +64,14 @@ Bestehender UDP-RTCM-Pfad (TASK-015) — wird nicht verändert.
 UM982 Heading-Ausgabe.
 NMEA-Parsing / Position-Extraktion aus Empfängern.
 Designentscheidungen
-#       Entscheidung    Begründung
-D1      Kein GGA an NTRIP-Caster        Caster ist Single-Base, keine positionsabhängigen Korrekturdaten
-D2      Max. 3 Empfänger (Compile-Time) ESP32-S3: UART1, UART2 + UART0 nach Boot; GNSS_RX_MAX = 3
-D3      Empfänger-Abstraktion transport-agnostisch      Lokal (UART) und Remote (UDP/PGN) unterscheiden sich nur in Konfiguration
-D4      Prozedurale Funktionen, keine Klassen   Konform mit bestehendem Architekturmuster (net.cpp, control.cpp)
-D5      NTRIP-TCP über bestehendes Ethernet     W5500 Ethernet-Stack wird mitgenutzt, kein neuer Netzwerk-Stack
-D6      RTCM-Forwarding nur an rtcm_source=LOCAL Empfänger      Remote-Empfänger besorgen RTCM selbst
-D7      Indizierte UART-API     Ersatz für aktuelle Single-UART-API, Rückwärtskompatibilität via Wrapper
+#	Entscheidung	Begründung
+D1	Kein GGA an NTRIP-Caster	Caster ist Single-Base, keine positionsabhängigen Korrekturdaten
+D2	Max. 3 Empfänger (Compile-Time)	ESP32-S3: UART1, UART2 + UART0 nach Boot; GNSS_RX_MAX = 3
+D3	Empfänger-Abstraktion transport-agnostisch	Lokal (UART) und Remote (UDP/PGN) unterscheiden sich nur in Konfiguration
+D4	Prozedurale Funktionen, keine Klassen	Konform mit bestehendem Architekturmuster (net.cpp, control.cpp)
+D5	NTRIP-TCP über bestehendes Ethernet	W5500 Ethernet-Stack wird mitgenutzt, kein neuer Netzwerk-Stack
+D6	RTCM-Forwarding nur an rtcm_source=LOCAL Empfänger	Remote-Empfänger besorgen RTCM selbst
+D7	Indizierte UART-API	Ersatz für aktuelle Single-UART-API, Rückwärtskompatibilität via Wrapper
 Architektur-Übersicht
 Datenfluss
 ┌─────────────────────────────────────────────┐

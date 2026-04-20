@@ -2,7 +2,7 @@
 
 - **ID**: TASK-026
 - **Titel**: `fw_config` und Board-Profile restrukturieren — `hardware_pins.h` aufteilen
-- **Status**: done
+- **Status**: open
 - **Priorität**: medium
 - **Komponenten**: include/hardware_pins.h, include/fw_config.h, include/board_profile/*, src/hal_esp32/hal_impl.cpp
 - **Dependencies**: none

@@ -104,14 +104,12 @@ uint8_t hwStatusErrorCount(void);
 /// @param safety_ok  true if safety circuit is OK
 /// @param steer_angle_valid  true if steer angle sensor reading is plausible
 /// @param imu_valid  true if IMU data is being received
-/// @param ntrip_active  true if NTRIP module is active (TASK-030)
 /// @return number of active errors
 /// ===================================================================
 uint8_t hwStatusUpdate(bool connected,
                         bool safety_ok,
                         bool steer_angle_valid,
-                        bool imu_valid,
-                        bool ntrip_active = true);
+                        bool imu_valid);
 
 // ===================================================================
 // Send a single hardware message immediately (for one-off notifications).

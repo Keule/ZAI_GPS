@@ -476,7 +476,7 @@ tasks:
     title: fw_config und Board-Profile restrukturieren — hardware_pins.h aufteilen
     file: backlog/tasks/TASK-026-fw-config-und-board-profile-restrukturierung.md
     epic_id: EPIC-003
-    status: done
+    status: open
     priority: medium
     delivery_mode: firmware_only
     task_category: platform_reuse
@@ -486,7 +486,7 @@ tasks:
     title: Modul-System mit Runtime-Aktivierung/Deaktivierung, Pin-Gruppen und dreiwertigem Status
     file: backlog/tasks/TASK-027-modul-system-mit-runtime-aktivierung-und-pin-claim-arbitrierung.md
     epic_id: EPIC-003
-    status: done
+    status: open
     priority: high
     delivery_mode: firmware_only
     task_category: platform_reuse
@@ -497,7 +497,7 @@ tasks:
     title: soft_config.h mit Nutzer-Defaults, dreiwertigem ModState und RuntimeConfig einführen
     file: backlog/tasks/TASK-028-soft-config-mit-nutzer-defaults-und-runtime-konfiguration.md
     epic_id: EPIC-003
-    status: done
+    status: open
     priority: medium
     delivery_mode: firmware_only
     task_category: platform_reuse
@@ -508,7 +508,7 @@ tasks:
     title: maintTask für blocking Operationen einführen, SD-Logging auf PSRAM-Buffer umstellen
     file: backlog/tasks/TASK-029-maintask-fuer-blocking-ops-und-psram-sd-logging.md
     epic_id: EPIC-001
-    status: done
+    status: open
     priority: high
     delivery_mode: firmware_only
     task_category: runtime_stability
@@ -519,7 +519,7 @@ tasks:
     title: TASK-025 NTRIP auf neues Modul-System und maintTask migrieren
     file: backlog/tasks/TASK-030-task025-backlog-status-und-ntrip-architektur-anpassung.md
     epic_id: EPIC-004
-    status: done
+    status: open
     priority: medium
     delivery_mode: firmware_only
     task_category: feature_expansion

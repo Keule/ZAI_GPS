@@ -2,7 +2,7 @@
 
 - **ID**: TASK-030
 - **Titel**: TASK-025 NTRIP auf neues Modul-System und maintTask migrieren
-- **Status**: done
+- **Status**: open
 - **Priorität**: medium
 - **Komponenten**: src/logic/ntrip.cpp, src/logic/ntrip.h, src/main.cpp, src/logic/modules.cpp, src/logic/global_state.h, src/logic/hw_status.cpp, backlog/index.yaml
 - **Dependencies**: TASK-027, TASK-029

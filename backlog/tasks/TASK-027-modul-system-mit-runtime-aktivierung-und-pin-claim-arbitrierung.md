@@ -2,7 +2,7 @@
 
 - **ID**: TASK-027
 - **Titel**: Modul-System mit Runtime-Aktivierung/Deaktivierung, Pin-Gruppen und dreiwertigem Status
-- **Status**: done
+- **Status**: open
 - **Priorität**: high
 - **Komponenten**: src/logic/modules.cpp, src/logic/modules.h, include/board_profile/*, src/logic/features.h, src/hal_esp32/hal_impl.cpp, src/main.cpp
 - **Dependencies**: TASK-026

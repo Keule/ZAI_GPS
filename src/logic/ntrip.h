@@ -27,10 +27,8 @@
 /// Must be called after hal_mutex_init() and before ntripTick().
 void ntripInit(void);
 
-/// State machine tick — call from maintTask (TASK-029).
+/// State machine tick — call from commTask processing phase.
 /// Handles state transitions, reconnect timing, and error recovery.
-/// Blocking TCP connect runs here (safe at lowest priority).
-/// In GNSS buildup mode (no maintTask), falls back to commTask.
 void ntripTick(void);
 
 // ===================================================================
