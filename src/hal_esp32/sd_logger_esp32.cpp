@@ -269,6 +269,15 @@ static void sdBusRelease(void) {
  * Tries to allocate from PSRAM first (~1 MB), falls back to regular
  * heap, and finally falls back to the static buffer in sd_logger.cpp.
  *
+ * The buffer selection happens ONCE at init — there is no runtime
+ * fallback after the first successful allocation.  If PSRAM allocation
+ * fails at init, the static 16 KB buffer is used for the entire session.
+ *
+ * NOTE: The FSPI bus is shared with the sensor SPI.  Each SD flush cycle
+ * requires hal_sensor_spi_deinit()/hal_sensor_spi_reinit(), which blocks
+ * the sensor SPI for ~50-200 ms.  This is NOT fully decoupled — the
+ * control loop must skip sensor reads while s_spi_busy is set.
+ *
  * @return true if a large buffer (PSRAM or heap) was allocated.
  */
 static bool sdLoggerPsramInit(void) {

@@ -442,8 +442,9 @@ bool moduleActivate(FirmwareFeatureId id) {
     }
 
     // 3. Check dependencies
+    //    Terminator is 0xFF — no valid FirmwareFeatureId can equal 255.
     if (feat.deps != nullptr) {
-        for (uint8_t d = 0; feat.deps[d] != 0; d++) {
+        for (uint8_t d = 0; feat.deps[d] != 0xFF; d++) {
             FirmwareFeatureId dep_id = static_cast<FirmwareFeatureId>(feat.deps[d]);
             if (dep_id >= MOD_COUNT) continue;
             if (g_features[dep_id].state != MOD_ON) {
@@ -454,26 +455,29 @@ bool moduleActivate(FirmwareFeatureId id) {
         }
     }
 
-    // 4. Claim pins.
-    // Pins already claimed by the legacy HAL init path (e.g. "imu-cs", "eth-cs")
-    // are accepted silently — they were claimed during hal_esp32_init_all().
-    // Only claim pins that are NOT yet claimed.
-    // If a pin is claimed by another MODULE (owner starts with "MOD_"), reject.
+    // 4. Claim pins (hard conflict detection per ADR-HAL-001).
+    //    A pin claimed by a different owner is a hard conflict — the
+    //    activation fails with rollback.  Same-owner re-claim is OK
+    //    (idempotent moduleActivate).
     const char* owner = featureOwnerTag(id);
     uint8_t new_claims = 0;
     for (uint8_t p = 0; p < feat.pin_count; p++) {
         const int8_t pin = feat.pins[p];
         if (pin < 0) continue;
 
-        if (hal_pin_claim_check(pin)) {
-            // Pin is already claimed — acceptable if claimed by legacy HAL init
-            // (non-MOD_ owner). We don't re-claim it.
-            // NOTE: true cross-module conflict detection requires hal_pin_claim_owner()
-            // which is not yet exposed. During transition, accept all pre-claimed pins.
-            hal_log("FEAT-MOD: activate(%s): GPIO %d already claimed (accepted from init)",
-                    feat.name, (int)pin);
+        const char* existing_owner = hal_pin_claim_owner(pin);
+        if (existing_owner) {
+            if (std::strcmp(existing_owner, owner) == 0) {
+                // Same owner — idempotent, skip.
+            } else {
+                // Different owner — hard conflict (ADR-HAL-001).
+                hal_log("FEAT-MOD: activate(%s) CONFLICT on GPIO %d (%s vs %s)",
+                        feat.name, (int)pin, existing_owner, owner);
+                hal_pin_claim_release(owner);
+                return false;
+            }
         } else {
-            // Pin not yet claimed — claim it for this module
+            // Pin not yet claimed — claim it for this module.
             if (!hal_pin_claim_add(pin, owner)) {
                 hal_log("FEAT-MOD: activate(%s) pin claim failed for GPIO %d",
                         feat.name, (int)pin);

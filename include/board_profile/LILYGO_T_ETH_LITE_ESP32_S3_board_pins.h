@@ -179,12 +179,13 @@ static constexpr uint8_t FEAT_PINS_LOGSW_COUNT = 1;
 
 // ---------------------------------------------------------------------------
 // Feature Dependencies — TASK-027
-// Each feature lists the module IDs it depends on (0 terminated).
+// Each feature lists the module IDs it depends on.
+// Terminator is 0xFF (no valid FirmwareFeatureId can be 255).
 // moduleActivate() checks that all deps are MOD_ON before activating.
 // ---------------------------------------------------------------------------
 
 // NTRIP depends on ETH being active (3 = MOD_ETH)
-static constexpr uint8_t FEAT_DEPS_NTRIP[] = { 3, 0 };
+static constexpr uint8_t FEAT_DEPS_NTRIP[] = { 3, 0xFF };
 
 // ACT depends on IMU and ADS (0 = MOD_IMU, 1 = MOD_ADS)
-static constexpr uint8_t FEAT_DEPS_ACT[] = { 0, 1, 0 };
+static constexpr uint8_t FEAT_DEPS_ACT[] = { 0, 1, 0xFF };

@@ -499,16 +499,20 @@ void setup() {
         ntripInit();
         RuntimeConfig& rcfg = softConfigGet();
         ntripSetConfig(
-            rcfg.ntrip_host[0] ? rcfg.ntrip_host : "caster.example.com",
-            rcfg.ntrip_port ? rcfg.ntrip_port : 2101,
-            rcfg.ntrip_mountpoint[0] ? rcfg.ntrip_mountpoint : "VRS",
+            rcfg.ntrip_host,
+            rcfg.ntrip_port,
+            rcfg.ntrip_mountpoint,
             rcfg.ntrip_user,
             rcfg.ntrip_password
         );
-        hal_log("Main: NTRIP client configured (host=%s, port=%u, mp=%s)",
-                g_ntrip_config.host,
-                static_cast<unsigned>(g_ntrip_config.port),
-                g_ntrip_config.mountpoint);
+        if (rcfg.ntrip_host[0] == '\0' || rcfg.ntrip_mountpoint[0] == '\0') {
+            hal_log("Main: NTRIP not configured (host or mountpoint empty) — skipping");
+        } else {
+            hal_log("Main: NTRIP client configured (host=%s, port=%u, mp=%s)",
+                    g_ntrip_config.host,
+                    static_cast<unsigned>(g_ntrip_config.port),
+                    g_ntrip_config.mountpoint);
+        }
 #endif
 
         xTaskCreatePinnedToCore(

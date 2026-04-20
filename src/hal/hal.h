@@ -329,6 +329,11 @@ int hal_pin_claim_release(const char* owner);
 /// @return true if claimed, false if not or pin < 0.
 bool hal_pin_claim_check(int pin);
 
+/// Get the owner string of a claimed GPIO pin.
+/// @param pin GPIO pin number.
+/// @return Owner identifier string, or nullptr if pin is not claimed or pin < 0.
+const char* hal_pin_claim_owner(int pin);
+
 #ifdef __cplusplus
 }
 #endif

@@ -515,6 +515,13 @@ extern "C" bool hal_pin_claim_check(int pin) {
     return pinClaimFind(pin) != nullptr;
 }
 
+extern "C" const char* hal_pin_claim_owner(int pin) {
+    if (pin < 0) return nullptr;
+    const PinClaimEntry* entry = pinClaimFind(pin);
+    if (!entry) return nullptr;
+    return entry->owner;
+}
+
 static HardwareSerial* gnssUartForNum(uint8_t uart_num) {
     switch (uart_num) {
     case 1: return &Serial1;

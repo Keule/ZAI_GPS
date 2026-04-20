@@ -155,7 +155,7 @@ struct FeatureModuleInfo {
     bool           hw_detected;    ///< Hardware detection passed
     const int8_t*  pins;           ///< Pin array from board profile (-1 terminated)
     uint8_t        pin_count;      ///< Number of valid pins (>0)
-    const uint8_t* deps;           ///< Dependency module IDs (0 terminated), nullptr = none
+    const uint8_t* deps;           ///< Dependency module IDs (0xFF terminated), nullptr = none
 };
 
 /// Activate a feature module at runtime.
