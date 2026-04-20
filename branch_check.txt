@@ -1,1 +1,0 @@
-Branch: main | Remote: origin/feature/restructure-multi-device | Commit: 32923e6 | Time: 2026-04-12T18:00:11+00:00
