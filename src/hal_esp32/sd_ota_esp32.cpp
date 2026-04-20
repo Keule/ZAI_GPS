@@ -7,7 +7,7 @@
  *
  * SPI bus strategy:
  *   The SD card uses SPI2_HOST (FSPI) with its own pins (SCK=7, MISO=5, MOSI=6, CS=42).
- *   The sensor bus also uses FSPI but with DIFFERENT pins (SCK=16, MISO=15, MOSI=17).
+ *   The sensor bus also uses FSPI but with DIFFERENT pins (SCK=47, MISO=21, MOSI=38).
  *   During the update the sensor SPI is released via hal_sensor_spi_deinit(),
  *   then FSPI is re-initialised with SD pins. After the update (or on any error)
  *   the sensor SPI is restored via hal_sensor_spi_reinit().
@@ -17,7 +17,7 @@
  */
 
 #include "hal/hal.h"
-#include "hardware_pins.h"
+#include "fw_config.h"
 #include "logic/sd_ota.h"
 
 #include "logic/log_config.h"

@@ -9,9 +9,9 @@
  *   - Automatic reconnect on connection loss
  *
  * Data flow:
- *   ntripReadRtcm()  : TCP -> rtcm_buf (Input phase)
- *   ntripTick()      : State machine (Processing phase)
- *   ntripForwardRtcm(): rtcm_buf -> UART[0..N] (Output phase)
+ *   ntripReadRtcm()  : TCP -> rtcm_buf (Input phase, commTask)
+ *   ntripTick()      : State machine (maintTask — TASK-029)
+ *   ntripForwardRtcm(): rtcm_buf -> UART[0..N] (Output phase, commTask)
  *
  * Reference: SparkFun Example20_NTRIP_Client.ino
  * Reference: NTRIP Protocol Specification, Rev 2.0
@@ -449,8 +449,10 @@ void ntripReadRtcm(void) {
     StateLock lock;
     if (g_ntrip.conn_state != NtripConnState::CONNECTED) return;
     // Release lock before doing I/O.
-    // NOTE: conn_state is only changed by ntripTick() which runs
-    // in the same task (commTask), so no race condition here.
+    // NOTE (TASK-029): conn_state is changed by ntripTick() which now
+    // runs in maintTask. A stale CONNECTED check here means one extra
+    // TCP read attempt on a potentially disconnected socket — harmless
+    // (hal_tcp_read returns 0 or -1, the while-loop breaks).
 
     // Read available data from TCP.
     uint8_t buf[512];

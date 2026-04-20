@@ -1,47 +1,17 @@
 /**
  * @file LILYGO_T_ETH_LITE_ESP32_S3_board_pins.h
- * @brief Central pin definitions for LilyGO T-ETH-Lite-S3 (ESP32-S3 + W5500)
+ * @brief Board profile for LilyGO T-ETH-Lite-S3 (ESP32-S3 + W5500).
  *
- * Target: ESP32-S3-WROOM-1-N8R8 (16 MB Flash, 8 MB Octal PSRAM) + W5500 Ethernet.
+ * Target: ESP32-S3-WROOM-1-N8R8 (16 MB Flash, 8 MB Octal PSRAM) + W5500.
  *
- * Pin mapping verified against official LilyGO repository:
- *   https://github.com/Xinyuan-LilyGO/LilyGO-T-ETH-Series
- *   (utilities.h, #ifdef LILYGO_T_ETH_LITE_ESP32S3)
+ * SPI bus allocation (CRITICAL — wrong bus = crash):
+ *   SPI3_HOST (HSPI) = W5500 Ethernet  (GPIO  9/10/11/12/13/14, fixed)
+ *   SPI2_HOST (FSPI) = Sensor bus      (SCK=47, MISO=21, MOSI=38)
+ *                    + SD Card (OTA)    (SCK=7,  MISO=5,  MOSI=6,  CS=42)
+ *   FSPI is shared — sensor SPI must be released before SD access.
  *
- * ========================================================================
- * SPI BUS ALLOCATION  (CRITICAL - wrong bus = crash!)
- * ========================================================================
- *   SPI3_HOST = W5500 Ethernet  (onboard, GPIO  9/10/11/12/13/14)
- *   SPI2_HOST = Sensor bus      (on FSPI)
- *              -> ADS1118 ADC (steer angle) 
- *              -> BNO085 IMU
- *              -> Actuator driver
- *
- *   SD Card uses SPI2_HOST (FSPI) too, but with DIFFERENT pins (5/6/7).
- *   During normal operation the sensor bus owns FSPI.
- *   For SD card access (OTA at boot), FSPI is re-initialised with SD pins,
- *   then restored to sensor pins after the update.
- *
- * On ESP32-S3 in Arduino Core 2.x:
- *   FSPI = SPI2_HOST   HSPI = SPI3_HOST
- *
- * The sensor bus MUST use FSPI (= SPI2_HOST), NOT HSPI (= SPI3_HOST)!
- * HSPI is the same physical bus as SPI3_HOST which the W5500 ETH driver
- * uses. Sharing the bus between ETH driver and SPIClass causes a hard
- * crash: "assert failed: spi_hal_setup_trans ... spi_ll_get_running_cmd"
- *
- * GPIO NOTE - ESP32-S3R8 (with Octal PSRAM):
- *   GPIOs 26-37 are INTERNALLY occupied by the Octal PSRAM interface.
- *   They are NOT available as general-purpose GPIOs.
- *   GPIOs 38-42 are OUTPUT-ONLY (no input capability).
- *   GPIOs 43/44 are UART0 default pins - AVOID for external UARTs!
- *   GPIOs 45-48 are full bidirectional GPIOs.
- * ========================================================================
- *
- * GPIO assignment - by function:
- *
- *   W5500 Ethernet (SPI3_HOST):  9  10  11  12  13  14  (fixed by board)
- *   SD Card (FSPI, OTA only):    5   6   7  42
+ * GPIO constraints (ESP32-S3R8 with Octal PSRAM):
+ *   26-37: reserved by PSRAM  |  38-42: output-only  |  43-48: bidirectional
  */
 
 #pragma once
@@ -74,7 +44,7 @@
 // Guard against accidental duplicate IMU pin definitions from build flags or
 // other headers. This file is the single source of truth for IMU wiring.
 #if defined(IMU_RST) || defined(IMU_INT) || defined(CS_IMU) || defined(IMU_WAKE)
-  #error "IMU pins already defined elsewhere; keep IMU pin mapping canonical in hardware_pins.h"
+  #error "IMU pins already defined elsewhere; keep IMU pin mapping canonical in fw_config.h"
 #endif
 
 // ---------------------------------------------------------------------------
@@ -164,3 +134,57 @@ inline constexpr int8_t GNSS_MIRROR_UART2_TX_PIN = GNSS_UART2_TX;
 //   Switch ON (closed) -> pin pulled LOW  -> logging enabled
 // ---------------------------------------------------------------------------
 #define LOG_SWITCH_PIN   46
+
+// ---------------------------------------------------------------------------
+// Feature Pin Groups — TASK-027
+// Each feature lists its GPIO pins (-1 terminated).
+// Used by module system for pin-claim arbitration.
+//
+// FirmwareFeatureId numeric mapping (matches FirmwareFeatureId enum):
+//   0 = MOD_IMU, 1 = MOD_ADS, 2 = MOD_ACT, 3 = MOD_ETH,
+//   4 = MOD_GNSS, 5 = MOD_NTRIP, 6 = MOD_SAFETY, 7 = MOD_LOGSW
+// ---------------------------------------------------------------------------
+
+// IMU: INT=46, RST=41, WAKE=15, CS=40
+static constexpr int8_t FEAT_PINS_IMU[]   = { IMU_INT, IMU_RST, IMU_WAKE, CS_IMU, -1 };
+static constexpr uint8_t FEAT_PINS_IMU_COUNT = 4;
+
+// ADS (Steer Angle Sensor): CS=18
+static constexpr int8_t FEAT_PINS_ADS[]   = { CS_STEER_ANG, -1 };
+static constexpr uint8_t FEAT_PINS_ADS_COUNT = 1;
+
+// Actuator: CS=16
+static constexpr int8_t FEAT_PINS_ACT[]   = { CS_ACT, -1 };
+static constexpr uint8_t FEAT_PINS_ACT_COUNT = 1;
+
+// Ethernet: SCK=10, MISO=11, MOSI=12, CS=9, INT=13, RST=14
+static constexpr int8_t FEAT_PINS_ETH[]   = { ETH_SCK, ETH_MISO, ETH_MOSI, ETH_CS, ETH_INT, ETH_RST, -1 };
+static constexpr uint8_t FEAT_PINS_ETH_COUNT = 6;
+
+// GNSS: UART1 TX=48, RX=45; UART2 TX=2, RX=1
+static constexpr int8_t FEAT_PINS_GNSS[]  = { GNSS_UART1_TX, GNSS_UART1_RX, GNSS_UART2_TX, GNSS_UART2_RX, -1 };
+static constexpr uint8_t FEAT_PINS_GNSS_COUNT = 4;
+
+// NTRIP: no dedicated pins (uses ETH which is already claimed)
+static constexpr int8_t FEAT_PINS_NTRIP[] = { -1 };
+static constexpr uint8_t FEAT_PINS_NTRIP_COUNT = 0;
+
+// Safety: GPIO 4
+static constexpr int8_t FEAT_PINS_SAFETY[] = { SAFETY_IN, -1 };
+static constexpr uint8_t FEAT_PINS_SAFETY_COUNT = 1;
+
+// Logging switch: GPIO 46 (CONFLICT with IMU_INT!)
+static constexpr int8_t FEAT_PINS_LOGSW[] = { LOG_SWITCH_PIN, -1 };
+static constexpr uint8_t FEAT_PINS_LOGSW_COUNT = 1;
+
+// ---------------------------------------------------------------------------
+// Feature Dependencies — TASK-027
+// Each feature lists the module IDs it depends on (0 terminated).
+// moduleActivate() checks that all deps are MOD_ON before activating.
+// ---------------------------------------------------------------------------
+
+// NTRIP depends on ETH being active (3 = MOD_ETH)
+static constexpr uint8_t FEAT_DEPS_NTRIP[] = { 3, 0 };
+
+// ACT depends on IMU and ADS (0 = MOD_IMU, 1 = MOD_ADS)
+static constexpr uint8_t FEAT_DEPS_ACT[] = { 0, 1, 0 };

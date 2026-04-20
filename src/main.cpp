@@ -4,8 +4,9 @@
  *
  * Target: LilyGO T-ETH-Lite-S3 (ESP32-S3-WROOM-1 + W5500 Ethernet)
  *
- * Two FreeRTOS tasks:
- *   - commTask  (Core 0): Ethernet/UDP, AOG protocol, HW status
+ * Three FreeRTOS tasks:
+ *   - commTask   (Core 0): Ethernet/UDP, AOG protocol, HW status
+ *   - maintTask  (Core 0): SD flush, NTRIP connect, ETH monitor [TASK-029]
  *   - controlTask (Core 1): 200 Hz control loop, PID, safety, actuators
  *
  * NOTE: Hardware init is done in setup():
@@ -21,7 +22,7 @@
 #include <esp_ota_ops.h>
 #include <cstdio>
 
-#include "hardware_pins.h"
+#include "fw_config.h"
 #include "hal/hal.h"
 #include "hal_esp32/hal_impl.h"
 #include "logic/control.h"
@@ -33,6 +34,7 @@
 #include "logic/modules.h"
 #include "logic/net.h"
 #include "logic/ntrip.h"
+#include "logic/runtime_config.h"
 #include "logic/sd_ota.h"
 #include "logic/sd_logger.h"
 
@@ -346,7 +348,12 @@ static void commTaskFunc(void* param) {
             modulesUpdateStatus();
         }
 #if FEAT_ENABLED(FEAT_NTRIP)
-        ntripTick();
+        // TASK-029: In normal mode, ntripTick() runs in maintTask (blocking
+        // TCP connect is OK there). In GNSS buildup mode, maintTask is not
+        // created, so we run ntripTick() here in the commTask.
+        if (s_gnss_buildup_active) {
+            ntripTick();
+        }
 #endif
 
         // ---------------------------------- Output ----------------------------------
@@ -399,7 +406,8 @@ static void commTaskFunc(void* param) {
                 hal_net_is_connected(),     // Ethernet connected
                 safety_ok,                  // Safety circuit OK
                 steer_angle_valid,          // steer angle freshness + plausibility
-                imu_hw_detected             // IMU hardware presence; data quality remains in g_nav
+                imu_hw_detected,            // IMU hardware presence; data quality remains in g_nav
+                moduleIsActive(MOD_NTRIP)   // NTRIP module active — TASK-030
             );
 
             (void)imu_data_valid;
@@ -478,23 +486,24 @@ void setup() {
     if (s_gnss_buildup_active) {
         // Reduced startup: no OTA, no module detection, no sensor/actuator stack.
 
+        // Initialise soft config from compile-time defaults — TASK-028
+        softConfigLoadDefaults(softConfigGet());
+        softConfigLoadOverrides(softConfigGet());  // currently a no-op stub
+
 #if FEAT_ENABLED(FEAT_NTRIP)
         // -----------------------------------------------------------------
-        // NTRIP Client initialisation — TASK-025
-        // Set your caster credentials here:
-        //   host       : NTRIP caster hostname or IP (e.g. "caster.example.com")
-        //   port       : NTRIP caster port (typically 2101)
-        //   mountpoint : Mountpoint name (e.g. "VRS", "MyMount")
-        //   user       : Username (empty string "" for no auth)
-        //   password   : Password
+        // NTRIP Client initialisation — TASK-025 / TASK-028
+        // Configuration is loaded from RuntimeConfig (cfg:: defaults at
+        // boot, overridable via Serial/SD/WebUI in future versions).
         // -----------------------------------------------------------------
         ntripInit();
+        RuntimeConfig& rcfg = softConfigGet();
         ntripSetConfig(
-            "caster.example.com",   // <-- TODO: your caster host
-            2101,                   // <-- TODO: your caster port
-            "VRS",                  // <-- TODO: your mountpoint
-            "user",                 // <-- TODO: your username
-            "pass"                  // <-- TODO: your password
+            rcfg.ntrip_host[0] ? rcfg.ntrip_host : "caster.example.com",
+            rcfg.ntrip_port ? rcfg.ntrip_port : 2101,
+            rcfg.ntrip_mountpoint[0] ? rcfg.ntrip_mountpoint : "VRS",
+            rcfg.ntrip_user,
+            rcfg.ntrip_password
         );
         hal_log("Main: NTRIP client configured (host=%s, port=%u, mp=%s)",
                 g_ntrip_config.host,
@@ -539,8 +548,36 @@ void setup() {
         }
     }
 
+    // -----------------------------------------------------------------
+    // Initialise soft config from compile-time defaults — TASK-028
+    // RuntimeConfig is the mutable RAM copy; cfg:: namespace holds
+    // the compile-time defaults defined in include/soft_config.h.
+    // -----------------------------------------------------------------
+    softConfigLoadDefaults(softConfigGet());
+    softConfigLoadOverrides(softConfigGet());  // currently a no-op stub
+
     // Initialise module system – detect hardware for all modules
     modulesInit();
+
+    // -----------------------------------------------------------------
+    // Activate default feature modules — TASK-027
+    // The module system handles pin-claim arbitration and dependency
+    // checking.  These calls must happen AFTER modulesInit() which
+    // sets compiled/availability flags, and AFTER hal_esp32_init_all()
+    // which already claimed pins for common init paths.
+    //
+    // Activation order matters: ACT depends on IMU+ADS, NTRIP depends
+    // on ETH.  Activate dependencies first.
+    // -----------------------------------------------------------------
+    moduleActivate(MOD_IMU);     // IMU: no deps
+    moduleActivate(MOD_ADS);     // ADS: no deps
+    moduleActivate(MOD_ETH);     // ETH: no deps (pins already claimed by HAL init)
+    moduleActivate(MOD_GNSS);    // GNSS: no deps
+    moduleActivate(MOD_SAFETY);  // SAFETY: no deps
+    moduleActivate(MOD_ACT);     // ACT: depends on IMU + ADS (must be after those)
+#if FEAT_ENABLED(FEAT_NTRIP)
+    moduleActivate(MOD_NTRIP);   // NTRIP: depends on ETH (must be after ETH)
+#endif
 
     // Initialise control system (PID controller with default gains).
     // NOTE: HAL-level init (imu, steer angle, actuator) was already done
@@ -601,16 +638,20 @@ void setup() {
     // (hal_net_init was called there, ETH link should be established)
 
     // -----------------------------------------------------------------
-    // SD-Card Data Logger
+    // Maintenance Task (TASK-029)
     // -----------------------------------------------------------------
-    // The logger is controlled by a hardware switch on GPIO 47.
-    // When the switch is ON (closed to GND), navigation/steering data
-    // is recorded to CSV files on the SD card at 10 Hz.
-    // The logger runs as a low-priority FreeRTOS task that periodically
-    // drains a ring buffer to the SD card (every 2 seconds).
+    // The maintTask consolidates all blocking operations into one
+    // low-priority task on Core 0:
+    //   - SD card logging (PSRAM ring buffer → CSV, every 2 s)
+    //   - NTRIP connect/reconnect (state machine, every 1 s)
+    //   - ETH link monitoring (on change)
+    //
+    // Uses a PSRAM-backed ring buffer (~1 MB = ~53 min at 10 Hz)
+    // so the control loop's sdLoggerRecord() call is ~1 µs with
+    // no FSPI interaction.
     // -----------------------------------------------------------------
     if (feat::control()) {
-        sdLoggerInit();
+        sdLoggerMaintInit();
     }
 
     // Report initial hardware errors

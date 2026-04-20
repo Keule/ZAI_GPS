@@ -77,13 +77,9 @@
 // ---------------------------------------------------------------------------
 // GNSS UART bring-up matrix (TASK-019A)
 //
-// Board constraints (ESP32-S3R8):
-//   - GPIO 26..37: reserved by Octal PSRAM (must not be used)
-//   - GPIO 38..42: output-only (must not be used as UART RX)
-//
-// Selected assignment:
-//   - UART1 (GNSS/RTCM primary): TX=48, RX=45
-//   - UART2 (GNSS/Console mirror): TX=2, RX=1
+// Selected assignment (ESP32 classic, no PSRAM constraints):
+//   - UART1 (GNSS/RTCM primary): TX=2, RX=4
+//   - UART2 (GNSS/Console mirror): TX=33, RX=35
 // ---------------------------------------------------------------------------
 #define GNSS_UART1_TX   2
 #define GNSS_UART1_RX   4
@@ -99,9 +95,7 @@ inline constexpr int8_t GNSS_MIRROR_UART2_TX_PIN = GNSS_UART2_TX;
 // ---------------------------------------------------------------------------
 // Logging switch (active LOW, internal pull-up)
 //
-// GPIO 46 is an ESP32-S3 strapping pin, but works for this active-LOW input:
-// floating/LOW is safe for serial download mode and normal boot ignores it.
-// Connect a toggle switch between GPIO 46 and GND.
+// Connect a toggle switch between LOG_SWITCH_PIN and GND.
 //   Switch OFF (open)  -> pin pulled HIGH -> logging disabled
 //   Switch ON (closed) -> pin pulled LOW  -> logging enabled
 // ---------------------------------------------------------------------------
@@ -136,5 +130,49 @@ inline constexpr int8_t GNSS_MIRROR_UART2_TX_PIN = GNSS_UART2_TX;
 #define CS_STEER_ANG   -1
 #define CS_ACT         -1
 
+// ---------------------------------------------------------------------------
+// Feature Pin Groups — TASK-027
+// ESP32 Classic board — many sensor pins are not populated (-1).
+// Used by module system for pin-claim arbitration.
+//
+// FirmwareFeatureId numeric mapping (matches FirmwareFeatureId enum):
+//   0 = MOD_IMU, 1 = MOD_ADS, 2 = MOD_ACT, 3 = MOD_ETH,
+//   4 = MOD_GNSS, 5 = MOD_NTRIP, 6 = MOD_SAFETY, 7 = MOD_LOGSW
+// ---------------------------------------------------------------------------
 
+static constexpr int8_t FEAT_PINS_IMU[]   = { -1 };  // not populated on this board
+static constexpr uint8_t FEAT_PINS_IMU_COUNT = 0;
 
+static constexpr int8_t FEAT_PINS_ADS[]   = { -1 };  // not populated on this board
+static constexpr uint8_t FEAT_PINS_ADS_COUNT = 0;
+
+static constexpr int8_t FEAT_PINS_ACT[]   = { -1 };  // not populated on this board
+static constexpr uint8_t FEAT_PINS_ACT_COUNT = 0;
+
+// ESP32 Classic uses RMII Ethernet (not SPI), only MDC/MDIO pins
+static constexpr int8_t FEAT_PINS_ETH[]   = { ETH_MDC_PIN, ETH_MDIO_PIN, -1 };
+static constexpr uint8_t FEAT_PINS_ETH_COUNT = 2;
+
+static constexpr int8_t FEAT_PINS_GNSS[]  = { GNSS_UART1_TX, GNSS_UART1_RX, GNSS_UART2_TX, GNSS_UART2_RX, -1 };
+static constexpr uint8_t FEAT_PINS_GNSS_COUNT = 4;
+
+static constexpr int8_t FEAT_PINS_NTRIP[] = { -1 };
+static constexpr uint8_t FEAT_PINS_NTRIP_COUNT = 0;
+
+static constexpr int8_t FEAT_PINS_SAFETY[] = { SAFETY_IN, -1 };
+static constexpr uint8_t FEAT_PINS_SAFETY_COUNT = 1;
+
+// LOG_SWITCH_PIN = 5 on this board
+static constexpr int8_t FEAT_PINS_LOGSW[] = { LOG_SWITCH_PIN, -1 };
+static constexpr uint8_t FEAT_PINS_LOGSW_COUNT = 1;
+
+// ---------------------------------------------------------------------------
+// Feature Dependencies — TASK-027
+// Each feature lists the module IDs it depends on (0 terminated).
+// ---------------------------------------------------------------------------
+
+// NTRIP depends on ETH being active (3 = MOD_ETH)
+static constexpr uint8_t FEAT_DEPS_NTRIP[] = { 3, 0 };
+
+// ACT depends on IMU and ADS (0 = MOD_IMU, 1 = MOD_ADS)
+static constexpr uint8_t FEAT_DEPS_ACT[] = { 0, 1, 0 };

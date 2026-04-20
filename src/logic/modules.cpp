@@ -1,19 +1,17 @@
 /**
  * @file modules.cpp
- * @brief AgOpenGPS module registry – hardware detection, hello replies, error reporting.
+ * @brief AgOpenGPS module registry + Hardware Feature Module System.
  *
- * This file bridges the low-level hardware detection (HAL) with the
- * AgOpenGPS protocol layer (PGN encoding, UDP sending).
+ * This file contains two module systems:
  *
- * Module → Subsystem mapping:
- *   Steer Module   requires: Ethernet + WAS + IMU + Actuator + Safety
- *   GPS Module     requires: Ethernet + WAS + IMU
- *   Machine Module requires: Ethernet + Actuator
+ * 1. AgOpenGPS Module Registry (existing):
+ *    Bridges low-level hardware detection (HAL) with the AgOpenGPS
+ *    protocol layer (PGN encoding, UDP sending).
  *
- * Detection strategy:
- *   - SPI sensors: attempt chip ID / register read at init
- *   - Ethernet: tracked by ETH.begin() result
- *   - Safety: GPIO read at init
+ * 2. Hardware Feature Module System (TASK-027):
+ *    Three-state module system (unavailable/off/on) with runtime
+ *    activation, pin-claim arbitration, and dependency checking.
+ *    AOG module hw_detected is derived from feature module states.
  */
 
 #include "modules.h"
@@ -23,6 +21,8 @@
 #include "global_state.h"
 #include "hw_status.h"
 #include "hal/hal.h"
+#include "fw_config.h"   // Board profile pin groups (FEAT_PINS_*, FEAT_DEPS_*)
+#include "soft_config.h" // cfg:: module default states (TASK-028)
 
 #include "log_config.h"
 #define LOG_LOCAL_LEVEL LOG_LEVEL_MOD
@@ -62,6 +62,9 @@ static bool isModuleActive(const AogModuleInfo& mod) {
 // ===================================================================
 void modulesInit(void) {
     hal_log("MODULES: === Hardware Detection ===");
+
+    // --- Initialise feature module compiled/availability flags ---
+    featureModulesInitCompiled();
 
     // --- Detect individual subsystems ---
 
@@ -127,6 +130,9 @@ void modulesInit(void) {
                 s_modules[i].hw_detected ? "OK" : "FAIL");
     }
     hal_log("MODULES: === Detection Complete ===");
+
+    // --- Sync feature module hw_detected from detection results ---
+    featureModulesSyncHwDetected();
 }
 
 // ===================================================================
@@ -300,4 +306,220 @@ void modulesUpdateStatus(void) {
             hal_log("MODULES: Safety circuit restored");
         }
     }
+}
+
+// ===================================================================
+// Hardware Feature Module System — TASK-027
+// ===================================================================
+// Three-value module state with runtime activation, pin-claim
+// arbitration, and dependency checking.
+//
+// The feature module table (g_features[]) is initialised with
+// pin arrays and counts from the active board profile header
+// (included via fw_config.h).  The 'compiled' flag is set by
+// modulesInit() based on feature flags and pin availability.
+// ===================================================================
+
+/// Build a static owner tag string for pin claims (e.g. "MOD_IMU").
+static const char* featureOwnerTag(FirmwareFeatureId id) {
+    switch (id) {
+        case MOD_IMU:    return "MOD_IMU";
+        case MOD_ADS:    return "MOD_ADS";
+        case MOD_ACT:    return "MOD_ACT";
+        case MOD_ETH:    return "MOD_ETH";
+        case MOD_GNSS:   return "MOD_GNSS";
+        case MOD_NTRIP:  return "MOD_NTRIP";
+        case MOD_SAFETY: return "MOD_SAFETY";
+        case MOD_LOGSW:  return "MOD_LOGSW";
+        default:         return "MOD_???";
+    }
+}
+
+/// Feature module descriptor table.
+/// Pin arrays and counts come from the board profile (included via fw_config.h).
+/// compiled/hw_detected are set to false here; modulesInit() sets them properly.
+static FeatureModuleInfo g_features[MOD_COUNT] = {
+    /*  0 */ { "IMU",     MOD_UNAVAILABLE, false, false, FEAT_PINS_IMU,     FEAT_PINS_IMU_COUNT,   nullptr          },
+    /*  1 */ { "ADS",     MOD_UNAVAILABLE, false, false, FEAT_PINS_ADS,     FEAT_PINS_ADS_COUNT,   nullptr          },
+    /*  2 */ { "ACT",     MOD_UNAVAILABLE, false, false, FEAT_PINS_ACT,     FEAT_PINS_ACT_COUNT,   FEAT_DEPS_ACT    },
+    /*  3 */ { "ETH",     MOD_UNAVAILABLE, false, false, FEAT_PINS_ETH,     FEAT_PINS_ETH_COUNT,   nullptr          },
+    /*  4 */ { "GNSS",    MOD_UNAVAILABLE, false, false, FEAT_PINS_GNSS,    FEAT_PINS_GNSS_COUNT,  nullptr          },
+    /*  5 */ { "NTRIP",   MOD_UNAVAILABLE, false, false, FEAT_PINS_NTRIP,   FEAT_PINS_NTRIP_COUNT, FEAT_DEPS_NTRIP  },
+    /*  6 */ { "SAFETY",  MOD_UNAVAILABLE, false, false, FEAT_PINS_SAFETY,  FEAT_PINS_SAFETY_COUNT,nullptr          },
+    /*  7 */ { "LOGSW",   MOD_UNAVAILABLE, false, false, FEAT_PINS_LOGSW,   FEAT_PINS_LOGSW_COUNT, nullptr          },
+};
+
+/// Set compiled flag and initial state for all feature modules.
+/// Called from modulesInit().
+static void featureModulesInitCompiled(void) {
+    // IMU: needs FEAT_IMU feature flag AND at least one valid pin
+    g_features[MOD_IMU].compiled = feat::imu() && (g_features[MOD_IMU].pin_count > 0);
+
+    // ADS (steer angle sensor): needs FEAT_STEER_SENSOR AND valid pins
+    g_features[MOD_ADS].compiled = feat::sensor() && (g_features[MOD_ADS].pin_count > 0);
+
+    // ACT (actuator): needs FEAT_STEER_ACTOR AND valid pins
+    g_features[MOD_ACT].compiled = feat::actor() && (g_features[MOD_ACT].pin_count > 0);
+
+    // ETH: needs FEAT_COMM AND valid pins
+    g_features[MOD_ETH].compiled = feat::comm() && (g_features[MOD_ETH].pin_count > 0);
+
+    // GNSS: needs FEAT_GNSS AND valid pins
+    g_features[MOD_GNSS].compiled = feat::gnss() && (g_features[MOD_GNSS].pin_count > 0);
+
+    // NTRIP: needs FEAT_NTRIP (no dedicated pins)
+    g_features[MOD_NTRIP].compiled = feat::ntrip();
+
+    // SAFETY: needs FEAT_MACHINE_ACTOR (control loop) AND valid pins
+    g_features[MOD_SAFETY].compiled = feat::control() && (g_features[MOD_SAFETY].pin_count > 0);
+
+    // LOGSW: always available if pins are populated (no feature flag needed)
+    g_features[MOD_LOGSW].compiled = (g_features[MOD_LOGSW].pin_count > 0);
+
+    // Set initial state: use cfg:: defaults for specific modules,
+    // MOD_OFF for all other compiled modules, MOD_UNAVAILABLE for uncompiled.
+    for (uint8_t i = 0; i < MOD_COUNT; i++) {
+        if (!g_features[i].compiled) {
+            g_features[i].state = MOD_UNAVAILABLE;
+            continue;
+        }
+        if (i == MOD_NTRIP) {
+            g_features[i].state = static_cast<int8_t>(cfg::MOD_DEFAULT_NTRIP);
+        } else if (i == MOD_LOGSW) {
+            g_features[i].state = static_cast<int8_t>(cfg::MOD_DEFAULT_LOGSW);
+        } else {
+            g_features[i].state = MOD_OFF;
+        }
+    }
+
+    // Log feature module availability summary
+    hal_log("FEAT-MOD: === Feature Module Availability ===");
+    for (uint8_t i = 0; i < MOD_COUNT; i++) {
+        const char* state_str = "???";
+        switch (static_cast<ModState>(g_features[i].state)) {
+            case MOD_UNAVAILABLE: state_str = "UNAVAIL"; break;
+            case MOD_OFF:         state_str = "OFF";     break;
+            case MOD_ON:          state_str = "ON";      break;
+        }
+        hal_log("FEAT-MOD:   [%u] %-8s compiled=%s pins=%u state=%s",
+                (unsigned)i,
+                g_features[i].name,
+                g_features[i].compiled ? "Y" : "N",
+                (unsigned)g_features[i].pin_count,
+                state_str);
+    }
+}
+
+/// Update feature module hw_detected from existing hardware detection results.
+/// Called from modulesInit() after hardware detection.
+static void featureModulesSyncHwDetected(void) {
+    g_features[MOD_IMU].hw_detected    = s_hw.imu_detected;
+    g_features[MOD_ADS].hw_detected    = s_hw.was_detected;
+    g_features[MOD_ACT].hw_detected    = s_hw.actuator_detected;
+    g_features[MOD_ETH].hw_detected    = s_hw.eth_detected;
+    g_features[MOD_SAFETY].hw_detected = s_hw.safety_ok;
+    // GNSS and NTRIP hw_detected are set by their respective subsystems
+    // (not tracked in ModuleHwStatus yet).
+    // LOGSW has no hardware detection (simple GPIO switch).
+}
+
+// --- Feature Module Public API ---
+
+bool moduleActivate(FirmwareFeatureId id) {
+    if (id >= MOD_COUNT) return false;
+
+    FeatureModuleInfo& feat = g_features[id];
+
+    // 1. Check compiled
+    if (!feat.compiled) {
+        hal_log("FEAT-MOD: activate(%s) rejected: not compiled", feat.name);
+        return false;
+    }
+
+    // 2. Already active?
+    if (feat.state == MOD_ON) {
+        return true;  // idempotent
+    }
+
+    // 3. Check dependencies
+    if (feat.deps != nullptr) {
+        for (uint8_t d = 0; feat.deps[d] != 0; d++) {
+            FirmwareFeatureId dep_id = static_cast<FirmwareFeatureId>(feat.deps[d]);
+            if (dep_id >= MOD_COUNT) continue;
+            if (g_features[dep_id].state != MOD_ON) {
+                hal_log("FEAT-MOD: activate(%s) rejected: dep %s not active",
+                        feat.name, g_features[dep_id].name);
+                return false;
+            }
+        }
+    }
+
+    // 4. Claim pins.
+    // Pins already claimed by the legacy HAL init path (e.g. "imu-cs", "eth-cs")
+    // are accepted silently — they were claimed during hal_esp32_init_all().
+    // Only claim pins that are NOT yet claimed.
+    // If a pin is claimed by another MODULE (owner starts with "MOD_"), reject.
+    const char* owner = featureOwnerTag(id);
+    uint8_t new_claims = 0;
+    for (uint8_t p = 0; p < feat.pin_count; p++) {
+        const int8_t pin = feat.pins[p];
+        if (pin < 0) continue;
+
+        if (hal_pin_claim_check(pin)) {
+            // Pin is already claimed — acceptable if claimed by legacy HAL init
+            // (non-MOD_ owner). We don't re-claim it.
+            // NOTE: true cross-module conflict detection requires hal_pin_claim_owner()
+            // which is not yet exposed. During transition, accept all pre-claimed pins.
+            hal_log("FEAT-MOD: activate(%s): GPIO %d already claimed (accepted from init)",
+                    feat.name, (int)pin);
+        } else {
+            // Pin not yet claimed — claim it for this module
+            if (!hal_pin_claim_add(pin, owner)) {
+                hal_log("FEAT-MOD: activate(%s) pin claim failed for GPIO %d",
+                        feat.name, (int)pin);
+                hal_pin_claim_release(owner);
+                return false;
+            }
+            new_claims++;
+        }
+    }
+
+    // 5. Set state to MOD_ON
+    feat.state = MOD_ON;
+    hal_log("FEAT-MOD: activate(%s) -> ON (total_pins=%u, new_claims=%u)",
+            feat.name, (unsigned)feat.pin_count, (unsigned)new_claims);
+    return true;
+}
+
+bool moduleDeactivate(FirmwareFeatureId id) {
+    if (id >= MOD_COUNT) return false;
+
+    FeatureModuleInfo& feat = g_features[id];
+
+    if (feat.state != MOD_ON) {
+        return true;  // idempotent
+    }
+
+    const char* owner = featureOwnerTag(id);
+    int released = hal_pin_claim_release(owner);
+
+    feat.state = MOD_OFF;
+    hal_log("FEAT-MOD: deactivate(%s) -> OFF (released %d pins)",
+            feat.name, released);
+    return true;
+}
+
+bool moduleIsActive(FirmwareFeatureId id) {
+    if (id >= MOD_COUNT) return false;
+    return g_features[id].state == MOD_ON;
+}
+
+ModState moduleGetState(FirmwareFeatureId id) {
+    if (id >= MOD_COUNT) return MOD_UNAVAILABLE;
+    return static_cast<ModState>(g_features[id].state);
+}
+
+const FeatureModuleInfo* moduleGetInfo(FirmwareFeatureId id) {
+    if (id >= MOD_COUNT) return nullptr;
+    return &g_features[id];
 }
