@@ -596,7 +596,7 @@ tasks:
     title: SD-Funktionalität als Modul aktivierbar machen und bei fehlender Karte beim Boot vollständig deaktivieren
     file: backlog/tasks/TASK-036-sd-modul-boot-detect-und-hartes-gating.md
     epic_id: EPIC-003
-    status: open
+    status: done
     priority: high
     delivery_mode: firmware_only
     task_category: platform_reuse

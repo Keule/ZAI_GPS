@@ -2,7 +2,7 @@
 
 - **ID**: TASK-036
 - **Titel**: SD-Funktionalität als Modul aktivierbar machen und bei fehlender Karte beim Boot vollständig deaktivieren
-- **Status**: open
+- **Status**: done
 - **Priorität**: high
 - **Komponenten**: `src/logic/modules.cpp`, `src/logic/modules.h`, `src/main.cpp`, `src/hal/hal.h`, `src/hal_esp32/hal_impl.cpp`, `src/hal_esp32/sd_logger_esp32.cpp`, `src/hal_esp32/sd_ota_esp32.cpp`, `src/logic/runtime_config.cpp`, `include/board_profile/*`
 - **Dependencies**: TASK-027, TASK-028
