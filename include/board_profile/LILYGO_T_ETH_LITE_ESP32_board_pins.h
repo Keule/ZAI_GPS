@@ -59,6 +59,7 @@
 #define SD_SPI_MISO    SD_MISO_PIN      // SPI MISO for SD card
 #define SD_SPI_MOSI    SD_MOSI_PIN      // SPI MOSI for SD card
 #define SD_CS          SD_CS_PIN        // SD card slot
+#define SD_SPI_BUS     FSPI             // classic ESP32 sensor/SD shared bus
  
 // #define SPI_FREQUENCY  27000000
 #define SPI_FREQUENCY  40000000
@@ -120,6 +121,7 @@ inline constexpr int8_t GNSS_MIRROR_UART2_TX_PIN = GNSS_UART2_TX;
 #define SENS_SPI_SCK   SD_SPI_SCK
 #define SENS_SPI_MISO  SD_SPI_MISO
 #define SENS_SPI_MOSI  SD_SPI_MOSI
+#define SENS_SPI_BUS   FSPI
 
 // Optional sensor/actuator control pins for feature-complete shared builds.
 // Set to -1 on this board profile if a line is not populated.

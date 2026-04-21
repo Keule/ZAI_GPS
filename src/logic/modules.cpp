@@ -37,6 +37,7 @@
 // ===================================================================
 static void featureModulesInitCompiled(void);
 static void featureModulesSyncHwDetected(void);
+static FeatureModuleInfo g_features[MOD_COUNT];
 
 // ===================================================================
 // Internal state
@@ -72,20 +73,26 @@ void modulesInit(void) {
     // --- Initialise feature module compiled/availability flags ---
     featureModulesInitCompiled();
 
+    const bool mod_eth_enabled = g_features[MOD_ETH].compiled;
+    const bool mod_ads_enabled = g_features[MOD_ADS].compiled;
+    const bool mod_imu_enabled = g_features[MOD_IMU].compiled;
+    const bool mod_act_enabled = g_features[MOD_ACT].compiled;
+    const bool mod_safety_enabled = g_features[MOD_SAFETY].compiled;
+
     // --- Detect individual subsystems ---
 
     // Ethernet
-    s_hw.eth_detected = feat::comm() ? hal_net_detected() : true;
+    s_hw.eth_detected = mod_eth_enabled ? hal_net_detected() : true;
     hal_log("MODULES: Ethernet (W5500)    : %s", s_hw.eth_detected ? "OK" : "FAIL");
 
     // Steer Angle Sensor (ADS1118) – detect BEFORE IMU!
     // The ADS1118 holds DOUT LOW while converting, which would
     // cause the IMU detect to read 0x00 (false negative).
     // Detecting ADS1118 first ensures DOUT is HIGH after detection.
-    s_hw.was_detected = feat::sensor() ? hal_steer_angle_detect() : true;
+    s_hw.was_detected = mod_ads_enabled ? hal_steer_angle_detect() : true;
 
     // IMU (BNO085)
-    if (feat::imu()) {
+    if (mod_imu_enabled) {
         HalImuDetectStats imu_ds = {};
         s_hw.imu_detected = hal_imu_detect_boot_qualified(&imu_ds);
         hal_log("MODULES: IMU boot detect      : %s (ok=%u/%u ff=%u zero=%u last=0x%02X)",
@@ -100,10 +107,10 @@ void modulesInit(void) {
     }
 
     // Actuator
-    s_hw.actuator_detected = feat::actor() ? hal_actuator_detect() : true;
+    s_hw.actuator_detected = mod_act_enabled ? hal_actuator_detect() : true;
 
     // Safety circuit
-    s_hw.safety_ok = feat::control() ? hal_safety_ok() : true;
+    s_hw.safety_ok = mod_safety_enabled ? hal_safety_ok() : true;
     hal_log("MODULES: Safety Circuit       : %s", s_hw.safety_ok ? "OK" : "KICK");
 
     // --- Derive module enablement + hw_detected from feature profiles ---

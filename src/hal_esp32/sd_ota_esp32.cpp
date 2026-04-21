@@ -136,7 +136,7 @@ bool isFirmwareUpdateAvailableOnSD(void) {
     hal_delay_ms(10);  // brief settle time
 
     // 3. Create a dedicated SPI instance for the SD card on FSPI (= SPI2_HOST)
-    SPIClass sdSPI(FSPI);
+    SPIClass sdSPI(SD_SPI_BUS);
     sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
 
     // 4. Mount SD card
@@ -255,7 +255,7 @@ bool updateFirmwareFromSD(void) {
     hal_sensor_spi_deinit();
     hal_delay_ms(10);
 
-    SPIClass sdSPI(FSPI);
+    SPIClass sdSPI(SD_SPI_BUS);
     sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
 
     if (!SD.begin(SD_CS, sdSPI, 4000000, "/sd", 5)) {

@@ -409,7 +409,7 @@ static void maintTaskFunc(void* param) {
             sdBusClaim();
 
             // Init SD card on shared SPI2_HOST
-            SPIClass sdSPI(FSPI);
+            SPIClass sdSPI(SD_SPI_BUS);
             sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
 
             if (SD.begin(SD_CS, sdSPI, 4000000, "/sd", 5)) {
@@ -447,7 +447,7 @@ static void maintTaskFunc(void* param) {
             sdBusClaim();
 
             // Re-init SD (we close it after each flush)
-            SPIClass sdSPI(FSPI);
+            SPIClass sdSPI(SD_SPI_BUS);
             sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
 
             if (SD.begin(SD_CS, sdSPI, 4000000, "/sd", 5)) {

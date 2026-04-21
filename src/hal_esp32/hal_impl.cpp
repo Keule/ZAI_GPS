@@ -99,7 +99,7 @@ static bool s_eth_has_ip     = false;   // true if ARDUINO_EVENT_ETH_GOT_IP
 // During OTA updates, FSPI is re-initialised with SD pins via
 // hal_sensor_spi_deinit() / hal_sensor_spi_reinit().
 // ===================================================================
-static SPIClass sensorSPI(FSPI);
+static SPIClass sensorSPI(SENS_SPI_BUS);
 
 // ===================================================================
 // Shared sensor SPI transaction layer (bus lock + per-device settings)
@@ -1830,18 +1830,18 @@ static void hal_esp32_common_boot_init(void) {
 
 }
 
-static bool hal_esp32_requires_sensor_spi(void) {
-    return feat::imu() || feat::sensor() || feat::actor();
-}
-
 static void hal_esp32_init_sensor_bus_if_needed(void) {
-    if (hal_esp32_requires_sensor_spi()) {
+    const bool imu_available = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
+    const bool ads_available = feat::sensor() && (FEAT_PINS_ADS_COUNT > 0);
+    const bool act_available = feat::actor() && (FEAT_PINS_ACT_COUNT > 0);
+
+    if (imu_available || ads_available || act_available) {
         #if FEAT_CAP_SENSOR_SPI2
             hal_sensor_spi_init();
             hal_log("ESP32: sensor SPI init enabled (imu=%s was=%s actor=%s)",
-                    feat::imu() ? "Y" : "N",
-                    feat::sensor() ? "Y" : "N",
-                    feat::actor() ? "Y" : "N");
+                    imu_available ? "Y" : "N",
+                    ads_available ? "Y" : "N",
+                    act_available ? "Y" : "N");
             return;
         #else
             hal_log("ESP32: sensor SPI capability disabled at compile time (FEAT_CAP_SENSOR_SPI2=0)");
@@ -1965,23 +1965,27 @@ void hal_esp32_init_all(void) {
     hal_esp32_common_boot_init();
     hal_esp32_init_sensor_bus_if_needed();
 
+    const bool imu_available = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
+    const bool ads_available = feat::sensor() && (FEAT_PINS_ADS_COUNT > 0);
+    const bool act_available = feat::actor() && (FEAT_PINS_ACT_COUNT > 0);
+
     // Capability-driven boot init (only initialise subsystems required by active modules).
-    if (feat::imu()) {
+    if (imu_available) {
         hal_imu_begin();
     } else {
-        hal_log("ESP32: IMU init skipped (module capability inactive)");
+        hal_log("ESP32: IMU init skipped (module unavailable or capability inactive)");
     }
 
-    if (feat::sensor()) {
+    if (ads_available) {
         hal_steer_angle_begin();
     } else {
-        hal_log("ESP32: steer-angle init skipped (module capability inactive)");
+        hal_log("ESP32: steer-angle init skipped (module unavailable or capability inactive)");
     }
 
-    if (feat::actor()) {
+    if (act_available) {
         hal_actuator_begin();
     } else {
-        hal_log("ESP32: actuator init skipped (module capability inactive)");
+        hal_log("ESP32: actuator init skipped (module unavailable or capability inactive)");
     }
 
     // Network (W5500 via ETH driver)
