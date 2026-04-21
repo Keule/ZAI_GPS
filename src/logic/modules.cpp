@@ -78,6 +78,7 @@ void modulesInit(void) {
     const bool mod_imu_enabled = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
     const bool mod_act_enabled = feat::actor() && (FEAT_PINS_ACT_COUNT > 0);
     const bool mod_safety_enabled = feat::control() && (FEAT_PINS_SAFETY_COUNT > 0);
+    const bool mod_sd_enabled = (FEAT_PINS_SD_COUNT > 0);
 
     // --- Detect individual subsystems ---
 
@@ -112,6 +113,10 @@ void modulesInit(void) {
     // Safety circuit
     s_hw.safety_ok = mod_safety_enabled ? hal_safety_ok() : true;
     hal_log("MODULES: Safety Circuit       : %s", s_hw.safety_ok ? "OK" : "KICK");
+
+    // SD card presence (boot-detect pin with fallback probe)
+    s_hw.sd_present = mod_sd_enabled ? hal_sd_card_present() : false;
+    hal_log("MODULES: SD card presence     : %s", s_hw.sd_present ? "PRESENT" : "MISSING");
 
     // --- Derive module enablement + hw_detected from feature profiles ---
     s_modules[AOG_MOD_STEER].enabled   = feat::control();
@@ -344,6 +349,7 @@ static const char* featureOwnerTag(FirmwareFeatureId id) {
         case MOD_NTRIP:  return "MOD_NTRIP";
         case MOD_SAFETY: return "MOD_SAFETY";
         case MOD_LOGSW:  return "MOD_LOGSW";
+        case MOD_SD:     return "MOD_SD";
         default:         return "MOD_???";
     }
 }
@@ -360,6 +366,7 @@ static FeatureModuleInfo g_features[MOD_COUNT] = {
     /*  5 */ { "NTRIP",   MOD_UNAVAILABLE, false, false, FEAT_PINS_NTRIP,   FEAT_PINS_NTRIP_COUNT, FEAT_DEPS_NTRIP  },
     /*  6 */ { "SAFETY",  MOD_UNAVAILABLE, false, false, FEAT_PINS_SAFETY,  FEAT_PINS_SAFETY_COUNT,nullptr          },
     /*  7 */ { "LOGSW",   MOD_UNAVAILABLE, false, false, FEAT_PINS_LOGSW,   FEAT_PINS_LOGSW_COUNT, nullptr          },
+    /*  8 */ { "SD",      MOD_UNAVAILABLE, false, false, FEAT_PINS_SD,      FEAT_PINS_SD_COUNT,    nullptr          },
 };
 
 /// Set compiled flag and initial state for all feature modules.
@@ -389,6 +396,9 @@ static void featureModulesInitCompiled(void) {
     // LOGSW: always available if pins are populated (no feature flag needed)
     g_features[MOD_LOGSW].compiled = (g_features[MOD_LOGSW].pin_count > 0);
 
+    // SD: available if board exposes SD-related pins
+    g_features[MOD_SD].compiled = (g_features[MOD_SD].pin_count > 0);
+
     // Set initial state: use cfg:: defaults for specific modules,
     // MOD_OFF for all other compiled modules, MOD_UNAVAILABLE for uncompiled.
     for (uint8_t i = 0; i < MOD_COUNT; i++) {
@@ -400,6 +410,8 @@ static void featureModulesInitCompiled(void) {
             g_features[i].state = static_cast<int8_t>(cfg::MOD_DEFAULT_NTRIP);
         } else if (i == MOD_LOGSW) {
             g_features[i].state = static_cast<int8_t>(cfg::MOD_DEFAULT_LOGSW);
+        } else if (i == MOD_SD) {
+            g_features[i].state = static_cast<int8_t>(cfg::MOD_DEFAULT_SD);
         } else {
             g_features[i].state = MOD_OFF;
         }
@@ -431,6 +443,7 @@ static void featureModulesSyncHwDetected(void) {
     g_features[MOD_ACT].hw_detected    = s_hw.actuator_detected;
     g_features[MOD_ETH].hw_detected    = s_hw.eth_detected;
     g_features[MOD_SAFETY].hw_detected = s_hw.safety_ok;
+    g_features[MOD_SD].hw_detected     = s_hw.sd_present;
     // GNSS and NTRIP hw_detected are set by their respective subsystems
     // (not tracked in ModuleHwStatus yet).
     // LOGSW has no hardware detection (simple GPIO switch).

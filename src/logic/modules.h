@@ -45,6 +45,7 @@ struct ModuleHwStatus {
     bool was_detected;       ///< Wheel Angle Sensor (steer angle) detected
     bool actuator_detected;  ///< Actuator detected via SPI
     bool safety_ok;          ///< Safety circuit reads OK
+    bool sd_present;         ///< SD card presence at boot (detect pin / fallback probe)
 };
 
 // ===================================================================
@@ -144,7 +145,8 @@ enum FirmwareFeatureId : uint8_t {
     MOD_NTRIP  = 5,  ///< NTRIP client
     MOD_SAFETY = 6,  ///< Safety circuit input
     MOD_LOGSW  = 7,  ///< Logging switch input
-    MOD_COUNT  = 8   ///< Total number of feature modules
+    MOD_SD     = 8,  ///< SD card subsystem (logger, OTA, runtime config)
+    MOD_COUNT  = 9   ///< Total number of feature modules
 };
 
 /// Feature module descriptor.

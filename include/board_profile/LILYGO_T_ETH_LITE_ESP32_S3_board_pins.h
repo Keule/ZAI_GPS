@@ -79,6 +79,8 @@
 #define SD_SPI_MOSI    6      // SPI MOSI for SD card
 #define SD_CS          42     // SD card slot
 #define SD_SPI_BUS     FSPI   // shared with sensor bus, switched at runtime
+#define SD_DETECT_PIN  39     // SD card detect input (card present = LOW)
+#define SD_DETECT_ACTIVE_LOW 1
 
 // ---------------------------------------------------------------------------
 // Safety input (active LOW)
@@ -143,7 +145,7 @@ inline constexpr int8_t GNSS_MIRROR_UART2_TX_PIN = GNSS_UART2_TX;
 //
 // FirmwareFeatureId numeric mapping (matches FirmwareFeatureId enum):
 //   0 = MOD_IMU, 1 = MOD_ADS, 2 = MOD_ACT, 3 = MOD_ETH,
-//   4 = MOD_GNSS, 5 = MOD_NTRIP, 6 = MOD_SAFETY, 7 = MOD_LOGSW
+//   4 = MOD_GNSS, 5 = MOD_NTRIP, 6 = MOD_SAFETY, 7 = MOD_LOGSW, 8 = MOD_SD
 // ---------------------------------------------------------------------------
 
 // IMU: INT=46, RST=41, WAKE=15, CS=40
@@ -177,6 +179,10 @@ static constexpr uint8_t FEAT_PINS_SAFETY_COUNT = 1;
 // Logging switch: GPIO 3
 static constexpr int8_t FEAT_PINS_LOGSW[] = { LOG_SWITCH_PIN, -1 };
 static constexpr uint8_t FEAT_PINS_LOGSW_COUNT = 1;
+
+// SD subsystem: CS + detect pin
+static constexpr int8_t FEAT_PINS_SD[] = { SD_CS, SD_DETECT_PIN, -1 };
+static constexpr uint8_t FEAT_PINS_SD_COUNT = 2;
 
 // ---------------------------------------------------------------------------
 // Feature Dependencies — TASK-027

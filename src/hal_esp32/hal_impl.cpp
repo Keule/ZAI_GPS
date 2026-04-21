@@ -42,6 +42,7 @@
 // ===================================================================
 #include <Arduino.h>
 #include <SPI.h>           // SPIClass for sensor bus (SENS_SPI_BUS)
+#include <SD.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <Preferences.h>    // NVS flash storage for calibration
@@ -988,6 +989,23 @@ bool hal_safety_ok(void) {
     return digitalRead(SAFETY_IN) == HIGH;
 }
 
+bool hal_sd_card_present(void) {
+#if defined(SD_DETECT_PIN) && (SD_DETECT_PIN >= 0)
+    const int raw = digitalRead(SD_DETECT_PIN);
+#if defined(SD_DETECT_ACTIVE_LOW) && (SD_DETECT_ACTIVE_LOW == 0)
+    const bool present = (raw == HIGH);
+#else
+    const bool present = (raw == LOW);
+#endif
+    hal_log("ESP32: SD detect pin GPIO %d raw=%d -> %s",
+            SD_DETECT_PIN, raw, present ? "PRESENT" : "MISSING");
+    return present;
+#else
+    hal_log("ESP32: SD detect pin unavailable (SD_DETECT_PIN < 0) -> assume PRESENT");
+    return true;
+#endif
+}
+
 // ===================================================================
 // SPI Sensors / Actuator - SPI Bus 2 (SENS_SPI_BUS / SPI2_HOST)
 // ===================================================================
@@ -1826,6 +1844,22 @@ static void hal_esp32_common_boot_init(void) {
     // Safety pin
     pinMode(SAFETY_IN, INPUT_PULLUP);
     hal_log("ESP32 safety pin set.");
+
+#if defined(SD_DETECT_PIN) && (SD_DETECT_PIN >= 0)
+#if defined(SD_DETECT_ACTIVE_LOW) && (SD_DETECT_ACTIVE_LOW == 0)
+    pinMode(SD_DETECT_PIN, INPUT);
+#else
+    pinMode(SD_DETECT_PIN, INPUT_PULLUP);
+#endif
+    hal_log("ESP32: SD detect pin configured (GPIO %d, active_%s)",
+            SD_DETECT_PIN,
+#if defined(SD_DETECT_ACTIVE_LOW) && (SD_DETECT_ACTIVE_LOW == 0)
+            "high"
+#else
+            "low"
+#endif
+    );
+#endif
 }
 
 static void hal_esp32_init_sensor_bus_if_needed(void) {
