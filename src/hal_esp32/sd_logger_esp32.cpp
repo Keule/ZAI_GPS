@@ -44,6 +44,7 @@
 #include "hal/hal.h"
 #include "fw_config.h"
 #include "logic/features.h"
+#include "logic/modules.h"
 #include "logic/sd_logger.h"
 #include "logic/global_state.h"
 
@@ -384,6 +385,15 @@ static void maintTaskFunc(void* param) {
         vTaskDelay(pdMS_TO_TICKS(1000));  // 1 s base interval
         loop_count++;
 
+        if (!moduleIsActive(MOD_SD)) {
+            if (s_logging_active || was_active) {
+                LOGW("MAINT", "MOD_SD inactive -> forcing logger idle");
+                s_logging_active = false;
+                was_active = false;
+            }
+            continue;
+        }
+
         // -----------------------------------------------------------------
         // 1. ETH link monitoring (every iteration = 1 s)
         // -----------------------------------------------------------------
@@ -497,6 +507,12 @@ static void maintTaskFunc(void* param) {
 // ===================================================================
 
 void sdLoggerInit(void) {
+    if (!moduleIsActive(MOD_SD)) {
+        LOGW("MAINT", "MOD_SD inactive -> skip legacy logger init");
+        s_logging_active = false;
+        return;
+    }
+
     // Legacy init — uses static 16 KB ring buffer, creates standalone loggerTask.
     // Configure logging switch GPIO
     pinMode(LOG_SWITCH_PIN, INPUT_PULLUP);
@@ -519,6 +535,12 @@ void sdLoggerInit(void) {
 }
 
 void sdLoggerMaintInit(void) {
+    if (!moduleIsActive(MOD_SD)) {
+        LOGW("MAINT", "MOD_SD inactive -> skip maintenance task init");
+        s_logging_active = false;
+        return;
+    }
+
     // TASK-029 init — PSRAM buffer + combined maintTask.
     // Configure logging switch GPIO
     pinMode(LOG_SWITCH_PIN, INPUT_PULLUP);

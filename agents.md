@@ -105,7 +105,10 @@ Vor jeder Planung:
 ### Muss leisten
 Für jeden neuen oder wesentlich geänderten Task:
 - `Origin` dokumentieren
+- bei Chat-Ursprung den **konkreten Chat-Link** (vollständige URL) in `Origin` oder `Diskussion` angeben
 - relevante Diskussionslinks dokumentieren
+- `base_branch` angeben (Standard: aktueller Arbeitsbranch, falls Mensch nichts anderes vorgibt)
+- einen expliziten Hinweis aufnehmen, dass vor Umsetzung mindestens `README.md` und `agents.md` gelesen werden müssen
 - `files_read`, `files_write`, `public_surface`, `merge_risk_files` angeben
 - `classification`, `exclusive_before`, `parallelizable_after` pflegen
 - relevante ADRs referenzieren

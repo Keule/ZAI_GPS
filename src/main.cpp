@@ -255,7 +255,9 @@ static void controlTaskFunc(void* param) {
         log_divider++;
         if (log_divider >= 20) {
             log_divider = 0;
-            sdLoggerRecord();
+            if (moduleIsActive(MOD_SD)) {
+                sdLoggerRecord();
+            }
         }
 
         if (MAIN_VERBOSE_TASK_DBG) {
@@ -528,38 +530,6 @@ void setup() {
         return;
     }
 
-    // -----------------------------------------------------------------
-    // SD-Card OTA Firmware Update
-    // -----------------------------------------------------------------
-    // Check if a firmware update file is present on the SD card.
-    // This must happen BEFORE creating FreeRTOS tasks because the
-    // update temporarily re-uses the sensor SPI bus (SPI2_HOST).
-    //
-    // If /firmware.bin (or /update.bin) is found on the SD card and
-    // the version is newer than the current firmware, the update is
-    // performed automatically.  On success the ESP32 reboots into the
-    // new firmware.  On any error the old firmware continues to run.
-    //
-    // To skip the update check, simply remove the firmware file from
-    // the SD card before booting.
-    // -----------------------------------------------------------------
-    {
-        if (isFirmwareUpdateAvailableOnSD()) {
-            hal_log("Main: firmware update detected on SD card – starting update");
-            updateFirmwareFromSD();
-            // If we reach here the update failed – continue with old firmware
-            hal_log("Main: OTA update FAILED, continuing with current firmware");
-        }
-    }
-
-    // -----------------------------------------------------------------
-    // Initialise soft config from compile-time defaults — TASK-028
-    // RuntimeConfig is the mutable RAM copy; cfg:: namespace holds
-    // the compile-time defaults defined in include/soft_config.h.
-    // -----------------------------------------------------------------
-    softConfigLoadDefaults(softConfigGet());
-    softConfigLoadOverrides(softConfigGet());  // TASK-033: reads /ntrip.cfg from SD
-
     // Initialise module system – detect hardware for all modules
     modulesInit();
 
@@ -579,9 +549,42 @@ void setup() {
     moduleActivate(MOD_GNSS);    // GNSS: no deps
     moduleActivate(MOD_SAFETY);  // SAFETY: no deps
     moduleActivate(MOD_ACT);     // ACT: depends on IMU + ADS (must be after those)
+    if (moduleGetInfo(MOD_SD) && moduleGetInfo(MOD_SD)->hw_detected) {
+        moduleActivate(MOD_SD);
+        hal_log("Main: SD module active (card detected at boot)");
+    } else {
+        moduleDeactivate(MOD_SD);
+        hal_log("Main: SD module disabled (no SD card detected at boot)");
+    }
 #if FEAT_ENABLED(FEAT_NTRIP)
     moduleActivate(MOD_NTRIP);   // NTRIP: depends on ETH (must be after ETH)
 #endif
+
+    // -----------------------------------------------------------------
+    // SD-Card OTA Firmware Update (hard-gated by MOD_SD)
+    // -----------------------------------------------------------------
+    if (moduleIsActive(MOD_SD)) {
+        if (isFirmwareUpdateAvailableOnSD()) {
+            hal_log("Main: firmware update detected on SD card – starting update");
+            updateFirmwareFromSD();
+            // If we reach here the update failed – continue with old firmware
+            hal_log("Main: OTA update FAILED, continuing with current firmware");
+        }
+    } else {
+        hal_log("Main: SD module inactive -> skip SD OTA check");
+    }
+
+    // -----------------------------------------------------------------
+    // Initialise soft config from compile-time defaults — TASK-028
+    // RuntimeConfig is the mutable RAM copy; cfg:: namespace holds
+    // the compile-time defaults defined in include/soft_config.h.
+    // -----------------------------------------------------------------
+    softConfigLoadDefaults(softConfigGet());
+    if (moduleIsActive(MOD_SD)) {
+        softConfigLoadOverrides(softConfigGet());  // TASK-033: reads /ntrip.cfg from SD
+    } else {
+        hal_log("Main: SD module inactive -> skip SD runtime config overrides");
+    }
 
     // Initialise control system (PID controller with default gains).
     // NOTE: HAL-level init (imu, steer angle, actuator) was already done
@@ -654,8 +657,10 @@ void setup() {
     // so the control loop's sdLoggerRecord() call is ~1 µs with
     // no SD_SPI_BUS interaction.
     // -----------------------------------------------------------------
-    if (feat::control()) {
+    if (feat::control() && moduleIsActive(MOD_SD)) {
         sdLoggerMaintInit();
+    } else if (feat::control()) {
+        hal_log("Main: SD module inactive -> SD maint logger not started");
     }
 
     // Report initial hardware errors

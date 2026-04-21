@@ -22,7 +22,7 @@
   3. Wenn keine Karte erkannt wird, soll die komplette SD-Funktionalität deaktiviert bleiben.
 
 - **Diskussion**:
-  - Direkt: aktueller Arbeitschat vom 2026-04-21
+  - Direkt: https://chatgpt.com/codex/cloud/tasks/task_e_69e7aadc724c8325bde97fdc35e7544d
 
 - **Kontext/Problem**:
   Das bestehende Feature-Modulsystem modelliert derzeit `IMU`, `ADS`, `ACT`, `ETH`, `GNSS`,
@@ -50,6 +50,13 @@
   - Keine PGN-Protokolländerungen.
   - Kein Umbau des Task-Modells (`controlTask/commTask/maintTask`).
   - Keine neue Benutzeroberfläche für Modulumschaltung.
+
+- **Pflichtlektüre vor Umsetzung**:
+  1. `README.md`
+  2. `agents.md`
+  3. `docs/adr/ADR-003-feature-module-system-and-pin-claims.md`
+  4. `docs/adr/subsystems/ADR-LOG-001-logging-buffering-and-sd-flush-policy.md`
+  5. dieser Task (`TASK-036`)
 
 - **files_read**:
   - `src/logic/modules.h`

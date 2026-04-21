@@ -42,6 +42,7 @@
 // ===================================================================
 #include <Arduino.h>
 #include <SPI.h>           // SPIClass for sensor bus (SENS_SPI_BUS)
+#include <SD.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <Preferences.h>    // NVS flash storage for calibration
@@ -988,6 +989,37 @@ bool hal_safety_ok(void) {
     return digitalRead(SAFETY_IN) == HIGH;
 }
 
+bool hal_sd_card_present(void) {
+    static bool s_probe_done = false;
+    static bool s_probe_present = false;
+    if (s_probe_done) {
+        return s_probe_present;
+    }
+
+    s_probe_done = true;
+
+    // One-shot boot probe:
+    // 1) release sensor SPI ownership, 2) try SD mount once, 3) always release SD SPI,
+    // 4) restore sensor SPI ownership.
+    hal_sensor_spi_deinit();
+    hal_delay_ms(10);
+
+    SPIClass sdSPI(SD_SPI_BUS);
+    sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
+
+    s_probe_present = SD.begin(SD_CS, sdSPI, 4000000, "/sd", 5);
+    if (s_probe_present) {
+        hal_log("ESP32: SD boot probe -> PRESENT");
+    } else {
+        hal_log("ESP32: SD boot probe -> MISSING/INIT FAILED");
+    }
+
+    SD.end();
+    sdSPI.end();
+    hal_sensor_spi_reinit();
+    return s_probe_present;
+}
+
 // ===================================================================
 // SPI Sensors / Actuator - SPI Bus 2 (SENS_SPI_BUS / SPI2_HOST)
 // ===================================================================
@@ -1826,6 +1858,7 @@ static void hal_esp32_common_boot_init(void) {
     // Safety pin
     pinMode(SAFETY_IN, INPUT_PULLUP);
     hal_log("ESP32 safety pin set.");
+
 }
 
 static void hal_esp32_init_sensor_bus_if_needed(void) {

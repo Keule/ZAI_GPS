@@ -5,7 +5,10 @@ Einheitliche Beschreibung einer umsetzbaren Arbeitseinheit.
 
 ## Minimalpflichtfelder
 - **Titel:**
+- **base_branch:** (Standard: aktueller Branch)
 - **Kontext/Problem:**
+- **Origin:** (bei Chat-basierten Anforderungen mit konkretem Chat-Link)
+- **Pflichtlektüre vor Umsetzung:** (`README.md`, `agents.md`, relevante ADRs, Task)
 - **Akzeptanzkriterien:**
 - **Scope (in):**
 - **Nicht-Scope (out):**
@@ -16,6 +19,13 @@ Einheitliche Beschreibung einer umsetzbaren Arbeitseinheit.
 ## Vorlage
 ```md
 # Task: <Titel>
+- base_branch: <branch-name>
+- Origin: <Quelle + Chat-Link>
+- Pflichtlektüre vor Umsetzung:
+  1. README.md
+  2. agents.md
+  3. relevante ADRs
+  4. dieser Task
 - Kontext/Problem:
 - Akzeptanzkriterien:
 - Scope (in):

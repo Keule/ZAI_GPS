@@ -45,5 +45,6 @@ inline constexpr bool         LOG_DEFAULT_ACTIVE   = false;
 // firmware compilation (feat::* flags) and pin population.
 inline constexpr int8_t      MOD_DEFAULT_NTRIP     = 1;     // on by default when compiled in
 inline constexpr int8_t      MOD_DEFAULT_LOGSW     = 0;     // off by default (switch controlled)
+inline constexpr int8_t      MOD_DEFAULT_SD        = 1;     // on by default when SD card is present at boot
 
 }  // namespace cfg

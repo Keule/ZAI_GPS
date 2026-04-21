@@ -53,6 +53,14 @@ void hal_mutex_unlock(void);
 bool hal_safety_ok(void);
 
 // ===================================================================
+// SD card detect
+// ===================================================================
+
+/// Read SD card presence at boot.
+/// Performs a one-shot SD init/mount probe and restores the SPI bus afterwards.
+bool hal_sd_card_present(void);
+
+// ===================================================================
 // SPI Sensors / Actuator
 // ===================================================================
 
