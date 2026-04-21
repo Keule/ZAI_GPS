@@ -1,3 +1,34 @@
+# KI-Planer: Review-Nacharbeiten TASK-026..030
+
+---
+Task ID: plan-review-031-035
+Agent: KI-Planer (Super Z, agents.md §4.1)
+Task: Planung und Task-Erstellung für Review-Nacharbeiten (Findings F1-F8)
+
+Work Log:
+- Kombinierter Review gelesen (`/home/z/my-project/download/review.md`)
+- agents.md §4.1 Pflichtlektüre durchgeführt (ADR-001, ADR-003, ADR-HAL-001, ADR-GNSS-001, ADR-LOG-001)
+- Alle betroffenen Quelldateien gelesen: hal_impl.cpp, ntrip.cpp, hw_status.cpp, modules.cpp, modules.h, soft_config.h, main.cpp, sd_logger_esp32.cpp, beide Board-Profile, platformio.ini, backlog/index.yaml
+- 3 offene Fragen an Menschen identifiziert (F1, F3, F4)
+- Mensch-Entscheidungen erhalten: F1=(a), F3=Credentials-Datei, F4=anderer GPIO
+- 5 Backlog-Tasks erstellt (TASK-031..035) mit vollem Kontext:
+  - TASK-031: Legacy Pin-Claims harmonisieren (F1, high, EPIC-003)
+  - TASK-032: hwStatusSetFlag Bug (F2, high, EPIC-001)
+  - TASK-033: Credentials dateibasiertes Laden (F3, high, EPIC-003)
+  - TASK-034: GPIO-46 + Profilname + NTRIP-Dep (F4/F5/F6, medium, EPIC-003)
+  - TASK-035: sd_logger Doku + Prozess (F7, low, EPIC-003)
+- backlog/index.yaml aktualisiert (Epics + Task-Einträge)
+- Planungsdokument erstellt: `/home/z/my-project/download/Plan-Review-Nacharbeiten-TASK-026-030.md`
+
+Stage Summary:
+- 5 neue Task-Dateien unter backlog/tasks/
+- backlog/index.yaml um 5 Tasks erweitert (EPIC-001 +1, EPIC-003 +4)
+- Alle Tasks enthalten: Origin, Kontext, ACs, Scope, ADR-Referenzen, Invarianten, Known Traps, Merge Risk, Classification
+- F8 (Feature-Gating) erfordert keine Aktion (bereits korrekt implementiert)
+- Prozess §3 (Chat-Konservierung) ist durch die Task-Erstellung erfüllt
+
+---
+
 # TASK-030 Worklog
 
 ---

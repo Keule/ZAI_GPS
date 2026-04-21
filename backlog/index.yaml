@@ -29,6 +29,7 @@ epics:
       - TASK-002
       - TASK-003
       - TASK-029
+      - TASK-032
 
   - id: EPIC-002
     title: Sensor and Safety Integration
@@ -54,6 +55,10 @@ epics:
       - TASK-026
       - TASK-027
       - TASK-028
+      - TASK-031
+      - TASK-033
+      - TASK-034
+      - TASK-035
 
   - id: EPIC-004
     title: Feature Expansion
@@ -566,7 +571,7 @@ tasks:
       - TASK-029
 
   - id: TASK-034
-    title: GPIO-46 LOG_SWITCH_PIN verlegen (GPIO3) und Profil umbenennen (Review-F4/F5)
+    title: GPIO-46 LOG_SWITCH_PIN verlegen und Profil umbenennen + NTRIP-GNSS-Dependency (Review-F4/F5/F6)
     file: backlog/tasks/TASK-034-gpio46-logsw-pin-verlegen-profil-naming-ntrip-deps.md
     epic_id: EPIC-003
     status: open
