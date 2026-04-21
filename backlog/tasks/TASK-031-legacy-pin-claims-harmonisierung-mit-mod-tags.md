@@ -45,7 +45,7 @@ Die Sensor-SPI-Pins (SCK=47, MISO=21, MOSI=38) werden von IMU, ADS und ACT gemei
 1. `hal_impl.cpp`: Alle Pin-Claims in `claimCommonInitPins()`, `claimImuSteerInitPins()`, `claimEthPins()`, `claimGnssUartPins()` verwenden **MOD_***-Tags als Owner (Ausnahme: Sensor-SPI-Bus-Pins unter `"HAL_SENSOR_SPI"`)
 2. `moduleActivate(MOD_IMU)` in `setup()` succeeds auf ESP32-S3 (kein Konflikt mit HAL-Init-Claims)
 3. `moduleActivate(MOD_ETH)` in `setup()` succeeds auf ESP32-S3
-4. Alle Board-Profile kompilieren fehlerfrei (`profile_full_steer`, `profile_full_steer_ntrip`, `profile_full_steer_ntrip_esp32`, `profile_ntrip_classic` nach TASK-035)
+4. Alle Board-Profile kompilieren fehlerfrei (`profile_full_steer`, `profile_full_steer_ntrip`, `profile_full_steer_ntrip_esp32`, `profile_ntrip_classic` nach TASK-034)
 5. Boot-Log zeigt keine `"Pin claim conflict"` Meldungen für Module, die in `setup()` aktiviert werden
 6. ESP32 Classic: Keine Regression (Pins=-1 werden weiterhin korrekt übersprungen)
 
@@ -101,7 +101,7 @@ Die Sensor-SPI-Pins (SCK=47, MISO=21, MOSI=38) werden von IMU, ADS und ACT gemei
 - **priority:** high
 - **delivery_mode:** firmware_only
 - **exclusive_before:** TASK-031 muss VOR Merge von TASK-026..030 abgeschlossen sein
-- **parallelizable_after:** Parallel mit TASK-032, TASK-033, TASK-034, TASK-035, TASK-036
+- **parallelizable_after:** Parallel mit TASK-032, TASK-033, TASK-034, TASK-035
 
 ## Owner
 

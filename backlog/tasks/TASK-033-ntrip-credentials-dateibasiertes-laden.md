@@ -88,7 +88,7 @@ Die SD-Karte wird im maintTask verwaltet (`sd_logger_esp32.cpp`). Das Lesen eine
 
 ## Invarianten
 
-- `RuntimeConfig` bleibt die单一 Quelle für NTRIP-Konfiguration zur Laufzeit
+- `RuntimeConfig` bleibt die einzige Quelle für NTRIP-Konfiguration zur Laufzeit
 - `cfg::` Defaults in `soft_config.h` sind neutral (keine produktiven Daten)
 - `softConfigLoadDefaults()` lädt weiterhin `cfg::` → `RuntimeConfig` ( leer)
 - `softConfigLoadOverrides()` lädt Datei → `RuntimeConfig` (überschreibt leere Defaults)
