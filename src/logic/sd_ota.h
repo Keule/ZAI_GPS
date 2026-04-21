@@ -10,7 +10,7 @@
  *       updateFirmwareFromSD();   // blocks until reboot
  *   }
  *
- * SD card is accessed over SPI2_HOST (FSPI), which is temporarily
+ * SD card is accessed over SPI2_HOST (SD_SPI_BUS), which is temporarily
  * borrowed from the sensor bus during the update.
  *
  * No Arduino / ESP32 headers in this file – see sd_ota_esp32.cpp for
@@ -70,7 +70,7 @@ bool isFirmwareUpdateAvailableOnSD(void);
 
 /// Perform a firmware update from the SD card.
 ///
-/// 1. Releases the sensor SPI bus (SPI2_HOST / FSPI).
+/// 1. Releases the sensor SPI bus (SPI2_HOST / SENS_SPI_BUS).
 /// 2. Initialises the SD card over SPI2_HOST with SD-card pins.
 /// 3. Reads the firmware file blockwise and writes it to the
 ///    inactive OTA partition via the ESP32 Update API.

@@ -55,6 +55,7 @@
 #define SD_SCLK_PIN                     14
 #define SD_CS_PIN                       5
 
+#define SD_SPI_BUS     HSPI
 #define SD_SPI_SCK     SD_SCLK_PIN      // SPI clock for SD card
 #define SD_SPI_MISO    SD_MISO_PIN      // SPI MISO for SD card
 #define SD_SPI_MOSI    SD_MOSI_PIN      // SPI MOSI for SD card
@@ -100,7 +101,7 @@ inline constexpr int8_t GNSS_MIRROR_UART2_TX_PIN = GNSS_UART2_TX;
 //   Switch OFF (open)  -> pin pulled HIGH -> logging disabled
 //   Switch ON (closed) -> pin pulled LOW  -> logging enabled
 // ---------------------------------------------------------------------------
-#define LOG_SWITCH_PIN   05
+#define LOG_SWITCH_PIN   PIN_BT
 
 
 // ---------------------------------------------------------------------------
@@ -118,6 +119,7 @@ inline constexpr int8_t GNSS_MIRROR_UART2_TX_PIN = GNSS_UART2_TX;
 #define ETH_RST        -1
 
 // Sensor SPI bus aliases for shared HAL (legacy ESP32 wiring)
+#define SENS_SPI_BUS   HSPI
 #define SENS_SPI_SCK   SD_SPI_SCK
 #define SENS_SPI_MISO  SD_SPI_MISO
 #define SENS_SPI_MOSI  SD_SPI_MOSI

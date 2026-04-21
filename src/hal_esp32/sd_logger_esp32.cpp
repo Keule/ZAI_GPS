@@ -12,10 +12,10 @@
  *   - ETH link monitoring (TASK-029)
  *
  * SPI bus strategy:
- *   The SD card uses SPI2_HOST (FSPI) with pins SCK=7, MISO=5, MOSI=6.
- *   The sensor bus also uses FSPI but with DIFFERENT pins (SCK=16, MISO=15, MOSI=17).
+ *   The SD card uses SPI2_HOST (SD_SPI_BUS) with pins SCK=7, MISO=5, MOSI=6.
+ *   The sensor bus also uses SENS_SPI_BUS but with DIFFERENT pins (SCK=16, MISO=15, MOSI=17).
  *   During SD card access, the sensor SPI is released via hal_sensor_spi_deinit(),
- *   then FSPI is re-initialised with SD pins. After SD access, the sensor SPI
+ *   then SD_SPI_BUS is re-initialised with SD pins. After SD access, the sensor SPI
  *   is restored via hal_sensor_spi_reinit().
  *
  *   To prevent the control loop from accessing the bus while SD is active,
@@ -241,14 +241,14 @@ static uint32_t flushBufferToSD(void) {
 /**
  * Claim the SPI bus for SD card access.
  *
- * The SD card uses FSPI with pins SCK=7, MISO=5, MOSI=6 (CS=42).
- * The sensor bus uses FSPI with pins SCK=16, MISO=15, MOSI=17.
+ * The SD card uses SD_SPI_BUS with pins SCK=7, MISO=5, MOSI=6 (CS=42).
+ * The sensor bus uses SENS_SPI_BUS with pins SCK=16, MISO=15, MOSI=17.
  * We must release the sensor SPIClass before the SD library can
- * claim the FSPI peripheral with its own pins.
+ * claim the SENS_SPI_BUS peripheral with its own pins.
  */
 static void sdBusClaim(void) {
     s_spi_busy = true;
-    hal_sensor_spi_deinit();   // release FSPI peripheral
+    hal_sensor_spi_deinit();   // release SD_SPI_BUS peripheral
     hal_delay_ms(2);
 }
 
@@ -256,7 +256,7 @@ static void sdBusClaim(void) {
  * Release the SPI bus back to sensor code.
  */
 static void sdBusRelease(void) {
-    hal_sensor_spi_reinit();   // reclaim FSPI peripheral for sensors
+    hal_sensor_spi_reinit();   // reclaim SD_SPI_BUS peripheral for sensors
     s_spi_busy = false;
 }
 
@@ -274,7 +274,7 @@ static void sdBusRelease(void) {
  * fallback after the first successful allocation.  If PSRAM allocation
  * fails at init, the static 16 KB buffer is used for the entire session.
  *
- * NOTE: The FSPI bus is shared with the sensor SPI.  Each SD flush cycle
+ * NOTE: The SD_SPI_BUS bus is shared with the sensor SPI.  Each SD flush cycle
  * requires hal_sensor_spi_deinit()/hal_sensor_spi_reinit(), which blocks
  * the sensor SPI for ~50-200 ms.  This is NOT fully decoupled — the
  * control loop must skip sensor reads while s_spi_busy is set.
@@ -355,7 +355,7 @@ static void maintEthMonitor(void) {
  *
  * For each SD flush cycle:
  *   1. Claim SPI bus (set s_spi_busy flag)
- *   2. Init SD card on FSPI with SD pins
+ *   2. Init SD card on SD_SPI_BUS with SD pins
  *   3. Open/append log file, write records
  *   4. Close file, release SD
  *   5. Release SPI bus (clear s_spi_busy flag)

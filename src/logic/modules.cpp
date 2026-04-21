@@ -37,6 +37,7 @@
 // ===================================================================
 static void featureModulesInitCompiled(void);
 static void featureModulesSyncHwDetected(void);
+static FeatureModuleInfo g_features[MOD_COUNT];
 
 // ===================================================================
 // Internal state
