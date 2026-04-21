@@ -24,6 +24,7 @@
 #include <SD.h>
 #include <SPI.h>
 #include "fw_config.h"   // for SD_SPI_BUS, SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS
+#include "hal/hal.h"     // hal_sensor_spi_deinit(), hal_sensor_spi_reinit(), hal_delay_ms()
 #endif
 
 /// Path to NTRIP credentials file on SD card.
@@ -89,24 +90,28 @@ static void copyValue(char* dst, size_t dst_size, const char* value) {
 /// Read NTRIP credentials from SD card file.
 /// Returns true if file was found and at least host was read, false otherwise.
 static bool loadNtripFromSd(RuntimeConfig& cfg) {
+    // On ESP32-S3, SD_SPI_BUS is shared with sensors; deinit/reinit around SD access is mandatory.
+    hal_sensor_spi_deinit();
+    hal_delay_ms(10);  // brief settle time, same pattern as OTA/SD logger paths
+
     // Initialise SD card SPI
     SPIClass sdSPI(SD_SPI_BUS);
     sdSPI.begin(SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS);
 
+    bool result = false;
+    bool got_host = false;
+    File f;
+
     if (!SD.begin(SD_CS, sdSPI, 4000000, "/sd", 5)) {
-        sdSPI.end();
-        return false;
+        goto cleanup;
     }
 
-    File f = SD.open(kNtripCfgPath);
+    f = SD.open(kNtripCfgPath);
     if (!f) {
-        SD.end();
-        sdSPI.end();
-        return false;
+        goto cleanup;
     }
 
     char line[128];
-    bool got_host = false;
 
     while (f.available()) {
         int len = f.readBytesUntil('\n', line, sizeof(line) - 1);
@@ -134,10 +139,16 @@ static bool loadNtripFromSd(RuntimeConfig& cfg) {
         }
     }
 
-    f.close();
+    result = got_host;
+
+cleanup:
+    if (f) {
+        f.close();
+    }
     SD.end();
     sdSPI.end();
-    return got_host;
+    hal_sensor_spi_reinit();
+    return result;
 }
 
 #endif  // ARDUINO_ARCH_ESP32
