@@ -11,7 +11,7 @@
  *   - The maintTask (lowest priority, Core 0) periodically drains
  *     the ring buffer and writes CSV records to the SD card
  *   - maintTask also handles NTRIP connect/reconnect and ETH monitoring
- *   - The SD card shares SPI2_HOST (FSPI) with the sensor bus,
+ *   - The SD card shares SPI2_HOST (SD_SPI_BUS) with the sensor bus,
  *     so the sensor SPI is temporarily released during writes
  *   - The hardware switch is checked before each flush cycle
  *

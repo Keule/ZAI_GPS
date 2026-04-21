@@ -8,7 +8,7 @@
  *   SPI3_HOST (HSPI) = W5500 Ethernet  (GPIO  9/10/11/12/13/14, fixed)
  *   SPI2_HOST (FSPI) = Sensor bus      (SCK=47, MISO=21, MOSI=38)
  *                    + SD Card (OTA)    (SCK=7,  MISO=5,  MOSI=6,  CS=42)
- *   FSPI is shared — sensor SPI must be released before SD access.
+ *   SENS_SPI_BUS is shared — sensor SPI must be released before SD access.
  *
  * GPIO constraints (ESP32-S3R8 with Octal PSRAM):
  *   26-37: reserved by PSRAM  |  38-42: output-only  |  43-48: bidirectional
@@ -32,7 +32,7 @@
 #define ETH_RST        14
 
 // ---------------------------------------------------------------------------
-// SPI Bus 2: Sensor Bus (FSPI = SPI2_HOST)
+// SPI Bus 2: Sensor Bus (SENS_SPI_BUS = SPI2_HOST)
 //
 // ADS1118, IMU, and Actuator share this bus with different CS pins.
 // SCK/MISO/MOSI are on GPIO 16/15/17 respectively.
@@ -66,11 +66,11 @@
 
 
 // ---------------------------------------------------------------------------
-// SD Card (FSPI = SPI2_HOST, OTA only)
+// SD Card (SD_SPI_BUS = SPI2_HOST, OTA only)
 //
-// The SD card uses the SAME SPI peripheral (FSPI) but DIFFERENT pins.
-// During normal operation FSPI is initialised with sensor pins (15/16/17).
-// For OTA firmware updates, FSPI is re-initialised with SD pins (5/6/7)
+// The SD card uses the SAME SPI peripheral (SD_SPI_BUS) but DIFFERENT pins.
+// During normal operation SD_SPI_BUS is initialised with sensor pins (15/16/17).
+// For OTA firmware updates, SD_SPI_BUS is re-initialised with SD pins (5/6/7)
 // via hal_sensor_spi_deinit() / hal_sensor_spi_reinit().
 // ---------------------------------------------------------------------------
 #define SD_SPI_SCK     7      // SPI clock for SD card
