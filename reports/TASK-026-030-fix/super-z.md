@@ -51,7 +51,7 @@ Geaenderte Dateien
 8. src/hal_esp32/sd_logger_esp32.cpp
    - sdLoggerPsramInit() Kommentar erweitert:
      - "buffer selection happens ONCE at init"
-     - "NOTE: FSPI bus is shared... blocks sensor SPI for ~50-200 ms... NOT fully decoupled"
+     - "NOTE: SD_SPI_BUS bus is shared... blocks sensor SPI for ~50-200 ms... NOT fully decoupled"
 
 Tests / Build
 
