@@ -308,6 +308,32 @@ bool hal_net_is_connected(void);
 /// Check if W5500 chip was detected during init.
 bool hal_net_detected(void);
 
+// ===================================================================
+// Pin Claim Arbitration — TASK-027
+// ===================================================================
+
+/// Add a pin claim for a given owner string.
+/// @param pin   GPIO pin number (negative pins are rejected silently).
+/// @param owner Null-terminated owner identifier (e.g. "MOD_IMU").
+/// @return true on success, false if pin is already claimed by another owner
+///         or if the claim table is full.
+bool hal_pin_claim_add(int pin, const char* owner);
+
+/// Release all pin claims owned by the given owner string.
+/// @param owner Null-terminated owner identifier.
+/// @return Number of pins released, or 0 if owner not found / invalid.
+int hal_pin_claim_release(const char* owner);
+
+/// Check if a specific GPIO pin is currently claimed.
+/// @param pin GPIO pin number.
+/// @return true if claimed, false if not or pin < 0.
+bool hal_pin_claim_check(int pin);
+
+/// Get the owner string of a claimed GPIO pin.
+/// @param pin GPIO pin number.
+/// @return Owner identifier string, or nullptr if pin is not claimed or pin < 0.
+const char* hal_pin_claim_owner(int pin);
+
 #ifdef __cplusplus
 }
 #endif

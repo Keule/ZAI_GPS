@@ -2,7 +2,7 @@
 
 - **ID**: TASK-029
 - **Titel**: `maintTask` fuer blocking Operationen einfuehren, SD-Logging auf PSRAM-Buffer umstellen
-- **Status**: open
+- **Status**: done
 - **Priorität**: high
 - **Komponenten**: src/main.cpp, src/hal_esp32/sd_logger_esp32.cpp, src/logic/ntrip.cpp, src/logic/ntrip.h, src/logic/sd_logger.cpp, src/logic/sd_logger.h, src/logic/control.cpp
 - **Dependencies**: TASK-027
@@ -23,15 +23,15 @@
   - Shared: https://chat.z.ai/s/a858dd17-02e3-416c-a123-649830256a4e
 
 - **Kontext/Problem**:
-  1. **SD-Logging blockiert FSPI**: `loggerTask` (0.5Hz) initiiert FSPI-Deinit/SD-Init/Schreiben/FSPI-Reinit, was den Sensor-SPI-Bus 50-200ms blockiert. In dieser Zeit sind IMU, ADS1118 und Actuator auf Core 1 ohne SPI-Zugriff — tot.
+  1. **SD-Logging blockiert SD_SPI_BUS**: `loggerTask` (0.5Hz) initiiert SD_SPI_BUS-Deinit/SD-Init/Schreiben/SD_SPI_BUS-Reinit, was den Sensor-SPI-Bus 50-200ms blockiert. In dieser Zeit sind IMU, ADS1118 und Actuator auf Core 1 ohne SPI-Zugriff — tot.
   2. **NTRIP TCP-Connect blockiert commTask**: `ntripTick()` ruft `hal_tcp_connect()` auf (blocking, 5s Timeout) mitten im 100Hz commTask-Loop. Waehrend des Connects werden keine UDP-Pakete verarbeitet, kein Safety-Check.
   3. Keine Moeglichkeit, blocking Operationen (SD-Write, TCP-Connect, IMU-Kalibrierung) sauber von zeitkritischen Tasks zu trennen.
   4. IMU-Kalibrierung existiert noch nicht, soll aber vorbereitet werden.
 
 - **Scope (in)**:
   - **`maintTask` erstellen**: Neuer FreeRTOS Task auf Core 0, Prioritaet 1 (niedrigste, unterbrechbar durch commTask und controlTask). Ersetzt den aktuellen `loggerTask`.
-  - **PSRAM Ring-Buffer fuer Logging**: `controlTask` schreibt Log-Records in PSRAM-basierten Ring-Buffer (statt direkt in FSPI-basierten SPSC Ring-Buffer). Ziel: ~1-4 MB Buffer, ausreichend fuer Tage Logging. Schreibzugriff ~1us, kein FSPI-Konflikt.
-  - **SD-Flush in maintTask**: maintTask liest PSRAM-Buffer und schreibt auf SD-Karte. FSPI wird nur vom maintTask genutzt (controlTask und commTask greifen nicht mehr auf SD zu). Da maintTask niedrigste Prioritaet hat, werden zeitkritische Tasks automatisch vorgezogen.
+  - **PSRAM Ring-Buffer fuer Logging**: `controlTask` schreibt Log-Records in PSRAM-basierten Ring-Buffer (statt direkt in SD_SPI_BUS-basierten SPSC Ring-Buffer). Ziel: ~1-4 MB Buffer, ausreichend fuer Tage Logging. Schreibzugriff ~1us, kein SD_SPI_BUS-Konflikt.
+  - **SD-Flush in maintTask**: maintTask liest PSRAM-Buffer und schreibt auf SD-Karte. SD_SPI_BUS wird nur vom maintTask genutzt (controlTask und commTask greifen nicht mehr auf SD zu). Da maintTask niedrigste Prioritaet hat, werden zeitkritische Tasks automatisch vorgezogen.
   - **NTRIP-Connect in maintTask**: `ntripTick()` State-Machine aufteilen:
     - `ntripConnect()` / `ntripReconnect()` → laeuft in maintTask (blocking OK).
     - `ntripReadRtcm()` / `ntripForwardRtcm()` → bleibt in commTask (nur non-blocking).
@@ -47,7 +47,7 @@
 
 - **files_read**:
   - `src/main.cpp` (Task-Erstellung, commTaskFunc, controlTaskFunc)
-  - `src/hal_esp32/sd_logger_esp32.cpp` (aktueller loggerTask, FSPI-Handling)
+  - `src/hal_esp32/sd_logger_esp32.cpp` (aktueller loggerTask, SD_SPI_BUS-Handling)
   - `src/logic/sd_logger.cpp` (Log-Record-Struktur, Ring-Buffer)
   - `src/logic/sd_logger.h` (API)
   - `src/logic/ntrip.cpp` (ntripTick, ntripReadRtcm, ntripForwardRtcm)
@@ -58,7 +58,7 @@
 - **files_write**:
   - `src/main.cpp` (maintTask-Erstellung statt loggerTask, commTask angepasst)
   - `src/hal_esp32/sd_logger_esp32.cpp` (maintTaskFunc statt loggerTaskFunc, PSRAM-Buffer)
-  - `src/logic/sd_logger.cpp` (PSRAM Ring-Buffer statt FSPI SPSC)
+  - `src/logic/sd_logger.cpp` (PSRAM Ring-Buffer statt SD_SPI_BUS SPSC)
   - `src/logic/sd_logger.h` (neue API: psramLogWrite, psramLogDrain)
   - `src/logic/ntrip.cpp` (ntripTick aufgeteilt: connect in maintTask, read/forward in commTask)
   - `src/logic/ntrip.h` (neue API: ntripConnect, ntripIsConnected)
@@ -83,7 +83,7 @@
   - `maintTask` existiert, laeuft auf Core 0 mit Prioritaet 1.
   - `loggerTask` ist entfernt/ersetzt.
   - PSRAM Ring-Buffer (≥1 MB) wird in `controlTask` beschrieben (~1us pro Write).
-  - `maintTask` draint PSRAM-Buffer auf SD-Karte. FSPI-Konflikt mit Sensor-Bus ist eliminiert.
+  - `maintTask` draint PSRAM-Buffer auf SD-Karte. SD_SPI_BUS-Konflikt mit Sensor-Bus ist eliminiert.
   - NTRIP TCP-Connect laeuft in `maintTask`, nicht in `commTask`.
   - commTask ruft nur `ntripReadRtcm()` und `ntripForwardRtcm()` auf (non-blocking).
   - NTRIP-Verlust erzeugt Console-Meldung. Kein automatischer Reconnect ohne User-Interaktion.

@@ -29,6 +29,7 @@ epics:
       - TASK-002
       - TASK-003
       - TASK-029
+      - TASK-032
 
   - id: EPIC-002
     title: Sensor and Safety Integration
@@ -54,6 +55,10 @@ epics:
       - TASK-026
       - TASK-027
       - TASK-028
+      - TASK-031
+      - TASK-033
+      - TASK-034
+      - TASK-035
 
   - id: EPIC-004
     title: Feature Expansion
@@ -476,7 +481,7 @@ tasks:
     title: fw_config und Board-Profile restrukturieren — hardware_pins.h aufteilen
     file: backlog/tasks/TASK-026-fw-config-und-board-profile-restrukturierung.md
     epic_id: EPIC-003
-    status: open
+    status: done
     priority: medium
     delivery_mode: firmware_only
     task_category: platform_reuse
@@ -486,7 +491,7 @@ tasks:
     title: Modul-System mit Runtime-Aktivierung/Deaktivierung, Pin-Gruppen und dreiwertigem Status
     file: backlog/tasks/TASK-027-modul-system-mit-runtime-aktivierung-und-pin-claim-arbitrierung.md
     epic_id: EPIC-003
-    status: open
+    status: done
     priority: high
     delivery_mode: firmware_only
     task_category: platform_reuse
@@ -497,7 +502,7 @@ tasks:
     title: soft_config.h mit Nutzer-Defaults, dreiwertigem ModState und RuntimeConfig einführen
     file: backlog/tasks/TASK-028-soft-config-mit-nutzer-defaults-und-runtime-konfiguration.md
     epic_id: EPIC-003
-    status: open
+    status: done
     priority: medium
     delivery_mode: firmware_only
     task_category: platform_reuse
@@ -508,7 +513,7 @@ tasks:
     title: maintTask für blocking Operationen einführen, SD-Logging auf PSRAM-Buffer umstellen
     file: backlog/tasks/TASK-029-maintask-fuer-blocking-ops-und-psram-sd-logging.md
     epic_id: EPIC-001
-    status: open
+    status: done
     priority: high
     delivery_mode: firmware_only
     task_category: runtime_stability
@@ -519,10 +524,69 @@ tasks:
     title: TASK-025 NTRIP auf neues Modul-System und maintTask migrieren
     file: backlog/tasks/TASK-030-task025-backlog-status-und-ntrip-architektur-anpassung.md
     epic_id: EPIC-004
-    status: open
+    status: done
     priority: medium
     delivery_mode: firmware_only
     task_category: feature_expansion
     dependencies:
       - TASK-027
       - TASK-029
+
+  # ---------------------------------------------------------------------------
+  # Review-Nacharbeiten TASK-026..030 (KI-Planer, 2026-04-21)
+  # Ursprung: Kombinierter Review (Super Z + GPT-5.3-Codex)
+  # ---------------------------------------------------------------------------
+
+  - id: TASK-031
+    title: Legacy HAL Pin-Claims mit MOD_*-Tags harmonisieren (Review-F1)
+    file: backlog/tasks/TASK-031-legacy-pin-claims-harmonisierung-mit-mod-tags.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-027
+
+  - id: TASK-032
+    title: NTRIP hwStatusSetFlag() Bug beheben — GNSS-Status fälschlich als Fehler (Review-F2)
+    file: backlog/tasks/TASK-032-ntrip-hwstatus-bug-gnss-falscher-fehler.md
+    epic_id: EPIC-001
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: runtime_stability
+    dependencies: []
+
+  - id: TASK-033
+    title: NTRIP-Credentials aus soft_config.h entfernen und dateibasiertes Laden implementieren (Review-F3)
+    file: backlog/tasks/TASK-033-ntrip-credentials-dateibasiertes-laden.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-028
+      - TASK-029
+
+  - id: TASK-034
+    title: GPIO-46 LOG_SWITCH_PIN verlegen und Profil umbenennen + NTRIP-GNSS-Dependency (Review-F4/F5/F6)
+    file: backlog/tasks/TASK-034-gpio46-logsw-pin-verlegen-profil-naming-ntrip-deps.md
+    epic_id: EPIC-003
+    status: open
+    priority: medium
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-027
+
+  - id: TASK-035
+    title: sd_logger_esp32.cpp Dokumentation und Prozess-Konservierung (Review-F7)
+    file: backlog/tasks/TASK-035-sd-logger-doku-und-prozess-konservierung.md
+    epic_id: EPIC-003
+    status: done
+    priority: low
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies: []

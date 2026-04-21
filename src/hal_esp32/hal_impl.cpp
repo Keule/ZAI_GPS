@@ -5,12 +5,12 @@
  * Hardware:
  *   - MCU: ESP32-S3-WROOM-1
  *   - Ethernet: W5500 over SPI3_HOST (GPIO 9/10/11/12/13/14) via ESP-IDF ETH driver
- *   - Sensor SPI (FSPI/SPI2_HOST): SCK=16, MISO=15, MOSI=17
+ *   - Sensor SPI (SENS_SPI_BUS/SPI2_HOST): SCK=47, MISO=21, MOSI=38
  *     - ADS1118 ADC (steer angle): CS=18
- *     - BNO085 IMU: CS=47
- *     - Actuator: CS=40
- *   - IMU sideband wiring: INT=45, RST=48, WAKE=38
- *   - SD Card (FSPI, OTA only): SCK=7, MISO=5, MOSI=6, CS=42
+ *     - BNO085 IMU: CS=40
+ *     - Actuator: CS=16
+ *   - IMU sideband wiring: INT=46, RST=41, WAKE=15
+ *   - SD Card (SD_SPI_BUS, OTA only): SCK=7, MISO=5, MOSI=6, CS=42
  *   - Safety: GPIO4 active LOW
  *
  * ADS1118 ADC uses the libdriver/ads1118 library (lib/ads1118/).
@@ -28,7 +28,7 @@
 
 #include "hal_impl.h"
 #include "hal/hal.h"
-#include "hardware_pins.h"
+#include "fw_config.h"
 #include "logic/features.h"
 #include "logic/pgn_types.h"
 #include "logic/log_config.h"
@@ -41,7 +41,7 @@
 // Arduino / ESP32 includes
 // ===================================================================
 #include <Arduino.h>
-#include <SPI.h>           // SPIClass for sensor bus (FSPI)
+#include <SPI.h>           // SPIClass for sensor bus (SENS_SPI_BUS)
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <Preferences.h>    // NVS flash storage for calibration
@@ -86,20 +86,20 @@ static bool s_eth_link_up    = false;   // true if ARDUINO_EVENT_ETH_CONNECTED
 static bool s_eth_has_ip     = false;   // true if ARDUINO_EVENT_ETH_GOT_IP
 
 // ===================================================================
-// Shared SPI bus - FSPI / SPI2_HOST
+// Shared SPI bus - SENS_SPI_BUS / SPI2_HOST
 //
-// CRITICAL: Must use FSPI, NOT HSPI!
+// CRITICAL: Must use SD_SPI_BUS, NOT HSPI!
 // On ESP32-S3 (Arduino Core 2.x):  HSPI = SPI3_HOST (occupied by W5500!)
-//                                  FSPI = SPI2_HOST (free for sensors)
+//                                  SD_SPI_BUS = SPI2_HOST (free for sensors)
 //
-// Sensor devices on this bus: ADS1118 (CS=18), IMU (CS=47), Actuator (CS=40).
-// Pins: SCK=16, MISO=15, MOSI=17.
+// Sensor devices on this bus: ADS1118 (CS=18), IMU (CS=40), Actuator (CS=16).
+// Pins: SCK=47, MISO=21, MOSI=38.
 //
-// SD card uses the SAME SPI peripheral (FSPI) but DIFFERENT pins (SCK=7, MISO=5, MOSI=6).
-// During OTA updates, FSPI is re-initialised with SD pins via
+// SD card uses the SAME SPI peripheral (SD_SPI_BUS) but DIFFERENT pins (SCK=7, MISO=5, MOSI=6).
+// During OTA updates, SD_SPI_BUS is re-initialised with SD pins via
 // hal_sensor_spi_deinit() / hal_sensor_spi_reinit().
 // ===================================================================
-static SPIClass sensorSPI(FSPI);
+static SPIClass sensorSPI(SENS_SPI_BUS);
 
 // ===================================================================
 // Shared sensor SPI transaction layer (bus lock + per-device settings)
@@ -251,14 +251,15 @@ static void spiRecordTiming(SpiClient client, uint32_t request_us, uint32_t lock
 static bool spiTransfer(SpiClient client, const uint8_t* tx, uint8_t* rx, size_t len) {
     const SpiClientConfig& cfg = spiCfg(client);
     if (len == 0) return true;
+    if (cfg.cs_pin < 0) return false;
 
     const uint32_t request_us = micros();
     spiBeginCritical();
     const uint32_t lock_us = micros();
 
-    digitalWrite(CS_STEER_ANG, HIGH);
-    digitalWrite(CS_IMU, HIGH);
-    digitalWrite(CS_ACT, HIGH);
+    if (CS_STEER_ANG >= 0) digitalWrite(CS_STEER_ANG, HIGH);
+    if (CS_IMU >= 0)       digitalWrite(CS_IMU, HIGH);
+    if (CS_ACT >= 0)       digitalWrite(CS_ACT, HIGH);
 
     sensorSPI.beginTransaction(SPISettings(cfg.freq_hz, MSBFIRST, cfg.mode));
     digitalWrite(cfg.cs_pin, LOW);
@@ -420,34 +421,34 @@ static bool pinClaimsAddBatch(const PinClaimEntry* entries, size_t count, const 
 
 static bool claimCommonInitPins(void) {
     static constexpr PinClaimEntry claims[] = {
-        {SAFETY_IN, "safety-input"},
-        {SENS_SPI_SCK, "sensor-spi-sck"},
-        {SENS_SPI_MISO, "sensor-spi-miso"},
-        {SENS_SPI_MOSI, "sensor-spi-mosi"},
+        {SAFETY_IN, "MOD_SAFETY"},
+        {SENS_SPI_SCK, "HAL_SENSOR_SPI"},
+        {SENS_SPI_MISO, "HAL_SENSOR_SPI"},
+        {SENS_SPI_MOSI, "HAL_SENSOR_SPI"},
     };
     return pinClaimsAddBatch(claims, sizeof(claims) / sizeof(claims[0]), s_pin_claim_path);
 }
 
 static bool claimImuSteerInitPins(void) {
     static constexpr PinClaimEntry claims[] = {
-        {IMU_INT, "imu-int"},
-        {IMU_RST, "imu-rst"},
-        {IMU_WAKE, "imu-wake"},
-        {CS_IMU, "imu-cs"},
-        {CS_STEER_ANG, "steer-angle-cs"},
-        {CS_ACT, "actuator-cs"},
+        {IMU_INT, "MOD_IMU"},
+        {IMU_RST, "MOD_IMU"},
+        {IMU_WAKE, "MOD_IMU"},
+        {CS_IMU, "MOD_IMU"},
+        {CS_STEER_ANG, "MOD_ADS"},
+        {CS_ACT, "MOD_ACT"},
     };
     return pinClaimsAddBatch(claims, sizeof(claims) / sizeof(claims[0]), s_pin_claim_path);
 }
 
 static bool claimEthPins(void) {
     static constexpr PinClaimEntry claims[] = {
-        {ETH_SCK, "eth-sck"},
-        {ETH_MISO, "eth-miso"},
-        {ETH_MOSI, "eth-mosi"},
-        {ETH_CS, "eth-cs"},
-        {ETH_INT, "eth-int"},
-        {ETH_RST, "eth-rst"},
+        {ETH_SCK, "MOD_ETH"},
+        {ETH_MISO, "MOD_ETH"},
+        {ETH_MOSI, "MOD_ETH"},
+        {ETH_CS, "MOD_ETH"},
+        {ETH_INT, "MOD_ETH"},
+        {ETH_RST, "MOD_ETH"},
     };
     return pinClaimsAddBatch(claims, sizeof(claims) / sizeof(claims[0]), s_pin_claim_path);
 }
@@ -465,10 +466,61 @@ static bool claimGnssUartPins(uint8_t uart_num, int rx_pin, int tx_pin) {
     }
 
     const PinClaimEntry claims[] = {
-        {rx_pin, "gnss-rtcm-rx"},
-        {tx_pin, "gnss-rtcm-tx"},
+        {rx_pin, "MOD_GNSS"},
+        {tx_pin, "MOD_GNSS"},
     };
     return pinClaimsAddBatch(claims, sizeof(claims) / sizeof(claims[0]), s_pin_claim_path);
+}
+
+// ===================================================================
+// Exposed HAL pin-claim functions — TASK-027
+// Used by the feature module system (modules.cpp) for runtime
+// pin-claim arbitration during moduleActivate/moduleDeactivate.
+// ===================================================================
+
+extern "C" bool hal_pin_claim_add(int pin, const char* owner) {
+    if (pin < 0 || !owner) return true;  // negative pins are harmless, skip
+    if (s_pin_claim_count >= HAL_PIN_CLAIM_CAPACITY) {
+        LOGE("HAL-PIN", "claim table overflow for GPIO %d (%s)", pin, owner);
+        return false;
+    }
+    const PinClaimEntry* existing = pinClaimFind(pin);
+    if (existing) {
+        LOGE("HAL-PIN", "conflict on GPIO %d (%s vs %s)", pin, existing->owner, owner);
+        return false;
+    }
+    s_pin_claims[s_pin_claim_count++] = {pin, owner};
+    return true;
+}
+
+extern "C" int hal_pin_claim_release(const char* owner) {
+    if (!owner) return 0;
+    int released = 0;
+    for (size_t i = s_pin_claim_count; i > 0; --i) {
+        if (s_pin_claims[i - 1].owner != nullptr &&
+            std::strcmp(s_pin_claims[i - 1].owner, owner) == 0) {
+            // Remove by shifting remaining entries down
+            for (size_t j = i - 1; j < s_pin_claim_count - 1; ++j) {
+                s_pin_claims[j] = s_pin_claims[j + 1];
+            }
+            s_pin_claim_count--;
+            released++;
+            // Don't decrement i because we shifted entries
+        }
+    }
+    return released;
+}
+
+extern "C" bool hal_pin_claim_check(int pin) {
+    if (pin < 0) return false;
+    return pinClaimFind(pin) != nullptr;
+}
+
+extern "C" const char* hal_pin_claim_owner(int pin) {
+    if (pin < 0) return nullptr;
+    const PinClaimEntry* entry = pinClaimFind(pin);
+    if (!entry) return nullptr;
+    return entry->owner;
 }
 
 static HardwareSerial* gnssUartForNum(uint8_t uart_num) {
@@ -937,7 +989,7 @@ bool hal_safety_ok(void) {
 }
 
 // ===================================================================
-// SPI Sensors / Actuator - SPI Bus 2 (FSPI / SPI2_HOST)
+// SPI Sensors / Actuator - SPI Bus 2 (SENS_SPI_BUS / SPI2_HOST)
 // ===================================================================
 void hal_sensor_spi_init(void) {
     sensorSPI.begin(SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI, -1);
@@ -969,7 +1021,7 @@ void hal_sensor_spi_init(void) {
     s_sensor_imu_to_was_gap_last_us = 0;
     s_sensor_imu_to_was_gap_max_us = 0;
     s_was_cache_valid = false;
-    hal_log("ESP32: sensor SPI initialised on FSPI/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
+    hal_log("ESP32: sensor SPI initialised on SENS_SPI_BUS/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
             SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
 }
 
@@ -977,13 +1029,13 @@ void hal_sensor_spi_deinit(void) {
     spiBeginCritical();
     sensorSPI.end();
     spiEndCritical();
-    hal_log("ESP32: shared SPI released (FSPI peripheral free)");
+    hal_log("ESP32: shared SPI released (SENS_SPI_BUS peripheral free)");
 }
 
 void hal_sensor_spi_reinit(void) {
     // Ensure the bus is fully released before re-initialising.
-    // The OTA code creates a LOCAL SPIClass(FSPI) which can leave
-    // the FSPI peripheral in an inconsistent state.  Calling end()
+    // The OTA code creates a LOCAL SPIClass(SD_SPI_BUS) which can leave
+    // the SD_SPI_BUS peripheral in an inconsistent state.  Calling end()
     // again on our sensorSPI forces a clean release, then we re-init
     // with a settling delay.
     spiBeginCritical();
@@ -1017,7 +1069,7 @@ void hal_sensor_spi_reinit(void) {
     s_was_cache_valid = false;
     spiEndCritical();
     delay(10);   // let GPIO matrix reconfigure
-    hal_log("ESP32: shared SPI re-initialised on FSPI/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
+    hal_log("ESP32: shared SPI re-initialised on SD_SPI_BUS/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
             SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
     hal_imu_on_sensor_spi_reinit();
 }
@@ -1101,9 +1153,9 @@ void hal_imu_set_spi_config(uint32_t freq_hz, uint8_t mode) {
 // register read-back, no range validation.
 //
 // Wiring:
-//   ADS1118 DOUT  -> GPIO 15 (MISO)
-//   ADS1118 DIN   -> GPIO 17 (MOSI)
-//   ADS1118 SCLK  -> GPIO 16 (SCK)
+//   ADS1118 DOUT  -> GPIO 21 (MISO)
+//   ADS1118 DIN   -> GPIO 38 (MOSI)
+//   ADS1118 SCLK  -> GPIO 47 (SCK)
 //   ADS1118 CS    -> GPIO 18
 //
 // Calibration:
@@ -1289,8 +1341,8 @@ static void wait_for_enter_live_adc(void) {
 
 void hal_steer_angle_begin(void) {
     // Ensure all other SPI device CS pins are configured as outputs
-    pinMode(CS_IMU, OUTPUT);  digitalWrite(CS_IMU, HIGH);
-    pinMode(CS_ACT, OUTPUT);  digitalWrite(CS_ACT, HIGH);
+    if (CS_IMU >= 0) { pinMode(CS_IMU, OUTPUT); digitalWrite(CS_IMU, HIGH); }
+    if (CS_ACT >= 0) { pinMode(CS_ACT, OUTPUT); digitalWrite(CS_ACT, HIGH); }
 
     // Wire up libdriver handle with ESP32 interface functions
     DRIVER_ADS1118_LINK_INIT(&s_ads1118_handle, ads1118_handle_t);
@@ -1325,7 +1377,7 @@ bool hal_steer_angle_detect(void) {
     // 0x0000 or 0xFFFF (floating MISO), the ADS1118 is present.
     // Also discard 0x7FFF (all 1s in data, possible bus issue).
     //
-    // After the OTA SD card check, the FSPI bus was deinitialised and
+    // After the OTA SD card check, the SD_SPI_BUS bus was deinitialised and
     // reinitialised by sd_ota_esp32.cpp.  The ADS1118 may need time to
     // recover, or the bus may not be fully functional yet.
     // Strategy: try up to 3 times with increasing delays.
@@ -1520,15 +1572,23 @@ bool hal_steer_angle_is_calibrated(void) {
 }
 
 // ===================================================================
-// Actuator - SPI Bus 2 (FSPI / SPI2_HOST)
+// Actuator - SPI Bus 2 (SD_SPI_BUS / SPI2_HOST)
 // ===================================================================
 void hal_actuator_begin(void) {
+    if (CS_ACT < 0) {
+        hal_log("ESP32: Actuator init skipped (CS_ACT not mapped on this board)");
+        return;
+    }
     pinMode(CS_ACT, OUTPUT);
     digitalWrite(CS_ACT, HIGH);
     hal_log("ESP32: Actuator begun on CS=%d (stub)", CS_ACT);
 }
 
 bool hal_actuator_detect(void) {
+    if (CS_ACT < 0) {
+        hal_log("ESP32: Actuator detect skipped (CS_ACT not mapped on this board)");
+        return false;
+    }
     // Actuator is write-only, hard to verify by reading back.
     // Just verify the SPI bus works by attempting a transfer.
     uint8_t tx = 0x00;
@@ -1541,6 +1601,7 @@ bool hal_actuator_detect(void) {
 }
 
 void hal_actuator_write(uint16_t cmd) {
+    if (CS_ACT < 0) return;
     uint8_t tx[2] = {
         static_cast<uint8_t>((cmd >> 8) & 0xFF),
         static_cast<uint8_t>(cmd & 0xFF)
@@ -1630,18 +1691,6 @@ void hal_net_init(void) {
 
     // Initialise ESP-IDF ETH driver
     #if CONFIG_IDF_TARGET_ESP32
-        
-        #define ETH_TYPE                        ETH_PHY_RTL8201
-        #define ETH_ADDR                        0
-        #define ETH_CLK_MODE                    ETH_CLOCK_GPIO0_IN
-        #define ETH_RESET_PIN                   -1
-        #define ETH_MDC_PIN                     23
-        #define ETH_POWER_PIN                   12
-        #define ETH_MDIO_PIN                    18
-        #define SD_MISO_PIN                     34
-        #define SD_MOSI_PIN                     13
-        #define SD_SCLK_PIN                     14
-        #define SD_CS_PIN                       5
         hal_log("ETH: initialising RTL8201 ETH  (MDC=%d MDIO=%d RST=%d PWR=%d)...",
             ETH_MDC_PIN, ETH_MDIO_PIN, ETH_RESET_PIN, ETH_POWER_PIN);
         pinMode(ETH_POWER_PIN, OUTPUT);
@@ -1776,21 +1825,21 @@ static void hal_esp32_common_boot_init(void) {
 
     // Safety pin
     pinMode(SAFETY_IN, INPUT_PULLUP);
-
-}
-
-static bool hal_esp32_requires_sensor_spi(void) {
-    return feat::imu() || feat::sensor() || feat::actor();
+    hal_log("ESP32 safety pin set.");
 }
 
 static void hal_esp32_init_sensor_bus_if_needed(void) {
-    if (hal_esp32_requires_sensor_spi()) {
+    const bool imu_available = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
+    const bool ads_available = feat::sensor() && (FEAT_PINS_ADS_COUNT > 0);
+    const bool act_available = feat::actor() && (FEAT_PINS_ACT_COUNT > 0);
+
+    if (imu_available || ads_available || act_available) {
         #if FEAT_CAP_SENSOR_SPI2
             hal_sensor_spi_init();
             hal_log("ESP32: sensor SPI init enabled (imu=%s was=%s actor=%s)",
-                    feat::imu() ? "Y" : "N",
-                    feat::sensor() ? "Y" : "N",
-                    feat::actor() ? "Y" : "N");
+                    imu_available ? "Y" : "N",
+                    ads_available ? "Y" : "N",
+                    act_available ? "Y" : "N");
             return;
         #else
             hal_log("ESP32: sensor SPI capability disabled at compile time (FEAT_CAP_SENSOR_SPI2=0)");
@@ -1798,7 +1847,7 @@ static void hal_esp32_init_sensor_bus_if_needed(void) {
     }
 
     hal_log("ESP32: sensor SPI init skipped (no active SPI-capable module)");
-    // SPI sensor bus (FSPI / SPI2_HOST) - nur wenn Compile-Time-Capability aktiv.
+    // SPI sensor bus (SD_SPI_BUS / SPI2_HOST) - nur wenn Compile-Time-Capability aktiv.
 }
 
 void hal_esp32_init_imu_bringup(void) {
@@ -1914,23 +1963,27 @@ void hal_esp32_init_all(void) {
     hal_esp32_common_boot_init();
     hal_esp32_init_sensor_bus_if_needed();
 
+    const bool imu_available = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
+    const bool ads_available = feat::sensor() && (FEAT_PINS_ADS_COUNT > 0);
+    const bool act_available = feat::actor() && (FEAT_PINS_ACT_COUNT > 0);
+
     // Capability-driven boot init (only initialise subsystems required by active modules).
-    if (feat::imu()) {
+    if (imu_available) {
         hal_imu_begin();
     } else {
-        hal_log("ESP32: IMU init skipped (module capability inactive)");
+        hal_log("ESP32: IMU init skipped (module unavailable or capability inactive)");
     }
 
-    if (feat::sensor()) {
+    if (ads_available) {
         hal_steer_angle_begin();
     } else {
-        hal_log("ESP32: steer-angle init skipped (module capability inactive)");
+        hal_log("ESP32: steer-angle init skipped (module unavailable or capability inactive)");
     }
 
-    if (feat::actor()) {
+    if (act_available) {
         hal_actuator_begin();
     } else {
-        hal_log("ESP32: actuator init skipped (module capability inactive)");
+        hal_log("ESP32: actuator init skipped (module unavailable or capability inactive)");
     }
 
     // Network (W5500 via ETH driver)

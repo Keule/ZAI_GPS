@@ -4,7 +4,7 @@
  */
 
 #include "hal/hal.h"
-#include "hardware_pins.h"
+#include "fw_config.h"
 
 #include <7Semi_BNO08x.h>
 #include <Arduino.h>
@@ -210,7 +210,6 @@ void hal_imu_begin(void) {
         return;
     }
     s_bno08x_begin_attempted = true;
-
     prepareChipSelects();
     hal_imu_set_spi_config(kBno085SpiHz, SPI_MODE3);
 

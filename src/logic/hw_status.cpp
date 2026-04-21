@@ -75,6 +75,13 @@ void hwStatusInit(void) {
 // ===================================================================
 void hwStatusSetFlag(HwSubsystem id, HwSeverity severity) {
     if (id >= HW_COUNT) return;
+    // HW_SEV_OK means "no error" — clear the flag instead of setting it.
+    // This prevents callers from accidentally marking a subsystem as faulty
+    // when they intend to signal that everything is OK (see TASK-032).
+    if (severity == HW_SEV_OK) {
+        hwStatusClearFlag(id);
+        return;
+    }
     if (!s_subsys[id].error) {
         s_subsys[id].error = true;
         s_subsys[id].severity = severity;
@@ -194,7 +201,8 @@ void hwStatusSendClassifiedMessage(uint8_t src,
 uint8_t hwStatusUpdate(bool connected,
                         bool safety_ok,
                         bool steer_angle_valid,
-                        bool imu_valid) {
+                        bool imu_valid,
+                        bool ntrip_active) {
     uint32_t now = hal_millis();
 
     // --- Update subsystem flags based on actual status ---
@@ -225,6 +233,14 @@ uint8_t hwStatusUpdate(bool connected,
         hwStatusSetFlag(HW_SAFETY, HW_SEV_ERROR);
     } else {
         hwStatusClearFlag(HW_SAFETY);
+    }
+
+    // GNSS/NTRIP subsystem — clear flag if NTRIP module is not active.
+    // When NTRIP is active, hwStatusSetFlag(HW_GNSS, ...) is called from
+    // ntripTick() in ntrip.cpp (TASK-025). We only need to clear the flag
+    // here when the module is inactive.
+    if (!ntrip_active) {
+        hwStatusClearFlag(HW_GNSS);
     }
 
     // --- Send hardware messages for active errors ---
