@@ -25,6 +25,7 @@
 #include "fw_config.h"
 #include "hal/hal.h"
 #include "hal_esp32/hal_impl.h"
+#include "logic/config_mode.h"
 #include "logic/control.h"
 #include "logic/dependency_policy.h"
 #include "logic/features.h"
@@ -485,6 +486,18 @@ void setup() {
     }
 
     gnssMirrorInit();
+
+    if (!s_gnss_buildup_active && !hal_safety_ok()) {
+        hal_log("CONFIG MODE ACTIVE (reason: SAFETY_IN LOW)");
+        hal_log("CONTROL DISABLED IN CONFIG MODE");
+        configModeRun();
+        if (!hal_safety_ok()) {
+            hal_log("Main: safety still LOW after config mode exit -> staying idle");
+            return;
+        }
+        hal_log("Main: safety input restored -> continuing normal startup");
+    }
+
     if (s_gnss_buildup_active) {
         // Reduced startup: no OTA, no module detection, no sensor/actuator stack.
 

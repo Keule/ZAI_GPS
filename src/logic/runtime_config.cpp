@@ -24,12 +24,15 @@
 #include <FS.h>
 #include <SD.h>
 #include <SPI.h>
+#include <Preferences.h>
 #include "fw_config.h"   // for SD_SPI_BUS, SD_SPI_SCK, SD_SPI_MISO, SD_SPI_MOSI, SD_CS
 #include "hal/hal.h"     // hal_sensor_spi_deinit(), hal_sensor_spi_reinit(), hal_delay_ms()
 #endif
 
 /// Path to NTRIP credentials file on SD card.
 static constexpr const char* kNtripCfgPath = "/ntrip.cfg";
+static constexpr const char* kCfgNvsNs = "agcfg";
+static constexpr uint32_t kCfgNvsMagic = 0xC0A6F123;
 
 /// Global runtime configuration instance (zero-initialised).
 static RuntimeConfig s_runtime_config = {};
@@ -154,20 +157,58 @@ cleanup:
 
 #endif  // ARDUINO_ARCH_ESP32
 
+
+bool softConfigLoadFromNvs(RuntimeConfig& cfg) {
+#if defined(ARDUINO_ARCH_ESP32)
+    Preferences prefs;
+    if (!prefs.begin(kCfgNvsNs, true)) return false;
+
+    const uint32_t magic = prefs.getUInt("magic", 0);
+    if (magic != kCfgNvsMagic) {
+        prefs.end();
+        return false;
+    }
+
+    prefs.getBytes("cfg", &cfg, sizeof(cfg));
+    prefs.end();
+    hal_log("CFG: loaded runtime config from NVS");
+    return true;
+#else
+    (void)cfg;
+    return false;
+#endif
+}
+
+bool softConfigSaveToNvs(const RuntimeConfig& cfg) {
+#if defined(ARDUINO_ARCH_ESP32)
+    Preferences prefs;
+    if (!prefs.begin(kCfgNvsNs, false)) return false;
+    prefs.putUInt("magic", kCfgNvsMagic);
+    prefs.putBytes("cfg", &cfg, sizeof(cfg));
+    prefs.end();
+    hal_log("CFG: saved runtime config to NVS");
+    return true;
+#else
+    (void)cfg;
+    return false;
+#endif
+}
+
 bool softConfigLoadOverrides(RuntimeConfig& cfg) {
+    bool loaded = softConfigLoadFromNvs(cfg);
 #if defined(ARDUINO_ARCH_ESP32)
     if (!moduleIsActive(MOD_SD)) {
         hal_log("CFG: MOD_SD inactive -> skip SD override load");
-        return false;
+        return loaded;
     }
     if (loadNtripFromSd(cfg)) {
-        return true;
+        loaded = true;
     }
     // No credentials file or SD not present — NTRIP stays with empty defaults
     // (host is ""), so NTRIP will remain in IDLE state.  This is expected.
 #endif
     (void)cfg;
-    return false;
+    return loaded;
 }
 
 RuntimeConfig& softConfigGet(void) {

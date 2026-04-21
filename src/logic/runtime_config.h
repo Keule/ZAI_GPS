@@ -34,5 +34,13 @@ void softConfigLoadDefaults(RuntimeConfig& cfg);
 /// Returns true if overrides were loaded, false if no overrides available.
 bool softConfigLoadOverrides(RuntimeConfig& cfg);
 
+/// Load user overrides from NVS flash.
+/// Returns true if persisted values were found and applied.
+bool softConfigLoadFromNvs(RuntimeConfig& cfg);
+
+/// Persist runtime config to NVS flash.
+/// Returns true on success.
+bool softConfigSaveToNvs(const RuntimeConfig& cfg);
+
 /// Get the global runtime config instance.
 RuntimeConfig& softConfigGet(void);
