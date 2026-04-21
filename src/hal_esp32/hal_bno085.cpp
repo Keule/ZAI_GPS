@@ -210,7 +210,6 @@ void hal_imu_begin(void) {
         return;
     }
     s_bno08x_begin_attempted = true;
-
     prepareChipSelects();
     hal_imu_set_spi_config(kBno085SpiHz, SPI_MODE3);
 

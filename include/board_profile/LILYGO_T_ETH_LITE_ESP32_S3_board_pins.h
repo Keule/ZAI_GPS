@@ -40,6 +40,7 @@
 #define SENS_SPI_SCK   47     // SPI clock
 #define SENS_SPI_MISO  21     // SPI MISO (data from devices to ESP32)
 #define SENS_SPI_MOSI  38     // SPI MOSI (data from ESP32 to devices)
+#define SENS_SPI_BUS   FSPI   // SPI2_HOST on ESP32-S3 (sensor bus)
 
 // Guard against accidental duplicate IMU pin definitions from build flags or
 // other headers. This file is the single source of truth for IMU wiring.
@@ -77,6 +78,7 @@
 #define SD_SPI_MISO    5      // SPI MISO for SD card
 #define SD_SPI_MOSI    6      // SPI MOSI for SD card
 #define SD_CS          42     // SD card slot
+#define SD_SPI_BUS     FSPI   // shared with sensor bus, switched at runtime
 
 // ---------------------------------------------------------------------------
 // Safety input (active LOW)
