@@ -137,7 +137,7 @@ Stage Summary:
 - Ring buffer converted from static 16 KB array to pointer-based design with PSRAM support
 - New maintTask (Core 0, priority 1, 8 KB stack) replaces standalone loggerTask
 - PSRAM ring buffer: 32768 × 32 bytes = 1 MB (~53 minutes at 10 Hz)
-- SD logging: no longer blocks FSPI from controlTask (writes go to PSRAM, maintTask drains to SD)
+- SD logging: no longer blocks SD_SPI_BUS from controlTask (writes go to PSRAM, maintTask drains to SD)
 - NTRIP connect: no longer blocks commTask (hal_tcp_connect runs in maintTask)
 - ETH monitoring: link state changes logged by maintTask
 - Backward compatibility: legacy `sdLoggerInit()` still works with static 16 KB buffer

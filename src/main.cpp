@@ -427,7 +427,7 @@ static void commTaskFunc(void* param) {
                 hal_log("COMM: %u HW error(s) active", (unsigned)err_count);
             }
         }
-
+        //Serial.println("[DBG-COMM] looped");
         vTaskDelayUntil(&next_wake, poll_interval);
     }
 }
@@ -652,7 +652,7 @@ void setup() {
     //
     // Uses a PSRAM-backed ring buffer (~1 MB = ~53 min at 10 Hz)
     // so the control loop's sdLoggerRecord() call is ~1 µs with
-    // no FSPI interaction.
+    // no SD_SPI_BUS interaction.
     // -----------------------------------------------------------------
     if (feat::control()) {
         sdLoggerMaintInit();

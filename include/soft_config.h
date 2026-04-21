@@ -15,11 +15,11 @@
 namespace cfg {
 
 // --- NTRIP Client Defaults ---
-inline constexpr const char* NTRIP_HOST        = "";
+inline constexpr const char* NTRIP_HOST        = "euref-ip.net";
 inline constexpr uint16_t     NTRIP_PORT        = 2101;
-inline constexpr const char* NTRIP_MOUNTPOINT   = "";
-inline constexpr const char* NTRIP_USER         = "";
-inline constexpr const char* NTRIP_PASSWORD     = "";
+inline constexpr const char* NTRIP_MOUNTPOINT   = "KARL00DEU0";
+inline constexpr const char* NTRIP_USER         = "oebhk";
+inline constexpr const char* NTRIP_PASSWORD     = "0@AW!xek3ygKt3";
 inline constexpr uint32_t     NTRIP_RECONNECT_MS = 5000;
 
 // --- GNSS Defaults ---
