@@ -73,11 +73,11 @@ void modulesInit(void) {
     // --- Initialise feature module compiled/availability flags ---
     featureModulesInitCompiled();
 
-    const bool mod_eth_enabled = g_features[MOD_ETH].compiled;
-    const bool mod_ads_enabled = g_features[MOD_ADS].compiled;
-    const bool mod_imu_enabled = g_features[MOD_IMU].compiled;
-    const bool mod_act_enabled = g_features[MOD_ACT].compiled;
-    const bool mod_safety_enabled = g_features[MOD_SAFETY].compiled;
+    const bool mod_eth_enabled = feat::comm() && (FEAT_PINS_ETH_COUNT > 0);
+    const bool mod_ads_enabled = feat::sensor() && (FEAT_PINS_ADS_COUNT > 0);
+    const bool mod_imu_enabled = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
+    const bool mod_act_enabled = feat::actor() && (FEAT_PINS_ACT_COUNT > 0);
+    const bool mod_safety_enabled = feat::control() && (FEAT_PINS_SAFETY_COUNT > 0);
 
     // --- Detect individual subsystems ---
 
