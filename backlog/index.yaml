@@ -526,3 +526,62 @@ tasks:
     dependencies:
       - TASK-027
       - TASK-029
+
+  # ---------------------------------------------------------------------------
+  # Review-Nacharbeiten TASK-026..030 (KI-Planer, 2026-04-21)
+  # Ursprung: Kombinierter Review (Super Z + GPT-5.3-Codex)
+  # ---------------------------------------------------------------------------
+
+  - id: TASK-031
+    title: Legacy HAL Pin-Claims mit MOD_*-Tags harmonisieren (Review-F1)
+    file: backlog/tasks/TASK-031-legacy-pin-claims-harmonisierung-mit-mod-tags.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-027
+
+  - id: TASK-032
+    title: NTRIP hwStatusSetFlag() Bug beheben — GNSS-Status fälschlich als Fehler (Review-F2)
+    file: backlog/tasks/TASK-032-ntrip-hwstatus-bug-gnss-falscher-fehler.md
+    epic_id: EPIC-001
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: runtime_stability
+    dependencies: []
+
+  - id: TASK-033
+    title: NTRIP-Credentials aus soft_config.h entfernen und dateibasiertes Laden implementieren (Review-F3)
+    file: backlog/tasks/TASK-033-ntrip-credentials-dateibasiertes-laden.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-028
+      - TASK-029
+
+  - id: TASK-034
+    title: GPIO-46 LOG_SWITCH_PIN verlegen (GPIO3) und Profil umbenennen (Review-F4/F5)
+    file: backlog/tasks/TASK-034-gpio46-logsw-pin-verlegen-profil-naming-ntrip-deps.md
+    epic_id: EPIC-003
+    status: open
+    priority: medium
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-027
+
+  - id: TASK-035
+    title: sd_logger_esp32.cpp Dokumentation und Prozess-Konservierung (Review-F7)
+    file: backlog/tasks/TASK-035-sd-logger-doku-und-prozess-konservierung.md
+    epic_id: EPIC-003
+    status: open
+    priority: low
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies: []
