@@ -59,6 +59,7 @@ epics:
       - TASK-033
       - TASK-034
       - TASK-035
+      - TASK-036
 
   - id: EPIC-004
     title: Feature Expansion
@@ -590,3 +591,15 @@ tasks:
     delivery_mode: firmware_only
     task_category: platform_reuse
     dependencies: []
+
+  - id: TASK-036
+    title: SD-Funktionalität als Modul aktivierbar machen und bei fehlender Karte beim Boot vollständig deaktivieren
+    file: backlog/tasks/TASK-036-sd-modul-boot-detect-und-hartes-gating.md
+    epic_id: EPIC-003
+    status: done
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-027
+      - TASK-028

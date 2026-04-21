@@ -143,7 +143,7 @@ inline constexpr int8_t GNSS_MIRROR_UART2_TX_PIN = GNSS_UART2_TX;
 //
 // FirmwareFeatureId numeric mapping (matches FirmwareFeatureId enum):
 //   0 = MOD_IMU, 1 = MOD_ADS, 2 = MOD_ACT, 3 = MOD_ETH,
-//   4 = MOD_GNSS, 5 = MOD_NTRIP, 6 = MOD_SAFETY, 7 = MOD_LOGSW
+//   4 = MOD_GNSS, 5 = MOD_NTRIP, 6 = MOD_SAFETY, 7 = MOD_LOGSW, 8 = MOD_SD
 // ---------------------------------------------------------------------------
 
 // IMU: INT=46, RST=41, WAKE=15, CS=40
@@ -177,6 +177,10 @@ static constexpr uint8_t FEAT_PINS_SAFETY_COUNT = 1;
 // Logging switch: GPIO 3
 static constexpr int8_t FEAT_PINS_LOGSW[] = { LOG_SWITCH_PIN, -1 };
 static constexpr uint8_t FEAT_PINS_LOGSW_COUNT = 1;
+
+// SD subsystem: CS only (no dedicated card-detect GPIO on this board)
+static constexpr int8_t FEAT_PINS_SD[] = { SD_CS, -1 };
+static constexpr uint8_t FEAT_PINS_SD_COUNT = 1;
 
 // ---------------------------------------------------------------------------
 // Feature Dependencies — TASK-027
