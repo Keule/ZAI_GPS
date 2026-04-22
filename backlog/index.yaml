@@ -525,7 +525,7 @@ tasks:
     title: Legacy HAL Pin-Claims mit MOD_*-Tags harmonisieren (Review-F1)
     file: backlog/tasks/TASK-031-legacy-pin-claims-harmonisierung-mit-mod-tags.md
     epic_id: EPIC-003
-    status: open
+    status: done
     priority: high
     delivery_mode: firmware_only
     task_category: platform_reuse
@@ -536,7 +536,7 @@ tasks:
     title: NTRIP hwStatusSetFlag() Bug beheben — GNSS-Status fälschlich als Fehler (Review-F2)
     file: backlog/tasks/TASK-032-ntrip-hwstatus-bug-gnss-falscher-fehler.md
     epic_id: EPIC-001
-    status: open
+    status: done
     priority: high
     delivery_mode: firmware_only
     task_category: runtime_stability
@@ -546,7 +546,7 @@ tasks:
     title: NTRIP-Credentials aus soft_config.h entfernen und dateibasiertes Laden implementieren (Review-F3)
     file: backlog/tasks/TASK-033-ntrip-credentials-dateibasiertes-laden.md
     epic_id: EPIC-003
-    status: open
+    status: done
     priority: high
     delivery_mode: firmware_only
     task_category: platform_reuse
@@ -687,7 +687,7 @@ tasks:
     title: Control-/Init-Pfade über Modulverfügbarkeit härten (fehlende Pins => kein Runtime-Zugriff)
     file: backlog/tasks/TASK-044-runtime-gating-bei-fehlenden-pinzuweisungen.md
     epic_id: EPIC-001
-    status: open
+    status: done
     priority: high
     delivery_mode: firmware_only
     task_category: runtime_stability

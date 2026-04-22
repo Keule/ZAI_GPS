@@ -3,6 +3,8 @@
 - **Origin:** Kombinierter Review TASK-026..030, Finding F3 (Kritisch)
 - **Entscheidung Mensch:** Zugangsdaten sollen über eine Credentials-Datei geladen werden, nicht im Code stehen
 
+- **Status:** done
+
 ## Kontext / Problem
 
 `include/soft_config.h` Zeilen 18-22 enthalten echte produktive SAPOS-Caster-Zugangsdaten als compile-time Defaults:

@@ -2,7 +2,7 @@
 
 - **ID**: TASK-044
 - **Titel**: Control-/Init-Pfade konsequent über Modulverfügbarkeit gate'n, um Phantom-Nutzung ohne Pins zu verhindern
-- **Status**: open
+- **Status**: done
 - **Priorität**: high
 - **Komponenten**: `src/main.cpp`, `src/logic/control.cpp`, `src/logic/modules.cpp`, `src/hal_esp32/hal_impl.cpp`, `src/logic/hw_status.cpp`, `src/logic/global_state.*`
 - **Dependencies**: TASK-027, TASK-036

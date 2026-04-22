@@ -3,6 +3,8 @@
 - **Origin:** Kombinierter Review TASK-026..030, Finding F1 (Kritisch)
 - **Entscheidung Mensch:** Variante (a) — HAL-Init nutzt dieselben MOD_*-Tags als Owner wie das Feature-Modulsystem
 
+- **Status:** done
+
 ## Kontext / Problem
 
 `setup()` in `main.cpp` ruft `hal_esp32_init_all()` auf (Zeile 461), das Pins unter **Legacy-Owner-Tags** claimt (z. B. `"imu-int"`, `"imu-cs"`, `"eth-sck"` — siehe `hal_impl.cpp` Funktionen `claimCommonInitPins()`, `claimImuSteerInitPins()`, `claimEthPins()`, `claimGnssUartPins()`). Danach werden in `setup()` `moduleActivate(MOD_IMU)`, `moduleActivate(MOD_ETH)` etc. aufgerufen (Zeilen 576-584), die dieselben Pins unter **MOD_*-Tags** claimen wollen (z. B. `"MOD_IMU"`, `"MOD_ETH"` — siehe `modules.cpp` Funktion `featureOwnerTag()`).

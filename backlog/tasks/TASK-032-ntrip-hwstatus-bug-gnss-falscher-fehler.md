@@ -3,6 +3,8 @@
 - **Origin:** Kombinierter Review TASK-026..030, Finding F2 (Kritisch)
 - **Entscheidung:** Klare Code-Korrektur, keine Architekturvariante
 
+- **Status:** done
+
 ## Kontext / Problem
 
 In `ntrip.cpp` Zeile 429 ruft der `NtripConnState::CONNECTED`-Zweig in `ntripTick()` folgende Funktion auf:
