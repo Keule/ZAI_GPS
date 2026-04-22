@@ -14,6 +14,7 @@
 #include "control.h"
 #include "global_state.h"
 #include "hal/hal.h"
+#include "modules.h"
 
 #include <Arduino.h>
 #include <esp_system.h>
@@ -353,6 +354,101 @@ void cliCmdNet(int argc, char** argv) {
     Serial.println("usage: net <show|mode|ip|gw|mask|restart>");
 }
 
+const char* modStateToStr(ModState s) {
+    switch (s) {
+        case MOD_UNAVAILABLE: return "UNAVAILABLE";
+        case MOD_OFF: return "OFF";
+        case MOD_ON: return "ON";
+        default: return "?";
+    }
+}
+
+bool parseModuleName(const char* name, FirmwareFeatureId* out_id) {
+    if (!name || !out_id) return false;
+    struct Entry { const char* name; FirmwareFeatureId id; };
+    static const Entry kEntries[] = {
+        {"imu", MOD_IMU}, {"ads", MOD_ADS}, {"act", MOD_ACT}, {"eth", MOD_ETH},
+        {"gnss", MOD_GNSS}, {"ntrip", MOD_NTRIP}, {"safety", MOD_SAFETY},
+        {"logsw", MOD_LOGSW}, {"sd", MOD_SD},
+    };
+    for (const auto& e : kEntries) {
+        if (std::strcmp(name, e.name) == 0) {
+            *out_id = e.id;
+            return true;
+        }
+    }
+    return false;
+}
+
+void cliCmdModule(int argc, char** argv) {
+    if (argc < 2) {
+        Serial.println("usage: module <list|enable|disable|pins> [name]");
+        return;
+    }
+
+    if (std::strcmp(argv[1], "list") == 0) {
+        Serial.println("Module Status:");
+        for (int i = 0; i < MOD_COUNT; ++i) {
+            const auto* info = moduleGetInfo(static_cast<FirmwareFeatureId>(i));
+            if (!info) continue;
+            Serial.printf("  %-6s (%d) = %-11s pins=%u deps=%s\n",
+                          info->name ? info->name : "?",
+                          i,
+                          modStateToStr(moduleGetState(static_cast<FirmwareFeatureId>(i))),
+                          static_cast<unsigned>(info->pin_count),
+                          info->deps ? "yes" : "none");
+        }
+        return;
+    }
+
+    if (argc < 3) {
+        Serial.println("usage: module <enable|disable|pins> <name>");
+        return;
+    }
+
+    FirmwareFeatureId id = MOD_COUNT;
+    if (!parseModuleName(argv[2], &id)) {
+        Serial.println("ERROR: unknown module name.");
+        return;
+    }
+
+    if (std::strcmp(argv[1], "enable") == 0) {
+        const bool ok = moduleActivate(id);
+        Serial.printf("module %s -> %s\n", argv[2], ok ? "ON" : "ERROR");
+        return;
+    }
+
+    if (std::strcmp(argv[1], "disable") == 0) {
+        if (id == MOD_ETH) {
+            Serial.println("ERROR: ETH is mandatory and cannot be disabled.");
+            return;
+        }
+        const bool ok = moduleDeactivate(id);
+        Serial.printf("module %s -> %s\n", argv[2], ok ? "OFF" : "ERROR");
+        return;
+    }
+
+    if (std::strcmp(argv[1], "pins") == 0) {
+        const auto* info = moduleGetInfo(id);
+        if (!info) {
+            Serial.println("ERROR: module not found.");
+            return;
+        }
+        Serial.printf("%s pins:", info->name ? info->name : argv[2]);
+        if (!info->pins || info->pin_count == 0) {
+            Serial.println(" (none)");
+            return;
+        }
+        for (uint8_t i = 0; i < info->pin_count; ++i) {
+            Serial.printf(" %d", static_cast<int>(info->pins[i]));
+        }
+        Serial.println();
+        return;
+    }
+
+    Serial.println("usage: module <list|enable|disable|pins> [name]");
+}
+
 void cliCmdUnknown(const char* cmd) {
     Serial.printf("Unknown command: %s\n", cmd ? cmd : "");
     Serial.println("Type 'help' for available commands.");
@@ -389,6 +485,7 @@ void cliInit(void) {
     (void)cliRegisterCommand("ntrip", &cliCmdNtrip, "NTRIP runtime config and status");
     (void)cliRegisterCommand("pid", &cliCmdPid, "PID tuning and status");
     (void)cliRegisterCommand("net", &cliCmdNet, "Network runtime config");
+    (void)cliRegisterCommand("module", &cliCmdModule, "Module runtime control");
 }
 
 bool cliRegisterCommand(const char* cmd,
