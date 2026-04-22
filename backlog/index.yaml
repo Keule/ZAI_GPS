@@ -606,11 +606,14 @@ tasks:
       - TASK-028
 
   - id: TASK-037
-    title: Basis-Task für einheitlichen Konfig-Framework-Rahmen vor NTRIP/UART/GNSS/Ethernet
-    file: backlog/tasks/TASK-037-basis-konfig-framework-rahmen-vor-feature-tasks.md
+    title: Boot-Pfad analysieren und deterministischen Serial-Konfigmodus bei Safety-Pin LOW spezifizieren
+    file: backlog/tasks/TASK-037-boot-safety-pin-serial-konfigmodus.md
     epic_id: EPIC-003
     status: open
     priority: high
-    delivery_mode: firmware_only
+    delivery_mode: mixed
     task_category: platform_reuse
-    dependencies: []
+    dependencies:
+      - TASK-022
+      - TASK-023
+      - TASK-028
