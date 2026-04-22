@@ -5,7 +5,7 @@
 - **Status**: open
 - **Priorität**: high
 - **Komponenten**: `src/logic/runtime_config.*`, `src/logic/ntrip.*`, `src/hal_esp32/esp32_web.*`, `src/hal_esp32/esp32_cli.*`, `src/main.cpp`, `include/soft_config.h`, `src/hal_esp32/sd_logger_esp32.cpp`
-- **Dependencies**: TASK-025, TASK-030, TASK-032, TASK-033
+- **Dependencies**: TASK-025, TASK-033
 - **delivery_mode**: firmware_only
 - **task_category**: platform_reuse
 - **Owner**: ki-planer
@@ -13,7 +13,10 @@
 
 - **classification**: dependent
 - **exclusive_before**: []
-- **parallelizable_after**: [TASK-032, TASK-033]
+- **parallelizable_after**: []
+- **Planungsnotiz (Dependencies/Parallelisierung)**:
+  - `Dependencies` enthält nur harte Voraussetzungen (NTRIP-Basisintegration und dateibasierte Credential-Quelle).
+  - `parallelizable_after` bleibt leer, da für diesen Spezifikations-Task kein separates Parallelisierungsfenster nach Teilvorgängern definiert ist.
 
 - **Origin**:
   Nutzeranforderung aus Chat (2026-04-21): Ein neuer Task soll den NTRIP-Konfigurationspfad
