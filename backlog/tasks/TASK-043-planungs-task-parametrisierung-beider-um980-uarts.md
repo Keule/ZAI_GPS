@@ -1,11 +1,11 @@
 # TASK-043 Parametrisierung beider UM980-UARTs planen
 
-- **ID**: TASK-043
+- **ID:** TASK-043
 - **Titel:** Planungs-Task für die Parametrisierung beider UM980-UARTs erstellen
 - **Status:** open
 - **Priorität:** high
 - **Owner:** ki-planer
-- **Dependencies:** TASK-019A, TASK-019C, TASK-019D, TASK-014, TASK-017, TASK-019F
+- **Dependencies:** TASK-019A, TASK-019C, TASK-019D, TASK-014, TASK-017
 - **delivery_mode:** firmware_only
 - **task_category:** feature_expansion
 - **base_branch:** task/TASK-019
@@ -40,7 +40,7 @@ Die aktuelle Dual-UM980-Integration hat Bringup-, Spiegel- und Failover-Baustein
 
 ## Nicht-Scope (out)
 
-- Vollständige Implementierung der Dual-UM980-Failover-Strategie selbst (TASK-019F)
+- Vollständige Implementierung der Dual-UM980-Failover-Strategie selbst (TASK-019F; nutzt Ergebnisse dieses Planungs-Tasks)
 - Labor-/Feld-Endvalidierung (TASK-019G)
 - Neue Hardware-Revisionen oder Board-Redesign
 
@@ -60,7 +60,7 @@ Die aktuelle Dual-UM980-Integration hat Bringup-, Spiegel- und Failover-Baustein
 - **TASK-019D**: UART-Mirror/Diagnostik ist direkte Rollen-Option und kollidiert potenziell mit produktiven Datenrollen.
 - **TASK-014**: RTCM-UART-Forwarding definiert den bestehenden RTCM-Datenpfad und muss im Rollenmodell je UART konsistent bleiben.
 - **TASK-017**: Validierungskriterien für RTCM-Ende-zu-Ende liefern Messlatte für neue UART-Rollenbelegung.
-- **TASK-019F**: Failover-Logik hängt von stabilen, validen UART-Rollen und belastbarer Konfiguration ab.
+- **TASK-019F**: Baut fachlich auf den hier definierten UART-Rollen-, Validierungs- und Fallbackregeln auf (Dependency-Richtung: `TASK-019F -> TASK-043`).
 
 ## Invarianten
 
@@ -125,8 +125,8 @@ Die aktuelle Dual-UM980-Integration hat Bringup-, Spiegel- und Failover-Baustein
 ## Classification
 
 - **classification:** feature_expansion
-- **exclusive_before:** TASK-019F Merge/Abnahme (falls UART-Rollen/Fallback noch unklar)
-- **parallelizable_after:** TASK-019G Testplanung, Doku-/Report-Tasks zu UART-Rollenmodell
+- **exclusive_before:** TASK-019F (Failover-Implementierung) — erst nach abgeschlossener Parametrisierungs-/Validierungsplanung
+- **parallelizable_after:** TASK-019F, TASK-019G sowie Doku-/Report-Tasks zum UART-Rollenmodell
 
 ## Relevante ADRs
 

@@ -387,6 +387,7 @@ tasks:
       - TASK-019C
       - TASK-019D
       - TASK-017
+      - TASK-043
 
   - id: TASK-019G
     title: Labor- und Feldvalidierung für Dual-UM980 inklusive Smoke-/Langlauftests
@@ -673,7 +674,6 @@ tasks:
       - TASK-019D
       - TASK-014
       - TASK-017
-      - TASK-019F
       
   - id: TASK-044
     title: Control-/Init-Pfade über Modulverfügbarkeit härten (fehlende Pins => kein Runtime-Zugriff)
