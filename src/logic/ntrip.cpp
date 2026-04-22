@@ -148,8 +148,10 @@ static size_t buildNtripRequest(char* buf, size_t buf_max) {
     // Start with GET request line
     int n = snprintf(buf, buf_max,
         "GET /%s HTTP/1.0\r\n"
-        "User-Agent: AgSteer NTRIP Client v1.0\r\n",
-        cfg.mountpoint);
+        "User-Agent: NTRIP ESP32Client/1.0\r\n"
+        "Host: %s:%u\r\n"
+        "Ntrip-Version: Ntrip/2.0\r\n",
+        cfg.mountpoint, cfg.host, static_cast<unsigned>(cfg.port));
 
     if (n < 0 || static_cast<size_t>(n) >= buf_max) return 0;
     size_t pos = static_cast<size_t>(n);
@@ -177,6 +179,25 @@ static size_t buildNtripRequest(char* buf, size_t buf_max) {
     pos += static_cast<size_t>(n);
 
     return pos;
+}
+
+static size_t findFirstLineEnd(const char* resp, size_t len) {
+    if (!resp || len == 0) return 0;
+    for (size_t i = 0; i < len; i++) {
+        if (resp[i] == '\n') return i + 1;
+    }
+    return 0;
+}
+
+static size_t findHeaderEnd(const char* resp, size_t len) {
+    if (!resp || len < 4) return 0;
+    for (size_t i = 0; i + 3 < len; i++) {
+        if (resp[i] == '\r' && resp[i + 1] == '\n' &&
+            resp[i + 2] == '\r' && resp[i + 3] == '\n') {
+            return i + 4;
+        }
+    }
+    return 0;
 }
 
 /// Check HTTP response for success (look for "200" status code).
@@ -367,11 +388,12 @@ void ntripTick(void) {
             }
         }
 
-        // Check if we received enough data (look for end of headers)
-        if (s_http_resp_len > 0 &&
-            strstr(s_http_resp, "\r\n\r\n") != nullptr) {
+        // Accept response as soon as first status line is complete.
+        // Many NTRIP v1 casters answer "ICY 200 OK\\r\\n" and immediately start streaming RTCM.
+        const size_t first_line_len = findFirstLineEnd(s_http_resp, s_http_resp_len);
+        if (s_http_resp_len > 0 && first_line_len > 0) {
             uint8_t http_status = 0;
-            bool ok = parseNtripResponse(s_http_resp, s_http_resp_len, &http_status);
+            bool ok = parseNtripResponse(s_http_resp, first_line_len, &http_status);
 
             {
                 StateLock lock;
@@ -379,6 +401,22 @@ void ntripTick(void) {
             }
 
             if (ok) {
+                // Preserve any payload bytes that arrived in the same TCP read.
+                size_t payload_offset = findHeaderEnd(s_http_resp, s_http_resp_len);
+                if (payload_offset == 0) {
+                    payload_offset = first_line_len;
+                }
+                if (payload_offset < s_http_resp_len) {
+                    const size_t payload_len = s_http_resp_len - payload_offset;
+                    const size_t written = rtcmRingWrite(
+                        reinterpret_cast<const uint8_t*>(s_http_resp + payload_offset),
+                        payload_len);
+                    StateLock lock;
+                    g_ntrip.rx_bytes += static_cast<uint32_t>(written);
+                    if (written > 0) {
+                        g_ntrip.last_rtcm_ms = hal_millis();
+                    }
+                }
                 ntripEnterState(NtripConnState::CONNECTED);
                 LOGI("NTRIP", "authenticated, receiving RTCM stream (HTTP %u)",
                      static_cast<unsigned>(http_status));
