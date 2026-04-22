@@ -7,8 +7,5 @@
 
 #pragma once
 
-/// Initialise steering angle sensor.
-void steerAngleInit(void);
-
 /// Read current steering angle [degrees].
 float steerAngleReadDeg(void);

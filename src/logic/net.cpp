@@ -177,6 +177,7 @@ static void rtcmRingPop(size_t len) {
     s_rtcm_size -= len;
 }
 
+#if FEAT_GNSS
 static void netPollRtcmReceiveAndForward(void) {
     uint8_t rtcm_buf[aog_frame::MAX_FRAME];
 
@@ -217,6 +218,7 @@ static void netPollRtcmReceiveAndForward(void) {
         }
     }
 }
+#endif
 
 void netUpdateUm980Status(uint8_t um980_fix_type,
                           bool rtcm_active,
@@ -377,7 +379,9 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
 // Poll for received UDP frames
 // ===================================================================
 void netPollReceive(void) {
+#if FEAT_GNSS
     netPollRtcmReceiveAndForward();
+#endif
 
     uint8_t rx_buf[aog_frame::MAX_FRAME];
 

@@ -113,11 +113,6 @@ bool imuBringupModeEnabled(void) {
     return k_imu_bringup_mode;
 }
 
-void imuInit(void) {
-    hal_imu_begin();
-    LOGI("IMU", "initialised (BNO085 SPI)");
-}
-
 bool imuUpdate(void) {
     float yaw_rate = 0.0f;
     float roll = 0.0f;

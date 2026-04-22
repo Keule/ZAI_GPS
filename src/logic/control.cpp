@@ -108,8 +108,6 @@ float pidCompute(PidState* pid, float error, uint32_t dt_ms) {
 void controlInit(void) {
     // NOTE: HAL-level init (hal_imu_begin, hal_steer_angle_begin,
     // hal_actuator_begin) is already done in hal_esp32_init_all().
-    // imuInit/steerAngleInit/actuatorInit would redundantly call
-    // the HAL begin functions and produce duplicate log messages.
     // We only need to init the PID controller here.
 
     // Default PID gains – tune for actual actuator/sensor combo
@@ -200,11 +198,15 @@ void controlStep(void) {
     const bool safety_active = moduleIsActive(MOD_SAFETY);
 
     in.safety_ok = safety_active ? hal_safety_ok() : true;
+    #if FEAT_IMU
     if (imu_active) {
         imuUpdate();
     }
+    #endif
+    #if FEAT_STEER_SENSOR
     in.current_angle_deg = ads_active ? steerAngleReadDeg() : 0.0f;
     in.steer_raw = ads_active ? hal_steer_angle_read_raw() : 0;
+    #endif
     in.setpoint_deg = desiredSteerAngleDeg;
 
 #if LOG_WAS_DIAG_INTERVAL_MS > 0
@@ -232,6 +234,7 @@ void controlStep(void) {
     out.watchdog_triggered = (in.watchdog_timer_ms != 0u) &&
                              (in.now_ms - in.watchdog_timer_ms > dep_policy::WATCHDOG_TIMEOUT_MS);
 
+    #if FEAT_MACHINE_ACTOR
     if (!act_active || !ads_active || !imu_active ||
         !in.safety_ok || !in.auto_steer_enabled ||
         out.watchdog_triggered || in.gps_speed_kmh < MIN_STEER_SPEED_KMH) {
@@ -249,6 +252,7 @@ void controlStep(void) {
         const float output = pidCompute(&s_steer_pid, error, dt);
         out.actuator_cmd = static_cast<uint16_t>(output);
     }
+    #endif
 
     // ----------------------------------------------------------
     // Output phase (single writer update + actuator command)
@@ -257,9 +261,11 @@ void controlStep(void) {
         pidReset(&s_steer_pid);
     }
 
+    #if FEAT_MACHINE_ACTOR && FEAT_STEER_ACTOR
     if (act_active) {
         actuatorWriteCommand(out.actuator_cmd);
     }
+    #endif
 
     {
         const bool steer_quality_ok = ads_active &&

@@ -15,11 +15,6 @@
 #include "esp_log.h"
 #include "log_ext.h"
 
-void steerAngleInit(void) {
-    hal_steer_angle_begin();
-    LOGI("WAS", "initialised (SPI stub)");
-}
-
 float steerAngleReadDeg(void) {
     float angle = hal_steer_angle_read_deg();
     const uint32_t now_ms = hal_millis();

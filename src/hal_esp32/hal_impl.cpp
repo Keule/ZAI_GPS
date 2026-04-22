@@ -1861,28 +1861,6 @@ static void hal_esp32_common_boot_init(void) {
 
 }
 
-static void hal_esp32_init_sensor_bus_if_needed(void) {
-    const bool imu_available = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
-    const bool ads_available = feat::ads() && (FEAT_PINS_ADS_COUNT > 0);
-    const bool act_available = feat::act() && (FEAT_PINS_ACT_COUNT > 0);
-
-    if (imu_available || ads_available || act_available) {
-        #if FEAT_CAP_SENSOR_SPI2
-            hal_sensor_spi_init();
-            hal_log("ESP32: sensor SPI init enabled (imu=%s was=%s actor=%s)",
-                    imu_available ? "Y" : "N",
-                    ads_available ? "Y" : "N",
-                    act_available ? "Y" : "N");
-            return;
-        #else
-            hal_log("ESP32: sensor SPI capability disabled at compile time (FEAT_CAP_SENSOR_SPI2=0)");
-        #endif
-    }
-
-    hal_log("ESP32: sensor SPI init skipped (no active SPI-capable module)");
-    // SPI sensor bus (SD_SPI_BUS / SPI2_HOST) - nur wenn Compile-Time-Capability aktiv.
-}
-
 void hal_esp32_init_imu_bringup(void) {
     pinClaimsReset("imu_bringup");
     if (!claimCommonInitPins() || !claimImuSteerInitPins()) {
@@ -1994,30 +1972,29 @@ void hal_esp32_init_all(void) {
         return;
     }
     hal_esp32_common_boot_init();
-    hal_esp32_init_sensor_bus_if_needed();
+    #if FEAT_CFG_MOD_NEEDS_SENSOR_SPI2
+    hal_sensor_spi_init();
+    #else
+    hal_log("ESP32: sensor SPI init skipped (FEAT_CFG_MOD_NEEDS_SENSOR_SPI2=0)");
+    #endif
 
-    const bool imu_available = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
-    const bool ads_available = feat::ads() && (FEAT_PINS_ADS_COUNT > 0);
-    const bool act_available = feat::act() && (FEAT_PINS_ACT_COUNT > 0);
+    #if FEAT_IMU
+    hal_imu_begin();
+    #else
+    hal_log("ESP32: IMU init skipped (FEAT_IMU=0)");
+    #endif
 
-    // Capability-driven boot init (only initialise subsystems required by active modules).
-    if (imu_available) {
-        hal_imu_begin();
-    } else {
-        hal_log("ESP32: IMU init skipped (module unavailable or capability inactive)");
-    }
+    #if FEAT_STEER_SENSOR
+    hal_steer_angle_begin();
+    #else
+    hal_log("ESP32: steer-angle init skipped (FEAT_STEER_SENSOR=0)");
+    #endif
 
-    if (ads_available) {
-        hal_steer_angle_begin();
-    } else {
-        hal_log("ESP32: steer-angle init skipped (module unavailable or capability inactive)");
-    }
-
-    if (act_available) {
-        hal_actuator_begin();
-    } else {
-        hal_log("ESP32: actuator init skipped (module unavailable or capability inactive)");
-    }
+    #if FEAT_STEER_ACTOR
+    hal_actuator_begin();
+    #else
+    hal_log("ESP32: actuator init skipped (FEAT_STEER_ACTOR=0)");
+    #endif
 
     // Network (W5500 via ETH driver)
     hal_net_init();

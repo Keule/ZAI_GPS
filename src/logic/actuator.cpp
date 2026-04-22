@@ -13,11 +13,6 @@
 #include "esp_log.h"
 #include "log_ext.h"
 
-void actuatorInit(void) {
-    hal_actuator_begin();
-    LOGI("ACT", "initialised (SPI stub)");
-}
-
 void actuatorWriteCommand(uint16_t cmd) {
     hal_actuator_write(cmd);
 }

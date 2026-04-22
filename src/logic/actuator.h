@@ -9,8 +9,5 @@
 
 #include <cstdint>
 
-/// Initialise actuator SPI interface.
-void actuatorInit(void);
-
 /// Write command to actuator (0 = idle, >0 = steer command).
 void actuatorWriteCommand(uint16_t cmd);

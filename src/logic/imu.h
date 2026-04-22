@@ -7,9 +7,6 @@
 
 #pragma once
 
-/// Initialise IMU hardware (calls hal_imu_begin).
-void imuInit(void);
-
 /// Read IMU data and update global state (yaw_rate_dps, roll_deg).
 /// Returns true if read was successful.
 bool imuUpdate(void);
