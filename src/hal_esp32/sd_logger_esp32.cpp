@@ -232,6 +232,10 @@ static uint32_t flushBufferToSD(void) {
             s_log_file.write(reinterpret_cast<uint8_t*>(csv_buf), len);
             s_log_file.write('\n');
             count++;
+            // Cooperative yield to avoid starving IDLE0 on long SD batches.
+            if ((count % 64u) == 0u) {
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
         }
     }
 
@@ -409,8 +413,10 @@ static void maintTaskFunc(void* param) {
             continue;
         }
 
-        // Read switch with simple debounce
-        bool switch_raw = sdLoggerReadSwitch();
+        // Read switch with simple debounce. If LOGSW module is not active,
+        // force logger switch OFF to avoid phantom SD sessions.
+        const bool logsw_active = moduleIsActive(MOD_LOGSW);
+        bool switch_raw = logsw_active ? sdLoggerReadSwitch() : false;
         uint32_t now = millis();
         if (switch_raw != last_switch_raw) {
             last_switch_change_ms = now;
@@ -537,9 +543,11 @@ void sdLoggerInit(void) {
 void sdLoggerMaintInit(void) {
     // TASK-029 init — PSRAM buffer + combined maintTask.
     // Configure logging switch GPIO
-    if (moduleIsActive(MOD_SD)) {
+    if (moduleIsActive(MOD_SD) && moduleIsActive(MOD_LOGSW)) {
         pinMode(LOG_SWITCH_PIN, INPUT_PULLUP);
         LOGI("MAINT", "switch on GPIO %d (active LOW)", LOG_SWITCH_PIN);
+    } else if (moduleIsActive(MOD_SD)) {
+        LOGW("MAINT", "MOD_LOGSW inactive -> SD logging switch disabled");
     } else {
         LOGW("MAINT", "MOD_SD inactive -> maintenance task will run without SD logging");
     }
