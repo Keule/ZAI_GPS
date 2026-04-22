@@ -39,6 +39,8 @@ constexpr float MIN_STEER_SPEED_KMH = 0.1f;
 static PidState s_steer_pid;
 static uint32_t s_last_was_diag_ms = 0;
 static bool s_manual_actuator_mode = false;
+static bool s_last_safety_logged = true;
+static bool s_safety_log_init = false;
 
 // Sensor modules for control-loop input phase (keep IMU -> WAS order).
 static const ModuleOps* const s_sensor_modules[] = { &imu_ops, &was_ops };
@@ -212,6 +214,16 @@ bool controlManualActuatorMode(void) {
 bool controlReadSafety(void) {
     const bool safety_active = moduleIsActive(MOD_SAFETY);
     const bool safety_ok = safety_active ? hal_safety_ok() : true;
+
+    if (!s_safety_log_init) {
+        s_last_safety_logged = safety_ok;
+        s_safety_log_init = true;
+    } else if (safety_ok != s_last_safety_logged) {
+        LOGW("CTL", "SAFETY: %s -> %s",
+             s_last_safety_logged ? "OK" : "KICK",
+             safety_ok ? "OK" : "KICK");
+        s_last_safety_logged = safety_ok;
+    }
 
     {
         StateLock lock;

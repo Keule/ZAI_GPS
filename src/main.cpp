@@ -448,6 +448,9 @@ static void commTaskFunc(void* param) {
 // Arduino setup()
 // ===================================================================
 void setup() {
+    const uint32_t t_boot_start = hal_millis();
+    uint32_t t_phase = t_boot_start;
+
 #if defined(FEAT_IMU_BRINGUP) && defined(FEAT_GNSS_BUILDUP)
 #error "FEAT_IMU_BRINGUP and FEAT_GNSS_BUILDUP are mutually exclusive."
 #endif
@@ -463,19 +466,24 @@ void setup() {
     if (s_imu_bringup_active) {
         // Explicit bring-up path: no actuator or network dependency.
         hal_esp32_init_imu_bringup();
+        hal_log("BOOT: imu_bringup_init ... %lu ms", (unsigned long)(hal_millis() - t_phase));
     } else if (s_gnss_buildup_active) {
         // GNSS buildup path: communication + GNSS UART only.
         hal_esp32_init_gnss_buildup();
+        hal_log("BOOT: gnss_buildup_init ... %lu ms", (unsigned long)(hal_millis() - t_phase));
         s_gnss_buildup_start_ms = hal_millis();
         hal_log("Main: GNSS buildup mode active (FEAT_GNSS_BUILDUP).");
     } else {
         // Normal operation path.
         hal_esp32_init_all();
+        hal_log("BOOT: hal_esp32_init_all ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
         // Module logic init (after HAL init, before module activation/state machine).
+        t_phase = hal_millis();
         if (feat::imu()) { imuInit(); }
         if (feat::ads()) { wasInit(); }
         if (feat::act()) { actuatorInit(); }
+        hal_log("BOOT: logic module init ... %lu ms", (unsigned long)(hal_millis() - t_phase));
     }
 
     // -----------------------------------------------------------------
@@ -496,6 +504,7 @@ void setup() {
         hal_log("Main: IMU bring-up mode active (FEAT_IMU_BRINGUP).");
         imuBringupInit();
         gnssMirrorInit();
+        hal_log("BOOT: total ... %lu ms", (unsigned long)(hal_millis() - t_boot_start));
         return;
     }
 
@@ -543,13 +552,16 @@ void setup() {
             0
         );
         hal_log("Main: GNSS buildup reduced init done (comm task only).");
+        hal_log("BOOT: total ... %lu ms", (unsigned long)(hal_millis() - t_boot_start));
         return;
     }
 
     cliInit();
 
     // Initialise module system – detect hardware for all modules
+    t_phase = hal_millis();
     modulesInit();
+    hal_log("BOOT: modulesInit ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
     // -----------------------------------------------------------------
     // Activate default feature modules — TASK-027
@@ -561,6 +573,7 @@ void setup() {
     // Activation order matters: ACT depends on IMU+ADS, NTRIP depends
     // on ETH.  Activate dependencies first.
     // -----------------------------------------------------------------
+    t_phase = hal_millis();
     moduleActivate(MOD_IMU);     // IMU: no deps
     moduleActivate(MOD_ADS);     // ADS: no deps
     moduleActivate(MOD_ETH);     // ETH: no deps (pins already claimed by HAL init)
@@ -577,6 +590,7 @@ void setup() {
 #if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
     moduleActivate(MOD_NTRIP);   // NTRIP: depends on ETH (must be after ETH)
 #endif
+    hal_log("BOOT: module activation ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
     // -----------------------------------------------------------------
     // SD-Card OTA Firmware Update (hard-gated by MOD_SD)
@@ -597,6 +611,7 @@ void setup() {
     // RuntimeConfig is the mutable RAM copy; cfg:: namespace holds
     // the compile-time defaults defined in include/soft_config.h.
     // -----------------------------------------------------------------
+    t_phase = hal_millis();
     softConfigLoadDefaults(softConfigGet());
     nvsConfigLoad(softConfigGet());
     if (moduleIsActive(MOD_SD)) {
@@ -604,6 +619,7 @@ void setup() {
     } else {
         hal_log("Main: SD module inactive -> skip SD runtime config overrides");
     }
+    hal_log("BOOT: config load ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
     // Initialise control system (PID controller with default gains).
     // NOTE: HAL-level init (imu, steer angle, actuator) was already done
@@ -612,6 +628,7 @@ void setup() {
     const bool control_pipeline_ready =
         moduleControlPipelineReady(pipeline_reason, sizeof(pipeline_reason));
 
+    t_phase = hal_millis();
     if ((feat::act() && feat::safety()) && control_pipeline_ready) {
         controlInit();
     } else if (feat::act() && feat::safety()) {
@@ -620,6 +637,7 @@ void setup() {
     } else {
         hal_log("Main: control loop feature disabled");
     }
+    hal_log("BOOT: control init ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
     // -----------------------------------------------------------------
     // Steering Angle Calibration
@@ -631,6 +649,7 @@ void setup() {
     // The user is prompted via Serial to move steering to left/right
     // stops. Values are stored in NVS and survive reboots.
     // -----------------------------------------------------------------
+    t_phase = hal_millis();
     if (feat::ads()) {
         bool need_cal = !hal_steer_angle_is_calibrated();
 
@@ -663,6 +682,7 @@ void setup() {
     } else {
         hal_log("Main: steer angle calibration skipped (sensor feature disabled)");
     }
+    hal_log("BOOT: calibration ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
     // Initialise hardware status monitoring
     hwStatusInit();
@@ -727,6 +747,7 @@ void setup() {
     );
 
     hal_log("Main: tasks created, entering main loop");
+    hal_log("BOOT: total ... %lu ms", (unsigned long)(hal_millis() - t_boot_start));
 }
 
 // ===================================================================
