@@ -61,6 +61,7 @@ epics:
       - TASK-035
       - TASK-036
       - TASK-037
+      - TASK-038
       - TASK-039
       - TASK-040
       - TASK-041
@@ -88,8 +89,8 @@ epics:
       - TASK-019G
       - TASK-025
       - TASK-030
-      - TASK-037
-      - TASK-038
+      - TASK-042
+      - TASK-043
 
 tasks:
   - id: TASK-001
@@ -241,18 +242,6 @@ tasks:
     dependencies:
       - TASK-013
 
-    title: RTCM-Forwarder Architektur, Datenfluss und Schnittstellen spezifizieren
-    file: backlog/tasks/TASK-013-rtcm-forwarder-design-und-schnittstellen.md
-    epic_id: EPIC-004
-    status: open
-    priority: high
-    delivery_mode: firmware_only
-    task_category: feature_expansion
-    dependencies:
-      - TASK-006
-      - TASK-007
-
-  - id: TASK-014
   - id: TASK-014A
     title: RTCM-Forwarding über GNSS-UART in der HAL implementieren
     file: backlog/tasks/TASK-014-hal-gnss-rtcm-uart-forwarding.md
@@ -597,22 +586,81 @@ tasks:
       - TASK-028
 
   - id: TASK-037
-    title: Konfigurierbare GNSS-Datenausgabe (Typen, Raten/Profile, Zielpfade) im Konfigmodus spezifizieren
-    file: backlog/tasks/TASK-037-gnss-datenkonfiguration-im-konfigmodus.md
-    epic_id: EPIC-004
+    title: Basis-Task für einheitlichen Konfig-Framework-Rahmen vor NTRIP/UART/GNSS/Ethernet
+    file: backlog/tasks/TASK-037-basis-konfig-framework-rahmen-vor-feature-tasks.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies: []
+
+  - id: TASK-038
+    title: Boot-Pfad analysieren und deterministischen Serial-Konfigmodus bei Safety-Pin LOW spezifizieren
+    file: backlog/tasks/TASK-038-boot-safety-pin-serial-konfigmodus.md
+    epic_id: EPIC-003
     status: open
     priority: high
     delivery_mode: mixed
-    task_category: feature_expansion
+    task_category: platform_reuse
+    dependencies:
+      - TASK-022
+      - TASK-023
+      - TASK-028
+
+  - id: TASK-039
+    title: Ethernet-Netzwerkmodus und IP-Parameter im seriellen Konfigmodus konfigurierbar machen
+    file: backlog/tasks/TASK-039-ethernet-konfiguration-im-seriellen-konfigmodus.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-028
+      - TASK-030
+
+  - id: TASK-040
+    title: features.h aufräumen — Capabilities, Profile-Flags, Legacy-Aliase und Build-Modi streichen
+    file: backlog/tasks/TASK-040-features-h-aufraeumen-und-vereinfachen.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies: []
+
+  - id: TASK-041
+    title: Konfigurierbare GNSS-Datenausgabe (Typen, Raten/Profile, Zielpfade) im Konfigmodus spezifizieren
+    file: backlog/tasks/TASK-041-gnss-datenkonfiguration-im-konfigmodus.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: mixed
+    task_category: platform_reuse
     dependencies:
       - TASK-009
       - TASK-016
       - TASK-017
       - TASK-019
 
-  - id: TASK-038
+  - id: TASK-042
+    title: NTRIP-Konfigurationspfad (Konsole/Runtime/Persistenz) funktional und sicher spezifizieren
+    file: backlog/tasks/TASK-042-ntrip-konfiguration-funktional-und-sicher-spezifizieren.md
+    epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-025
+      - TASK-030
+      - TASK-032
+      - TASK-033
+
+  - id: TASK-043
     title: Planungs-Task für die Parametrisierung beider UM980-UARTs erstellen
-    file: backlog/tasks/TASK-037-planungs-task-parametrisierung-beider-um980-uarts.md
+    file: backlog/tasks/TASK-043-planungs-task-parametrisierung-beider-um980-uarts.md
     epic_id: EPIC-004
     status: open
     priority: high
@@ -625,43 +673,3 @@ tasks:
       - TASK-014
       - TASK-017
       - TASK-019F
-
-  - id: TASK-039
-    title: Boot-Pfad analysieren und deterministischen Serial-Konfigmodus bei Safety-Pin LOW spezifizieren
-    file: backlog/tasks/TASK-037-boot-safety-pin-serial-konfigmodus.md
-    epic_id: EPIC-003
-    status: open
-    priority: high
-    delivery_mode: mixed
-    task_category: platform_reuse
-    dependencies:
-      - TASK-022
-      - TASK-023
-      - TASK-028
-
-  - id: TASK-040
-    title: NTRIP-Konfigurationspfad (Konsole/Runtime/Persistenz) funktional und sicher spezifizieren
-    file: backlog/tasks/TASK-037-ntrip-konfiguration-funktional-und-sicher-spezifizieren.md
-    epic_id: EPIC-003
-    status: open
-    priority: high
-    delivery_mode: mixed
-    task_category: platform_reuse
-    dependencies:
-      - TASK-025
-      - TASK-030
-      - TASK-032
-      - TASK-033
-
-  - id: TASK-041
-    title: Boot-Pfad analysieren und deterministischen Serial-Konfigmodus bei Safety-Pin LOW spezifizieren
-    file: backlog/tasks/TASK-037-boot-safety-pin-serial-konfigmodus.md
-    epic_id: EPIC-003
-    status: open
-    priority: high
-    delivery_mode: mixed
-    task_category: platform_reuse
-    dependencies:
-      - TASK-022
-      - TASK-023
-      - TASK-028
