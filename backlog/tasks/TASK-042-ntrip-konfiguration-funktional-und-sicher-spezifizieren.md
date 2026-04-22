@@ -1,6 +1,6 @@
-# TASK-037 NTRIP-Konfiguration funktional und sicher spezifizieren
+# TASK-042 NTRIP-Konfiguration funktional und sicher spezifizieren
 
-- **ID**: TASK-037
+- **ID**: TASK-042
 - **Titel**: NTRIP-Konfigurationspfad (Konsole/Runtime/Persistenz) funktional und sicher spezifizieren
 - **Status**: open
 - **Priorität**: high
@@ -94,7 +94,7 @@
   - `backlog/tasks/TASK-033-ntrip-credentials-dateibasiertes-laden.md`
 
 - **files_write**:
-  - `backlog/tasks/TASK-037-ntrip-konfiguration-funktional-und-sicher-spezifizieren.md`
+  - `backlog/tasks/TASK-042-ntrip-konfiguration-funktional-und-sicher-spezifizieren.md`
   - `backlog/index.yaml`
   - (Folgetask-Implementierung, nicht Teil dieses Tasks):
     - `src/hal_esp32/esp32_cli.cpp`
@@ -104,7 +104,7 @@
     - `src/main.cpp`
 
 - **public_surface**:
-  - `backlog/tasks/TASK-037-ntrip-konfiguration-funktional-und-sicher-spezifizieren.md`
+  - `backlog/tasks/TASK-042-ntrip-konfiguration-funktional-und-sicher-spezifizieren.md`
   - `backlog/index.yaml`
 
 - **merge_risk_files**:
@@ -158,7 +158,7 @@
 - **verification**:
   - Dokumenten-Review gegen TASK-025/030/032/033: Konflikte/Lücken explizit benannt.
   - Check, dass alle Pflicht-ACs als testbare Aussagen formuliert sind.
-  - `backlog/index.yaml` enthält TASK-037 konsistent in `epics` und `tasks`.
+  - `backlog/index.yaml` enthält TASK-042 konsistent in `epics` und `tasks`.
 
 - **Links**:
   - `backlog/tasks/TASK-025-ntrip-client-und-gnss-receiver-abstraktion.md`

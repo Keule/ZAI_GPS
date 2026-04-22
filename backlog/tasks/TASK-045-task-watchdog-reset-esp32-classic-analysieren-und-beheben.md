@@ -6,9 +6,9 @@
 - **Priorität**: high
 - **Komponenten**: `sdkconfig.defaults`, `sdkconfig_s3.defaults`, `src/main.cpp`, `src/hal_esp32/sd_logger_esp32.cpp`, `src/logic/ntrip.cpp`, `src/logic/net.cpp`, `src/hal_esp32/hal_impl.cpp`
 - **Dependencies**: []
-- **delivery_mode**: mixed (hardware_required für Validierung, firmware_only für Implementierung)
+- **delivery_mode**: mixed
 - **task_category**: runtime_stability
-- **Owner**: ki-entwickler
+- **Owner**: ki-planer
 - **Epic**: EPIC-001
 
 - **classification**: independent
@@ -37,6 +37,8 @@
   Direkt: https://chat.z.ai/c/32dd8e42-f683-4294-b86d-e30515b36891
 
 - **Kontext/Problem**:
+
+  Der Aufgabenmodus ist gemischt: Die Validierung ist hardware_required, die Implementierung firmware_only.
 
   Der FreeRTOS Task Watchdog überwacht, dass die IDLE-Tasks auf beiden CPUs regelmäßig
   laufen kommen. Der Reset tritt auf weil der IDLE-Task auf CPU 0 verhungert — ein Task
