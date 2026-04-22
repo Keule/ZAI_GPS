@@ -24,6 +24,8 @@
 - **Kontext/Problem**:
   Aktuell sind Netzparameter in Defaults/Code verteilt und der serielle Konfigmodus bietet keine konsistente, abgesicherte Ethernet-Konfiguration fuer DHCP-vs.-statisch inklusive Diagnostik. Fuer NTRIP und weitere netzabhaengige Funktionen muss ein reproduzierbarer, robust validierter Netzwerkpfad vorhanden sein, der auch bei Fehlkonfiguration recoverbar bleibt.
 
+- **Änderungsnotiz (2026-04-22)**: Zuordnung zu **EPIC-004 (Feature Expansion)**, weil der Scope neue nutzerseitige Ethernet-Konfigurationsfunktionen (DHCP/statisch, Validierung, Diagnose, Recovery) für den Serial-Konfigmodus ergänzt und damit primär eine Funktionsausweitung statt reine Plattform-Wiederverwendung adressiert.
+
 - **Scope (in)**:
   - Serielle Konfigoption fuer Netzwerkmodus (`DHCP` vs. `statisch`) einfuehren oder konsolidieren.
   - Bei statischer Konfiguration die Felder `IP`, `Subnetz`, `Gateway`, `DNS` im Serial-Menue fuehren (soweit im Projektpfad unterstuetzt); falls einzelne Felder technisch nicht unterstuetzt sind, dies explizit ausweisen.

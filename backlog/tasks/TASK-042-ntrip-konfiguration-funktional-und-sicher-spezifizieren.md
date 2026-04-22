@@ -9,7 +9,7 @@
 - **delivery_mode**: firmware_only
 - **task_category**: platform_reuse
 - **Owner**: ki-planer
-- **Epic**: EPIC-003
+- **Epic**: EPIC-004
 
 - **classification**: dependent
 - **exclusive_before**: []
@@ -32,6 +32,8 @@
   Es fehlt weiterhin eine **vollständige, umsetzbare Spezifikation** für den operativen
   Konfigurationspfad (Konsole/Web/Runtime/Persistenz), insbesondere für sichere Eingabe,
   Validierung und klares Reboot-Verhalten.
+
+- **Änderungsnotiz (2026-04-22)**: Zuordnung zu **EPIC-004 (Feature Expansion)**, weil Scope und Komponenten den operativen NTRIP-Konfigurationspfad (Konsole/Web/Runtime/Persistenz inkl. Security-Regeln) als auszubauende Produktfunktion definieren; die Wiederverwendung vorhandener Bausteine ist hier Mittel zum Zweck der Funktionsausweitung.
 
 - **Pflicht-Hinweis vor Start**:
   Vor jeder Umsetzung dieses Tasks sind `README.md` und `agents.md` verpflichtend zu lesen

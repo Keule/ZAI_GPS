@@ -63,7 +63,6 @@ epics:
       - TASK-036
       - TASK-037
       - TASK-038
-      - TASK-039
       - TASK-040
       - TASK-041
 
@@ -90,6 +89,7 @@ epics:
       - TASK-019G
       - TASK-025
       - TASK-030
+      - TASK-039
       - TASK-042
       - TASK-043
 
@@ -612,7 +612,7 @@ tasks:
   - id: TASK-039
     title: Ethernet-Netzwerkmodus und IP-Parameter im seriellen Konfigmodus konfigurierbar machen
     file: backlog/tasks/TASK-039-ethernet-konfiguration-im-seriellen-konfigmodus.md
-    epic_id: EPIC-003
+    epic_id: EPIC-004
     status: open
     priority: high
     delivery_mode: firmware_only
