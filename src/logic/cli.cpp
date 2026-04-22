@@ -449,6 +449,46 @@ void cliCmdModule(int argc, char** argv) {
     Serial.println("usage: module <list|enable|disable|pins> [name]");
 }
 
+void cliCmdActuator(int argc, char** argv) {
+    if (argc < 2) {
+        Serial.println("usage: actuator <status|test>");
+        return;
+    }
+
+    if (std::strcmp(argv[1], "status") == 0) {
+        Serial.printf("Actuator manual mode: %s\n", controlManualActuatorMode() ? "ON" : "OFF");
+        Serial.printf("Safety: %s\n", hal_safety_ok() ? "OK" : "KICK");
+        return;
+    }
+
+    if (std::strcmp(argv[1], "test") == 0) {
+        if (argc < 3) {
+            Serial.println("usage: actuator test <pwm|stop> [value]");
+            return;
+        }
+        if (std::strcmp(argv[2], "stop") == 0) {
+            controlSetManualActuatorMode(false);
+            hal_actuator_write(0);
+            Serial.println("Actuator stopped. Manual mode OFF.");
+            return;
+        }
+        if (std::strcmp(argv[2], "pwm") == 0 && argc >= 4) {
+            int value = std::atoi(argv[3]);
+            if (value < 0) value = 0;
+            if (value > 65535) value = 65535;
+            controlSetManualActuatorMode(true);
+            hal_actuator_write(static_cast<uint16_t>(value));
+            Serial.println("WARNING: manual actuator command active (PID paused).");
+            Serial.printf("Actuator PWM command: %d\n", value);
+            return;
+        }
+        Serial.println("usage: actuator test <pwm|stop> [value]");
+        return;
+    }
+
+    Serial.println("usage: actuator <status|test>");
+}
+
 void cliCmdUnknown(const char* cmd) {
     Serial.printf("Unknown command: %s\n", cmd ? cmd : "");
     Serial.println("Type 'help' for available commands.");
@@ -486,6 +526,7 @@ void cliInit(void) {
     (void)cliRegisterCommand("pid", &cliCmdPid, "PID tuning and status");
     (void)cliRegisterCommand("net", &cliCmdNet, "Network runtime config");
     (void)cliRegisterCommand("module", &cliCmdModule, "Module runtime control");
+    (void)cliRegisterCommand("actuator", &cliCmdActuator, "Actuator manual test mode");
 }
 
 bool cliRegisterCommand(const char* cmd,

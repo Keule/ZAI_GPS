@@ -38,6 +38,7 @@ constexpr float MIN_STEER_SPEED_KMH = 0.1f;
 /// PID instance for steering
 static PidState s_steer_pid;
 static uint32_t s_last_was_diag_ms = 0;
+static bool s_manual_actuator_mode = false;
 
 // Sensor modules for control-loop input phase (keep IMU -> WAS order).
 static const ModuleOps* const s_sensor_modules[] = { &imu_ops, &was_ops };
@@ -197,6 +198,17 @@ void controlGetPidGains(float* kp, float* ki, float* kd) {
     if (kd) *kd = s_steer_pid.kd;
 }
 
+void controlSetManualActuatorMode(bool enabled) {
+    s_manual_actuator_mode = enabled;
+    if (enabled) {
+        pidReset(&s_steer_pid);
+    }
+}
+
+bool controlManualActuatorMode(void) {
+    return s_manual_actuator_mode;
+}
+
 bool controlReadSafety(void) {
     const bool safety_active = moduleIsActive(MOD_SAFETY);
     const bool safety_ok = safety_active ? hal_safety_ok() : true;
@@ -251,6 +263,7 @@ void controlComputePid(const SensorSnapshot& snap,
         moduleIsActive(MOD_ACT) &&
         moduleIsActive(MOD_ADS) &&
         moduleIsActive(MOD_IMU) &&
+        !s_manual_actuator_mode &&
         safety_ok &&
         agio.auto_steer_enabled &&
         !watchdog_triggered &&
@@ -277,6 +290,9 @@ void controlComputePid(const SensorSnapshot& snap,
 
 void controlWriteActuator(uint16_t actuator_cmd) {
     if (!feat::act() || !moduleIsActive(MOD_ACT)) {
+        return;
+    }
+    if (s_manual_actuator_mode) {
         return;
     }
     (void)actuatorUpdate(actuator_cmd);

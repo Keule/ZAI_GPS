@@ -123,6 +123,12 @@ void controlSetPidOutputLimits(float out_min, float out_max);
 /// Read current PID tuning values.
 void controlGetPidGains(float* kp, float* ki, float* kd);
 
+/// Enable/disable manual actuator test mode (disables control write path).
+void controlSetManualActuatorMode(bool enabled);
+
+/// Query manual actuator mode.
+bool controlManualActuatorMode(void);
+
 // ===================================================================
 // Globals
 // ===================================================================
