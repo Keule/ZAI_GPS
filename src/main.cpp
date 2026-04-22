@@ -341,7 +341,7 @@ static void commTaskFunc(void* param) {
     for (;;) {
         // ---------------------------------- Input -----------------------------------
         netPollReceive();
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
         ntripReadRtcm();
 #endif
 
@@ -349,7 +349,7 @@ static void commTaskFunc(void* param) {
         if (!s_gnss_buildup_active) {
             modulesUpdateStatus();
         }
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
         // TASK-029: In normal mode, ntripTick() runs in maintTask (blocking
         // TCP connect is OK there). In GNSS buildup mode, maintTask is not
         // created, so we run ntripTick() here in the commTask.
@@ -361,7 +361,7 @@ static void commTaskFunc(void* param) {
         // ---------------------------------- Output ----------------------------------
         netSendAogFrames();
         gnssMirrorPoll();
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
         ntripForwardRtcm();
 #endif
 
@@ -498,7 +498,7 @@ void setup() {
         softConfigLoadDefaults(softConfigGet());
         softConfigLoadOverrides(softConfigGet());  // TASK-033: reads /ntrip.cfg from SD
 
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
         // -----------------------------------------------------------------
         // NTRIP Client initialisation — TASK-025 / TASK-028
         // Configuration is loaded from RuntimeConfig (cfg:: defaults at
@@ -562,7 +562,7 @@ void setup() {
         moduleDeactivate(MOD_SD);
         hal_log("Main: SD module disabled (no SD card detected at boot)");
     }
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
     moduleActivate(MOD_NTRIP);   // NTRIP: depends on ETH (must be after ETH)
 #endif
 
@@ -599,9 +599,9 @@ void setup() {
     const bool control_pipeline_ready =
         moduleControlPipelineReady(pipeline_reason, sizeof(pipeline_reason));
 
-    if (feat::control() && control_pipeline_ready) {
+    if ((feat::act() && feat::safety()) && control_pipeline_ready) {
         controlInit();
-    } else if (feat::control()) {
+    } else if (feat::act() && feat::safety()) {
         hal_log("Main: control pipeline not ready -> skip control init (%s)",
                 pipeline_reason[0] ? pipeline_reason : "unknown");
     } else {
@@ -618,7 +618,7 @@ void setup() {
     // The user is prompted via Serial to move steering to left/right
     // stops. Values are stored in NVS and survive reboots.
     // -----------------------------------------------------------------
-    if (feat::sensor()) {
+    if (feat::ads()) {
         bool need_cal = !hal_steer_angle_is_calibrated();
 
         if (!need_cal) {
@@ -683,7 +683,7 @@ void setup() {
     modulesSendStartupErrors();
 
     // Create control task on Core 1
-    if (feat::control() && control_pipeline_ready) {
+    if ((feat::act() && feat::safety()) && control_pipeline_ready) {
         xTaskCreatePinnedToCore(
             controlTaskFunc,
             "ctrl",
@@ -694,7 +694,7 @@ void setup() {
             1   // Core 1
         );
     } else {
-        if (!feat::control()) {
+        if (!(feat::act() && feat::safety())) {
             hal_log("Main: control task not started (feature disabled)");
         } else {
             hal_log("Main: control task not started (pipeline inactive: %s)",

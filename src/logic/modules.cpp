@@ -73,11 +73,11 @@ void modulesInit(void) {
     // --- Initialise feature module compiled/availability flags ---
     featureModulesInitCompiled();
 
-    const bool mod_eth_enabled = feat::comm() && (FEAT_PINS_ETH_COUNT > 0);
-    const bool mod_ads_enabled = feat::sensor() && (FEAT_PINS_ADS_COUNT > 0);
+    const bool mod_eth_enabled = feat::eth() && (FEAT_PINS_ETH_COUNT > 0);
+    const bool mod_ads_enabled = feat::ads() && (FEAT_PINS_ADS_COUNT > 0);
     const bool mod_imu_enabled = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
-    const bool mod_act_enabled = feat::actor() && (FEAT_PINS_ACT_COUNT > 0);
-    const bool mod_safety_enabled = feat::control() && (FEAT_PINS_SAFETY_COUNT > 0);
+    const bool mod_act_enabled = feat::act() && (FEAT_PINS_ACT_COUNT > 0);
+    const bool mod_safety_enabled = feat::safety() && (FEAT_PINS_SAFETY_COUNT > 0);
     const bool mod_sd_enabled = (FEAT_PINS_SD_COUNT > 0);
 
     // --- Detect individual subsystems ---
@@ -119,9 +119,9 @@ void modulesInit(void) {
     hal_log("MODULES: SD card presence     : %s", s_hw.sd_present ? "PRESENT" : "MISSING");
 
     // --- Derive module enablement + hw_detected from feature profiles ---
-    s_modules[AOG_MOD_STEER].enabled   = feat::control();
-    s_modules[AOG_MOD_GPS].enabled     = feat::sensor();
-    s_modules[AOG_MOD_MACHINE].enabled = feat::actor();
+    s_modules[AOG_MOD_STEER].enabled   = feat::act() && feat::safety();
+    s_modules[AOG_MOD_GPS].enabled     = feat::ads();
+    s_modules[AOG_MOD_MACHINE].enabled = feat::act();
 
     // Steer Module: needs Ethernet + WAS + IMU + Actuator + Safety
     s_modules[AOG_MOD_STEER].hw_detected =
@@ -312,7 +312,7 @@ void modulesSendStartupErrors(void) {
 // Update dynamic hardware status (late detection)
 // ===================================================================
 void modulesUpdateStatus(void) {
-    if (!feat::control()) return;
+    if (!feat::safety()) return;
 
     // Safety circuit: dynamic monitoring
     bool current_safety = hal_safety_ok();
@@ -376,13 +376,13 @@ static void featureModulesInitCompiled(void) {
     g_features[MOD_IMU].compiled = feat::imu() && (g_features[MOD_IMU].pin_count > 0);
 
     // ADS (steer angle sensor): needs FEAT_STEER_SENSOR AND valid pins
-    g_features[MOD_ADS].compiled = feat::sensor() && (g_features[MOD_ADS].pin_count > 0);
+    g_features[MOD_ADS].compiled = feat::ads() && (g_features[MOD_ADS].pin_count > 0);
 
     // ACT (actuator): needs FEAT_STEER_ACTOR AND valid pins
-    g_features[MOD_ACT].compiled = feat::actor() && (g_features[MOD_ACT].pin_count > 0);
+    g_features[MOD_ACT].compiled = feat::act() && (g_features[MOD_ACT].pin_count > 0);
 
     // ETH: needs FEAT_COMM AND valid pins
-    g_features[MOD_ETH].compiled = feat::comm() && (g_features[MOD_ETH].pin_count > 0);
+    g_features[MOD_ETH].compiled = feat::eth() && (g_features[MOD_ETH].pin_count > 0);
 
     // GNSS: needs FEAT_GNSS AND valid pins
     g_features[MOD_GNSS].compiled = feat::gnss() && (g_features[MOD_GNSS].pin_count > 0);
@@ -391,7 +391,7 @@ static void featureModulesInitCompiled(void) {
     g_features[MOD_NTRIP].compiled = feat::ntrip();
 
     // SAFETY: needs FEAT_MACHINE_ACTOR (control loop) AND valid pins
-    g_features[MOD_SAFETY].compiled = feat::control() && (g_features[MOD_SAFETY].pin_count > 0);
+    g_features[MOD_SAFETY].compiled = feat::safety() && (g_features[MOD_SAFETY].pin_count > 0);
 
     // LOGSW: always available if pins are populated (no feature flag needed)
     g_features[MOD_LOGSW].compiled = (g_features[MOD_LOGSW].pin_count > 0);

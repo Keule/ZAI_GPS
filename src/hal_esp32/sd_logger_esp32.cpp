@@ -60,7 +60,7 @@
 #include <freertos/FreeRTOS.h>
 #include <esp_heap_caps.h>
 
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
 #include "logic/ntrip.h"
 #endif
 
@@ -393,7 +393,7 @@ static void maintTaskFunc(void* param) {
         // -----------------------------------------------------------------
         // 2. NTRIP state machine (every iteration = 1 s, blocking OK here)
         // -----------------------------------------------------------------
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
         ntripTick();
 #endif
 
