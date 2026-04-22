@@ -5,7 +5,7 @@
 - **Status**: open
 - **Priorität**: high
 - **Komponenten**: `src/logic/runtime_config.*`, `src/logic/modules.*`, GNSS-/Bridge-Datenpfade (`PGN`, `NMEA`, `RTCM`), Konfigmodus/Serial-Web-Konfig, Persistenz (NVS/Datei)
-- **Dependencies**: TASK-009, TASK-016, TASK-017, TASK-019, TASK-043
+- **Dependencies**: TASK-037, TASK-038, TASK-009, TASK-016, TASK-017, TASK-019, TASK-043
 - **delivery_mode**: mixed
 - **task_category**: feature_expansion
 - **Owner**: ki-planer

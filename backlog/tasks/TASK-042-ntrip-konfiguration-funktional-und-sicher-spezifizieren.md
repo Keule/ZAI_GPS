@@ -5,7 +5,7 @@
 - **Status**: open
 - **Priorität**: high
 - **Komponenten**: `src/logic/runtime_config.*`, `src/logic/ntrip.*`, `src/hal_esp32/esp32_web.*`, `src/hal_esp32/esp32_cli.*`, `src/main.cpp`, `include/soft_config.h`, `src/hal_esp32/sd_logger_esp32.cpp`
-- **Dependencies**: TASK-025, TASK-033
+- **Dependencies**: TASK-037, TASK-038, TASK-025, TASK-033
 - **delivery_mode**: firmware_only
 - **task_category**: platform_reuse
 - **Owner**: ki-planer

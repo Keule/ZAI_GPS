@@ -4,10 +4,12 @@
 - **Titel:** Planungs-Task für die Parametrisierung beider UM980-UARTs erstellen
 - **Status:** open
 - **Priorität:** high
+- **Komponenten:** `src/logic/runtime_config.*`, `src/logic/modules.*`, `src/hal_esp32/hal_impl.cpp`, `src/main.cpp`, UART-Rollenmodell UM980-A/B
 - **Owner:** ki-planer
-- **Dependencies:** TASK-019A, TASK-019C, TASK-019D, TASK-014, TASK-017
+- **Dependencies:** TASK-037, TASK-038, TASK-019A, TASK-019C, TASK-019D, TASK-014, TASK-017
 - **delivery_mode:** firmware_only
 - **task_category:** feature_expansion
+- **Epic:** EPIC-004
 - **base_branch:** task/TASK-019
 - **Origin:** User-Request (Chat, 2026-04-21) — Parametrisierung beider UM980-UARTs mit Rollenzuordnung, Kollisionsprüfung und sicherer Persistenz.
 
@@ -160,11 +162,12 @@ Die aktuelle Dual-UM980-Integration hat Bringup-, Spiegel- und Failover-Baustein
 
 ## Links
 
-- `backlog/tasks/TASK-041-gnss-datenkonfiguration-im-konfigmodus.md`
+- `backlog/tasks/TASK-037-basis-konfig-framework-rahmen-vor-feature-tasks.md`
+- `backlog/tasks/TASK-038-boot-safety-pin-serial-konfigmodus.md`
 - `backlog/tasks/TASK-019-integrationsplanung-zwei-um980.md`
 - `backlog/tasks/TASK-019A-pinbelegung-um980-und-konsole.md`
 - `backlog/tasks/TASK-019C-gnss-bringup-modus.md`
 - `backlog/tasks/TASK-019D-uart1-uart2-console-mirror.md`
-- `backlog/tasks/TASK-019F-dual-um980-failover-logik.md`
 - `backlog/tasks/TASK-014-hal-gnss-rtcm-uart-forwarding.md`
 - `backlog/tasks/TASK-017-rtcm-validierung-agiou-m980.md`
+- `docs/adr/ADR-003-feature-module-system-and-pin-claims.md`

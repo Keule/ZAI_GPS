@@ -229,17 +229,65 @@ static_assert(FEAT_COMM, "FEAT_COMM muss aktiv sein (mindestens Ethernet/UDP Kom
 #define FEAT_ENABLED(flag_macro) ((flag_macro) != 0)
 #define FEAT_DISABLED(flag_macro) ((flag_macro) == 0)
 
+// -------------------------------------------------------------------
+// Neue flache Hardware-Feature-Sicht (TASK-040 Migrationsschritt)
+// -------------------------------------------------------------------
+#if defined(FEAT_ETH)
+#define FEAT_COMPILED_ETH 1
+#else
+#define FEAT_COMPILED_ETH FEAT_COMM
+#endif
+
+#if defined(FEAT_ADS)
+#define FEAT_COMPILED_ADS 1
+#else
+#define FEAT_COMPILED_ADS FEAT_STEER_SENSOR
+#endif
+
+#if defined(FEAT_ACT)
+#define FEAT_COMPILED_ACT 1
+#else
+#define FEAT_COMPILED_ACT FEAT_STEER_ACTOR
+#endif
+
+#if defined(FEAT_SAFETY)
+#define FEAT_COMPILED_SAFETY 1
+#else
+#define FEAT_COMPILED_SAFETY FEAT_MACHINE_ACTOR
+#endif
+
+#if defined(FEAT_SD)
+#define FEAT_COMPILED_SD 1
+#else
+#define FEAT_COMPILED_SD 0
+#endif
+
+#if defined(FEAT_LOGSW)
+#define FEAT_COMPILED_LOGSW 1
+#else
+#define FEAT_COMPILED_LOGSW 0
+#endif
+
+#define FEAT_COMPILED_IMU   FEAT_IMU
+#define FEAT_COMPILED_GNSS  FEAT_GNSS
+#define FEAT_COMPILED_NTRIP FEAT_NTRIP
+
 namespace feat {
-inline constexpr bool comm()          { return FEAT_ENABLED(FEAT_COMM); }
+inline constexpr bool eth()           { return FEAT_ENABLED(FEAT_COMPILED_ETH); }
 inline constexpr bool gnss()          { return FEAT_ENABLED(FEAT_GNSS); }
-inline constexpr bool imu()           { return FEAT_ENABLED(FEAT_IMU); }
-inline constexpr bool steer_sensor()  { return FEAT_ENABLED(FEAT_STEER_SENSOR); }
-inline constexpr bool steer_actor()   { return FEAT_ENABLED(FEAT_STEER_ACTOR); }
+inline constexpr bool imu()           { return FEAT_ENABLED(FEAT_COMPILED_IMU); }
+inline constexpr bool ads()           { return FEAT_ENABLED(FEAT_COMPILED_ADS); }
+inline constexpr bool act()           { return FEAT_ENABLED(FEAT_COMPILED_ACT); }
+inline constexpr bool safety()        { return FEAT_ENABLED(FEAT_COMPILED_SAFETY); }
+inline constexpr bool logsw()         { return FEAT_ENABLED(FEAT_COMPILED_LOGSW); }
 inline constexpr bool machine_sensor(){ return FEAT_ENABLED(FEAT_MACHINE_SENSOR); }
-inline constexpr bool machine_actor() { return FEAT_ENABLED(FEAT_MACHINE_ACTOR); }
-inline constexpr bool sensor()        { return FEAT_ENABLED(FEAT_STEER_SENSOR); }  // legacy helper
-inline constexpr bool actor()         { return FEAT_ENABLED(FEAT_STEER_ACTOR); }   // legacy helper
-inline constexpr bool control()       { return FEAT_ENABLED(FEAT_MACHINE_ACTOR); }
+inline constexpr bool machine_actor() { return act() && safety(); }
+inline constexpr bool comm()          { return eth(); }   // legacy helper
+inline constexpr bool steer_sensor()  { return ads(); }   // legacy helper
+inline constexpr bool steer_actor()   { return act(); }   // legacy helper
+inline constexpr bool sensor()        { return ads(); }   // legacy helper
+inline constexpr bool actor()         { return act(); }   // legacy helper
+inline constexpr bool control()       { return act() && safety(); }  // legacy helper
 inline constexpr bool pid()           { return FEAT_ENABLED(FEAT_PID); }
-inline constexpr bool ntrip()         { return FEAT_ENABLED(FEAT_NTRIP); }
+inline constexpr bool ntrip()         { return FEAT_ENABLED(FEAT_COMPILED_NTRIP); }
 }  // namespace feat

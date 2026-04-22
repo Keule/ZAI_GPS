@@ -5,7 +5,7 @@
 - **Status**: open
 - **Priorität**: high
 - **Komponenten**: `src/main.cpp`, `src/logic/runtime_config.*`, `include/soft_config.h`, `src/logic/modules.*`, `src/logic/hw_status.cpp`, Serial-Konfigpfad
-- **Dependencies**: TASK-028, TASK-030
+- **Dependencies**: TASK-037, TASK-038, TASK-028, TASK-030
 - **delivery_mode**: firmware_only
 - **task_category**: feature_expansion
 - **Owner**: ki-planer

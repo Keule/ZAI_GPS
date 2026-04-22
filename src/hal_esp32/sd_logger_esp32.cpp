@@ -60,7 +60,7 @@
 #include <freertos/FreeRTOS.h>
 #include <esp_heap_caps.h>
 
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
 #include "logic/ntrip.h"
 #endif
 
@@ -232,6 +232,10 @@ static uint32_t flushBufferToSD(void) {
             s_log_file.write(reinterpret_cast<uint8_t*>(csv_buf), len);
             s_log_file.write('\n');
             count++;
+            // Cooperative yield to avoid starving IDLE0 on long SD batches.
+            if ((count % 64u) == 0u) {
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
         }
     }
 
@@ -385,6 +389,21 @@ static void maintTaskFunc(void* param) {
         vTaskDelay(pdMS_TO_TICKS(1000));  // 1 s base interval
         loop_count++;
 
+        // -----------------------------------------------------------------
+        // 1. ETH link monitoring (every iteration = 1 s)
+        // -----------------------------------------------------------------
+        maintEthMonitor();
+
+        // -----------------------------------------------------------------
+        // 2. NTRIP state machine (every iteration = 1 s, blocking OK here)
+        // -----------------------------------------------------------------
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
+        ntripTick();
+#endif
+
+        // -----------------------------------------------------------------
+        // 3. SD card logging (every 2nd iteration = 2 s)
+        // -----------------------------------------------------------------
         if (!moduleIsActive(MOD_SD)) {
             if (s_logging_active || was_active) {
                 LOGW("MAINT", "MOD_SD inactive -> forcing logger idle");
@@ -394,23 +413,10 @@ static void maintTaskFunc(void* param) {
             continue;
         }
 
-        // -----------------------------------------------------------------
-        // 1. ETH link monitoring (every iteration = 1 s)
-        // -----------------------------------------------------------------
-        maintEthMonitor();
-
-        // -----------------------------------------------------------------
-        // 2. NTRIP state machine (every iteration = 1 s, blocking OK here)
-        // -----------------------------------------------------------------
-#if FEAT_ENABLED(FEAT_NTRIP)
-        ntripTick();
-#endif
-
-        // -----------------------------------------------------------------
-        // 3. SD card logging (every 2nd iteration = 2 s)
-        // -----------------------------------------------------------------
-        // Read switch with simple debounce
-        bool switch_raw = sdLoggerReadSwitch();
+        // Read switch with simple debounce. If LOGSW module is not active,
+        // force logger switch OFF to avoid phantom SD sessions.
+        const bool logsw_active = moduleIsActive(MOD_LOGSW);
+        bool switch_raw = logsw_active ? sdLoggerReadSwitch() : false;
         uint32_t now = millis();
         if (switch_raw != last_switch_raw) {
             last_switch_change_ms = now;
@@ -535,21 +541,21 @@ void sdLoggerInit(void) {
 }
 
 void sdLoggerMaintInit(void) {
-    if (!moduleIsActive(MOD_SD)) {
-        LOGW("MAINT", "MOD_SD inactive -> skip maintenance task init");
-        s_logging_active = false;
-        return;
-    }
-
     // TASK-029 init — PSRAM buffer + combined maintTask.
     // Configure logging switch GPIO
-    pinMode(LOG_SWITCH_PIN, INPUT_PULLUP);
-    LOGI("MAINT", "switch on GPIO %d (active LOW)", LOG_SWITCH_PIN);
+    if (moduleIsActive(MOD_SD) && moduleIsActive(MOD_LOGSW)) {
+        pinMode(LOG_SWITCH_PIN, INPUT_PULLUP);
+        LOGI("MAINT", "switch on GPIO %d (active LOW)", LOG_SWITCH_PIN);
+    } else if (moduleIsActive(MOD_SD)) {
+        LOGW("MAINT", "MOD_LOGSW inactive -> SD logging switch disabled");
+    } else {
+        LOGW("MAINT", "MOD_SD inactive -> maintenance task will run without SD logging");
+    }
 
     s_logging_active = false;
 
     // Allocate PSRAM ring buffer
-    bool psram_ok = sdLoggerPsramInit();
+    bool psram_ok = moduleIsActive(MOD_SD) ? sdLoggerPsramInit() : false;
 
     // Create the maintenance task on Core 0 with LOWEST priority.
     xTaskCreatePinnedToCore(
@@ -564,8 +570,10 @@ void sdLoggerMaintInit(void) {
 
     if (psram_ok) {
         LOGI("MAINT", "initialised (PSRAM buffer, SD+NTRIP+ETH)");
-    } else {
+    } else if (moduleIsActive(MOD_SD)) {
         LOGI("MAINT", "initialised (static buffer fallback, SD+NTRIP+ETH)");
+    } else {
+        LOGI("MAINT", "initialised (NTRIP+ETH maintenance, SD logging disabled)");
     }
 }
 

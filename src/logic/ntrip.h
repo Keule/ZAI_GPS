@@ -13,7 +13,7 @@
 
 #include "features.h"
 
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
 
 #include "global_state.h"
 #include <cstddef>
@@ -61,4 +61,4 @@ void ntripSetReconnectDelay(uint32_t delay_ms);
 /// Get a snapshot of the current NTRIP state (thread-safe).
 NtripState ntripGetState(void);
 
-#endif // FEAT_ENABLED(FEAT_NTRIP)
+#endif // FEAT_ENABLED(FEAT_COMPILED_NTRIP)

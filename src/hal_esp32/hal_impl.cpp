@@ -1863,8 +1863,8 @@ static void hal_esp32_common_boot_init(void) {
 
 static void hal_esp32_init_sensor_bus_if_needed(void) {
     const bool imu_available = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
-    const bool ads_available = feat::sensor() && (FEAT_PINS_ADS_COUNT > 0);
-    const bool act_available = feat::actor() && (FEAT_PINS_ACT_COUNT > 0);
+    const bool ads_available = feat::ads() && (FEAT_PINS_ADS_COUNT > 0);
+    const bool act_available = feat::act() && (FEAT_PINS_ACT_COUNT > 0);
 
     if (imu_available || ads_available || act_available) {
         #if FEAT_CAP_SENSOR_SPI2
@@ -1997,8 +1997,8 @@ void hal_esp32_init_all(void) {
     hal_esp32_init_sensor_bus_if_needed();
 
     const bool imu_available = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
-    const bool ads_available = feat::sensor() && (FEAT_PINS_ADS_COUNT > 0);
-    const bool act_available = feat::actor() && (FEAT_PINS_ACT_COUNT > 0);
+    const bool ads_available = feat::ads() && (FEAT_PINS_ADS_COUNT > 0);
+    const bool act_available = feat::act() && (FEAT_PINS_ACT_COUNT > 0);
 
     // Capability-driven boot init (only initialise subsystems required by active modules).
     if (imu_available) {

@@ -12,6 +12,7 @@
 #include "steer_angle.h"
 #include "actuator.h"
 #include "global_state.h"
+#include "modules.h"
 #include "hal/hal.h"
 
 #include "log_config.h"
@@ -193,10 +194,17 @@ void controlStep(void) {
     // ----------------------------------------------------------
     ControlInputSnapshot in;
     in.now_ms = hal_millis();
-    in.safety_ok = hal_safety_ok();
-    imuUpdate();
-    in.current_angle_deg = steerAngleReadDeg();
-    in.steer_raw = hal_steer_angle_read_raw();
+    const bool imu_active = moduleIsActive(MOD_IMU);
+    const bool ads_active = moduleIsActive(MOD_ADS);
+    const bool act_active = moduleIsActive(MOD_ACT);
+    const bool safety_active = moduleIsActive(MOD_SAFETY);
+
+    in.safety_ok = safety_active ? hal_safety_ok() : true;
+    if (imu_active) {
+        imuUpdate();
+    }
+    in.current_angle_deg = ads_active ? steerAngleReadDeg() : 0.0f;
+    in.steer_raw = ads_active ? hal_steer_angle_read_raw() : 0;
     in.setpoint_deg = desiredSteerAngleDeg;
 
 #if LOG_WAS_DIAG_INTERVAL_MS > 0
@@ -224,7 +232,8 @@ void controlStep(void) {
     out.watchdog_triggered = (in.watchdog_timer_ms != 0u) &&
                              (in.now_ms - in.watchdog_timer_ms > dep_policy::WATCHDOG_TIMEOUT_MS);
 
-    if (!in.safety_ok || !in.auto_steer_enabled ||
+    if (!act_active || !ads_active || !imu_active ||
+        !in.safety_ok || !in.auto_steer_enabled ||
         out.watchdog_triggered || in.gps_speed_kmh < MIN_STEER_SPEED_KMH) {
         out.actuator_cmd = 0;
         out.reset_pid = true;
@@ -248,10 +257,12 @@ void controlStep(void) {
         pidReset(&s_steer_pid);
     }
 
-    actuatorWriteCommand(out.actuator_cmd);
+    if (act_active) {
+        actuatorWriteCommand(out.actuator_cmd);
+    }
 
     {
-        const bool steer_quality_ok =
+        const bool steer_quality_ok = ads_active &&
             dep_policy::isSteerAnglePlausible(in.current_angle_deg) &&
             dep_policy::isSteerAngleRawPlausible(in.steer_raw);
 
