@@ -1,6 +1,6 @@
-# TASK-037 Ethernet-Konfiguration im seriellen Konfigmodus
+# TASK-039 Ethernet-Konfiguration im seriellen Konfigmodus
 
-- **ID**: TASK-037
+- **ID**: TASK-039
 - **Titel**: Ethernet-Netzwerkmodus und IP-Parameter im seriellen Konfigmodus konfigurierbar machen
 - **Status**: open
 - **Priorität**: high
@@ -68,7 +68,7 @@
   - `src/logic/runtime_config.cpp` (Defaults/Load- und Validierungsfluss)
   - `include/soft_config.h` (projektspezifische Defaultwerte fuer ETH-Konfiguration)
   - `src/logic/hw_status.cpp` (Link-/Diagnoseanzeige fuer Serial-Menue und Statuspfad)
-  - `reports/TASK-037/<dev-name>.md` (Umsetzungs-/Validierungsreport)
+  - `reports/TASK-039/<dev-name>.md` (Umsetzungs-/Validierungsreport)
 
 - **public_surface**:
   - `src/logic/runtime_config.h` (oeffentliche Runtime-Konfigstruktur fuer Ethernet-Parameter)

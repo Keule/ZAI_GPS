@@ -1,6 +1,6 @@
-# TASK-037 features.h aufräumen und vereinfachen
+# TASK-040 features.h aufräumen und vereinfachen
 
-- **ID**: TASK-037
+- **ID**: TASK-040
 - **Titel**: features.h aufräumen — Capabilities, Profile-Flags, Legacy-Aliase und Build-Modi streichen
 - **Status**: open
 - **Priorität**: high
@@ -239,7 +239,7 @@ build_flags =
   7. `src/logic/modules.h` (Modul-IDs — müssen mit neuen Features konsistent bleiben)
   8. `src/logic/modules.cpp` (feat::* Verbraucher)
   9. `platformio.ini` (Profile — umzustellen)
-  10. dieser Task (TASK-037)
+  10. dieser Task (TASK-040)
 
 - **files_read**:
   - `src/logic/features.h`

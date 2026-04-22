@@ -1,6 +1,6 @@
-# Task: Parametrisierung beider UM980-UARTs planen
+# TASK-043 Parametrisierung beider UM980-UARTs planen
 
-- **ID:** TASK-037
+- **ID**: TASK-043
 - **Titel:** Planungs-Task für die Parametrisierung beider UM980-UARTs erstellen
 - **Status:** open
 - **Priorität:** high
@@ -96,7 +96,7 @@ Die aktuelle Dual-UM980-Integration hat Bringup-, Spiegel- und Failover-Baustein
 
 ## files_write
 
-- `backlog/tasks/TASK-037-planungs-task-parametrisierung-beider-um980-uarts.md`
+- `backlog/tasks/TASK-043-planungs-task-parametrisierung-beider-um980-uarts.md`
 - `backlog/index.yaml`
 
 ## public_surface (erwartet)

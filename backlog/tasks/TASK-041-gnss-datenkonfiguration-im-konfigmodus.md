@@ -1,6 +1,6 @@
-# TASK-037 GNSS-Datenkonfiguration im Konfigmodus spezifizieren
+# TASK-041 GNSS-Datenkonfiguration im Konfigmodus spezifizieren
 
-- **ID**: TASK-037
+- **ID**: TASK-041
 - **Titel**: Konfigurierbare GNSS-Datenausgabe (Typen, Raten/Profile, Zielpfade) im Konfigmodus spezifizieren
 - **Status**: open
 - **Priorität**: high
@@ -61,7 +61,7 @@
   3. `docs/adr/ADR-001-config-layering-and-override-policy.md` (falls vorhanden und einschlägig)
   4. `docs/adr/ADR-003-feature-module-system-and-pin-claims.md`
   5. `docs/adr/subsystems/*` (GNSS/RTCM/Logging-relevante Entscheidungen)
-  6. dieser Task (`TASK-037`)
+  6. dieser Task (`TASK-041`)
 
 - **files_read**:
   - `README.md`
@@ -82,7 +82,7 @@
   - relevante GNSS/PGN/Bridge-Implementierungsstellen unter `src/`
 
 - **files_write**:
-  - `backlog/tasks/TASK-037-gnss-datenkonfiguration-im-konfigmodus.md`
+  - `backlog/tasks/TASK-041-gnss-datenkonfiguration-im-konfigmodus.md`
   - `backlog/index.yaml`
   - optional: ADR-Datei unter `docs/adr/` oder ADR-Task, falls Boundary-Änderung identifiziert wird
 
@@ -133,7 +133,7 @@
   - Bei Änderung von Protokoll-/Subsystemgrenzen ist ADR-Referenz gesetzt oder ADR-Bedarf explizit als Folgearbeit ausgewiesen.
 
 - **verification**:
-  - `rg "TASK-037|GNSS-Datenkonfiguration|Konfigmodus" backlog/tasks backlog/index.yaml`
+  - `rg "TASK-041|GNSS-Datenkonfiguration|Konfigmodus" backlog/tasks backlog/index.yaml`
   - Review-Checkliste gegen AC-Liste und Abgleich-Liste `TASK-007/009/016/017/019*`
   - (Falls Implementierungsinkrement startet) Build-/Smoke-Checks gemäß Folgetask
 
