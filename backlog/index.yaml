@@ -86,7 +86,6 @@ epics:
       - TASK-037
       - TASK-025
       - TASK-030
-      - TASK-037
 
 tasks:
   - id: TASK-001
@@ -608,20 +607,6 @@ tasks:
       - TASK-028
 
   - id: TASK-037
-    title: Konfigurierbare GNSS-Datenausgabe (Typen, Raten/Profile, Zielpfade) im Konfigmodus spezifizieren
-    file: backlog/tasks/TASK-037-gnss-datenkonfiguration-im-konfigmodus.md
-    epic_id: EPIC-004
-    status: open
-    priority: high
-    delivery_mode: mixed
-    task_category: feature_expansion
-    dependencies:
-      - TASK-009
-      - TASK-016
-      - TASK-017
-      - TASK-019
-      
-   - id: TASK-038 
     title: Planungs-Task für die Parametrisierung beider UM980-UARTs erstellen
     file: backlog/tasks/TASK-037-planungs-task-parametrisierung-beider-um980-uarts.md
     epic_id: EPIC-004
