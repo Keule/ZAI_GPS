@@ -60,6 +60,7 @@ epics:
       - TASK-034
       - TASK-035
       - TASK-036
+      - TASK-037
 
   - id: EPIC-004
     title: Feature Expansion
