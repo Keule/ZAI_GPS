@@ -174,125 +174,161 @@ void controlUpdateSettings(uint8_t kp, uint8_t highPWM, uint8_t lowPWM,
     }
 }
 
-void controlStep(void) {
-    struct ControlInputSnapshot {
-        uint32_t now_ms = 0;
-        bool safety_ok = false;
-        bool auto_steer_enabled = false;
-        float gps_speed_kmh = 0.0f;
-        uint32_t watchdog_timer_ms = 0;
-        float setpoint_deg = 0.0f;
-        float current_angle_deg = 0.0f;
-        int16_t steer_raw = 0;
-    };
-
-    struct ControlOutputSnapshot {
-        uint16_t actuator_cmd = 0;
-        bool watchdog_triggered = false;
-        bool reset_pid = false;
-    };
-
-    // ----------------------------------------------------------
-    // Input phase (read once, then process from snapshot)
-    // ----------------------------------------------------------
-    ControlInputSnapshot in;
-    in.now_ms = hal_millis();
-    const bool imu_active = moduleIsActive(MOD_IMU);
-    const bool ads_active = moduleIsActive(MOD_ADS);
-    const bool act_active = moduleIsActive(MOD_ACT);
+bool controlReadSafety(void) {
     const bool safety_active = moduleIsActive(MOD_SAFETY);
+    const bool safety_ok = safety_active ? hal_safety_ok() : true;
 
-    in.safety_ok = safety_active ? hal_safety_ok() : true;
+    {
+        StateLock lock;
+        g_nav.safety.safety_ok = safety_ok;
+    }
+
+    return safety_ok;
+}
+
+void controlReadSensors(SensorSnapshot& snap) {
     for (uint8_t i = 0; i < k_sensor_count; i++) {
         const ModuleOps* mod = s_sensor_modules[i];
         if (!mod) continue;
+        if (mod == &imu_ops && !moduleIsActive(MOD_IMU)) continue;
+        if (mod == &was_ops && !moduleIsActive(MOD_ADS)) continue;
         if (mod->isEnabled && !mod->isEnabled()) continue;
         if (mod->update) {
             (void)mod->update();
         }
     }
 
-    if (ads_active) {
-        in.current_angle_deg = wasGetAngleDeg();
-        in.steer_raw = wasGetRaw();
-    } else {
-        in.current_angle_deg = 0.0f;
-        in.steer_raw = 0;
-    }
-    in.setpoint_deg = desiredSteerAngleDeg;
-
-#if LOG_WAS_DIAG_INTERVAL_MS > 0
-    if (in.now_ms - s_last_was_diag_ms >= LOG_WAS_DIAG_INTERVAL_MS) {
-        s_last_was_diag_ms = in.now_ms;
-        hal_log("WAS-DIAG: angle=%.2f deg raw=%d safety=%s",
-                in.current_angle_deg,
-                (int)in.steer_raw,
-                in.safety_ok ? "OK" : "KICK");
-    }
-#endif
-
     {
         StateLock lock;
-        in.auto_steer_enabled = g_nav.sw.work_switch && g_nav.sw.steer_switch;
-        in.gps_speed_kmh = g_nav.sw.gps_speed_kmh;
-        in.watchdog_timer_ms = g_nav.sw.watchdog_timer_ms;
+        snap.imu_timestamp_ms = g_nav.imu.imu_timestamp_ms;
+        snap.imu_quality = g_nav.imu.imu_quality_ok;
     }
 
-    // ----------------------------------------------------------
-    // Processing phase (pure computation / decisions)
-    // ----------------------------------------------------------
-    ControlOutputSnapshot out;
-    // Arm watchdog only after first valid PGN 254 heartbeat was received.
-    out.watchdog_triggered = (in.watchdog_timer_ms != 0u) &&
-                             (in.now_ms - in.watchdog_timer_ms > dep_policy::WATCHDOG_TIMEOUT_MS);
-
-    #if FEAT_MACHINE_ACTOR
-    if (!act_active || !ads_active || !imu_active ||
-        !in.safety_ok || !in.auto_steer_enabled ||
-        out.watchdog_triggered || in.gps_speed_kmh < MIN_STEER_SPEED_KMH) {
-        out.actuator_cmd = 0;
-        out.reset_pid = true;
-    } else {
-        float error = in.setpoint_deg - in.current_angle_deg;
-        while (error > 180.0f)  error -= 360.0f;
-        while (error < -180.0f) error += 360.0f;
-
-        uint32_t dt = in.now_ms - s_steer_pid.last_update_ms;
-        if (dt > 100) dt = 5;  // prevent huge dt after pause
-        s_steer_pid.last_update_ms = in.now_ms;
-
-        const float output = pidCompute(&s_steer_pid, error, dt);
-        out.actuator_cmd = static_cast<uint16_t>(output);
+    const bool ads_active = feat::ads() && moduleIsActive(MOD_ADS);
+    if (ads_active) {
+        snap.was_angle_deg = wasGetAngleDeg();
+        snap.was_raw = wasGetRaw();
+        snap.was_timestamp_ms = wasGetTimestampMs();
+        snap.was_quality = wasGetQuality();
     }
-    #endif
+}
 
-    // ----------------------------------------------------------
-    // Output phase (single writer update + actuator command)
-    // ----------------------------------------------------------
-    if (out.reset_pid) {
+bool controlCheckWatchdog(uint32_t now_ms, uint32_t watchdog_timer_ms) {
+    return (watchdog_timer_ms != 0u) &&
+           (now_ms - watchdog_timer_ms > dep_policy::WATCHDOG_TIMEOUT_MS);
+}
+
+void controlComputePid(const SensorSnapshot& snap,
+                       const AgioInputSnapshot& agio,
+                       bool safety_ok,
+                       bool watchdog_triggered,
+                       uint32_t now_ms,
+                       PidResult& result) {
+    const bool steer_possible =
+        moduleIsActive(MOD_ACT) &&
+        moduleIsActive(MOD_ADS) &&
+        moduleIsActive(MOD_IMU) &&
+        safety_ok &&
+        agio.auto_steer_enabled &&
+        !watchdog_triggered &&
+        agio.gps_speed_kmh >= MIN_STEER_SPEED_KMH;
+
+    if (!steer_possible) {
+        result.actuator_cmd = 0;
+        result.reset_pid = true;
+        return;
+    }
+
+    float error = agio.setpoint_deg - snap.was_angle_deg;
+    while (error > 180.0f)  error -= 360.0f;
+    while (error < -180.0f) error += 360.0f;
+
+    uint32_t dt = now_ms - s_steer_pid.last_update_ms;
+    if (dt > 100) dt = 5;  // prevent huge dt after pause
+    s_steer_pid.last_update_ms = now_ms;
+
+    const float output = pidCompute(&s_steer_pid, error, dt);
+    result.actuator_cmd = static_cast<uint16_t>(output);
+    result.reset_pid = false;
+}
+
+void controlWriteActuator(uint16_t actuator_cmd) {
+    if (!feat::act() || !moduleIsActive(MOD_ACT)) {
+        return;
+    }
+    (void)actuatorUpdate(actuator_cmd);
+}
+
+void controlWriteState(uint32_t now_ms,
+                       bool safety_ok,
+                       bool watchdog_triggered,
+                       const SensorSnapshot& snap,
+                       const PidResult& result) {
+    if (result.reset_pid) {
         pidReset(&s_steer_pid);
     }
 
-    #if FEAT_MACHINE_ACTOR && FEAT_STEER_ACTOR
-    if (act_active) {
-        (void)actuatorUpdate(out.actuator_cmd);
-    }
-    #endif
+    controlWriteActuator(result.actuator_cmd);
 
     {
-        const bool steer_quality_ok = ads_active &&
-            dep_policy::isSteerAnglePlausible(in.current_angle_deg) &&
-            dep_policy::isSteerAngleRawPlausible(in.steer_raw);
+        const bool steer_quality_ok = feat::ads() &&
+            dep_policy::isSteerAnglePlausible(snap.was_angle_deg) &&
+            dep_policy::isSteerAngleRawPlausible(snap.was_raw);
 
         StateLock lock;
-        g_nav.safety.safety_ok = in.safety_ok;
-        g_nav.safety.watchdog_triggered = out.watchdog_triggered;
+        g_nav.safety.safety_ok = safety_ok;
+        g_nav.safety.watchdog_triggered = watchdog_triggered;
 
-        g_nav.steer.steer_angle_deg = in.current_angle_deg;
-        g_nav.steer.steer_angle_raw = in.steer_raw;
-        g_nav.steer.steer_angle_timestamp_ms = ads_active ? wasGetTimestampMs() : in.now_ms;
-        g_nav.steer.steer_angle_quality_ok = steer_quality_ok && wasGetQuality();
+        g_nav.steer.steer_angle_deg = snap.was_angle_deg;
+        g_nav.steer.steer_angle_raw = snap.was_raw;
+        g_nav.steer.steer_angle_timestamp_ms = now_ms;
+        g_nav.steer.steer_angle_quality_ok = steer_quality_ok && snap.was_quality;
 
-        g_nav.pid.pid_output = out.actuator_cmd;
+        g_nav.pid.pid_output = result.actuator_cmd;
     }
+}
+
+void controlStep(void) {
+    const uint32_t now_ms = hal_millis();
+
+    // Phase 1: safety (always)
+    const bool safety_ok = controlReadSafety();
+
+    // Phase 2: sensors
+    SensorSnapshot snap;
+    controlReadSensors(snap);
+
+    // AgIO snapshot
+    AgioInputSnapshot agio;
+    {
+        StateLock lock;
+        agio.auto_steer_enabled = g_nav.sw.work_switch && g_nav.sw.steer_switch;
+        agio.gps_speed_kmh = g_nav.sw.gps_speed_kmh;
+        agio.watchdog_timer_ms = g_nav.sw.watchdog_timer_ms;
+    }
+    agio.setpoint_deg = desiredSteerAngleDeg;
+
+    // Phase 3: watchdog
+    const bool watchdog_triggered = controlCheckWatchdog(now_ms, agio.watchdog_timer_ms);
+
+    // Phase 4: PID
+    PidResult result;
+    if (feat::control()) {
+        controlComputePid(snap, agio, safety_ok, watchdog_triggered, now_ms, result);
+    } else {
+        result = {0, true};
+    }
+
+    // Phase 5 + 6: actuator + state write
+    controlWriteState(now_ms, safety_ok, watchdog_triggered, snap, result);
+
+#if LOG_WAS_DIAG_INTERVAL_MS > 0
+    if (now_ms - s_last_was_diag_ms >= LOG_WAS_DIAG_INTERVAL_MS) {
+        s_last_was_diag_ms = now_ms;
+        hal_log("WAS-DIAG: angle=%.2f raw=%d safety=%s",
+                snap.was_angle_deg,
+                (int)snap.was_raw,
+                safety_ok ? "OK" : "KICK");
+    }
+#endif
 }

@@ -18,8 +18,7 @@ constexpr bool wasIsEnabled() { return feat::ads(); }
 /// Initialise WAS hardware (calls hal_steer_angle_begin).
 void wasInit(void);
 
-/// Read WAS and update state.
-/// Also updates global state (steer_angle_deg, timestamp, quality).
+/// Read WAS and update internal module cache.
 /// Returns true if read was successful and plausible.
 bool wasUpdate(void);
 
