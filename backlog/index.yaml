@@ -673,3 +673,18 @@ tasks:
       - TASK-014
       - TASK-017
       - TASK-019F
+
+    # ---------------------------------------------------------------------------
+  # TASK-045: Task-Watchdog-Reset auf ESP32 Classic (2026-04-22)
+  # Ursprung: Beobachtung aus TASK-037 session — WDT nach ~30s
+  # ---------------------------------------------------------------------------
+
+  - id: TASK-045
+    title: Task-Watchdog-Reset auf ESP32 Classic (RMII Ethernet) analysieren und beheben
+    file: backlog/tasks/TASK-045-task-watchdog-reset-esp32-classic-analysieren-und-beheben.md
+    epic_id: EPIC-001
+    status: open
+    priority: high
+    delivery_mode: mixed
+    task_category: runtime_stability
+    dependencies: []
