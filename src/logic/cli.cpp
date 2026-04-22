@@ -16,6 +16,7 @@
 #include "hal/hal.h"
 #include "modules.h"
 #include "diag.h"
+#include "setup_wizard.h"
 
 #include <Arduino.h>
 #include <esp_system.h>
@@ -512,6 +513,11 @@ void cliCmdDiag(int argc, char** argv) {
     Serial.println("usage: diag <hw|mem|net>");
 }
 
+void cliCmdSetup(int, char**) {
+    setupWizardRequestStart();
+    Serial.println("Setup wizard requested. It will start in loop context.");
+}
+
 void cliCmdUnknown(const char* cmd) {
     Serial.printf("Unknown command: %s\n", cmd ? cmd : "");
     Serial.println("Type 'help' for available commands.");
@@ -551,6 +557,7 @@ void cliInit(void) {
     (void)cliRegisterCommand("module", &cliCmdModule, "Module runtime control");
     (void)cliRegisterCommand("actuator", &cliCmdActuator, "Actuator manual test mode");
     (void)cliRegisterCommand("diag", &cliCmdDiag, "Diagnostics (hw/mem/net)");
+    (void)cliRegisterCommand("setup", &cliCmdSetup, "Start setup wizard");
 }
 
 bool cliRegisterCommand(const char* cmd,

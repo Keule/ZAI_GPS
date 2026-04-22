@@ -41,6 +41,7 @@
 #include "logic/sd_ota.h"
 #include "logic/sd_logger.h"
 #include "logic/cli.h"
+#include "logic/setup_wizard.h"
 
 #include "logic/log_config.h"
 #undef LOG_LOCAL_LEVEL          // Arduino.h already defined it via esp_log.h
@@ -621,6 +622,11 @@ void setup() {
     }
     hal_log("BOOT: config load ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
+    if (!nvsConfigHasData()) {
+        hal_log("Main: no NVS config found -> setup wizard pending");
+        setupWizardRequestStart();
+    }
+
     // Initialise control system (PID controller with default gains).
     // NOTE: HAL-level init (imu, steer angle, actuator) was already done
     //       in hal_esp32_init_all().  controlInit() only sets up the PID.
@@ -756,6 +762,10 @@ void setup() {
 static uint32_t s_loop_dbg_count = 0;
 
 void loop() {
+    if (setupWizardConsumePending()) {
+        setupWizardRun();
+    }
+
     if (s_imu_bringup_active) {
         imuBringupTick();
         vTaskDelay(pdMS_TO_TICKS(20));
