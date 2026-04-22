@@ -608,6 +608,11 @@ tasks:
       - TASK-028
 
   - id: TASK-037
+  ----------------------------------------
+    title: Ethernet-Netzwerkmodus und IP-Parameter im seriellen Konfigmodus konfigurierbar machen
+    file: backlog/tasks/TASK-037-ethernet-konfiguration-im-seriellen-konfigmodus.md
+    
+    --------------------------
     title: Konfigurierbare GNSS-Datenausgabe (Typen, Raten/Profile, Zielpfade) im Konfigmodus spezifizieren
     file: backlog/tasks/TASK-037-gnss-datenkonfiguration-im-konfigmodus.md
     epic_id: EPIC-004
@@ -620,7 +625,15 @@ tasks:
       - TASK-016
       - TASK-017
       - TASK-019
-      
+     epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-028
+      - TASK-030
+    
    - id: TASK-038 
     title: Planungs-Task für die Parametrisierung beider UM980-UARTs erstellen
     file: backlog/tasks/TASK-037-planungs-task-parametrisierung-beider-um980-uarts.md
