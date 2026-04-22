@@ -114,6 +114,15 @@ void controlUpdateSettings(uint8_t kp, uint8_t highPWM, uint8_t lowPWM,
                            uint8_t minPWM, uint8_t countsPerDegree,
                            int16_t wasOffset, uint8_t ackerman);
 
+/// Update PID gains at runtime (Serial CLI tuning path).
+void controlSetPidGains(float kp, float ki, float kd);
+
+/// Update PID output clamps at runtime.
+void controlSetPidOutputLimits(float out_min, float out_max);
+
+/// Read current PID tuning values.
+void controlGetPidGains(float* kp, float* ki, float* kd);
+
 // ===================================================================
 // Globals
 // ===================================================================

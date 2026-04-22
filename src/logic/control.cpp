@@ -174,6 +174,29 @@ void controlUpdateSettings(uint8_t kp, uint8_t highPWM, uint8_t lowPWM,
     }
 }
 
+void controlSetPidGains(float kp, float ki, float kd) {
+    s_steer_pid.kp = kp;
+    s_steer_pid.ki = ki;
+    s_steer_pid.kd = kd;
+    pidReset(&s_steer_pid);
+    LOGI("CTL", "PID gains set via CLI: Kp=%.3f Ki=%.3f Kd=%.3f", kp, ki, kd);
+}
+
+void controlSetPidOutputLimits(float out_min, float out_max) {
+    if (out_min < 0.0f) out_min = 0.0f;
+    if (out_max < out_min) out_max = out_min;
+    s_steer_pid.output_min = out_min;
+    s_steer_pid.output_max = out_max;
+    pidReset(&s_steer_pid);
+    LOGI("CTL", "PID output limits set via CLI: min=%.1f max=%.1f", out_min, out_max);
+}
+
+void controlGetPidGains(float* kp, float* ki, float* kd) {
+    if (kp) *kp = s_steer_pid.kp;
+    if (ki) *ki = s_steer_pid.ki;
+    if (kd) *kd = s_steer_pid.kd;
+}
+
 bool controlReadSafety(void) {
     const bool safety_active = moduleIsActive(MOD_SAFETY);
     const bool safety_ok = safety_active ? hal_safety_ok() : true;

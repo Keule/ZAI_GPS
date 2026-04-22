@@ -86,6 +86,20 @@ static bool s_w5500_detected = false;   // true if ETH.begin() succeeded
 static bool s_eth_link_up    = false;   // true if ARDUINO_EVENT_ETH_CONNECTED
 static bool s_eth_has_ip     = false;   // true if ARDUINO_EVENT_ETH_GOT_IP
 
+static uint32_t ipToU32(const IPAddress& ip) {
+    return (static_cast<uint32_t>(ip[0]) << 24) |
+           (static_cast<uint32_t>(ip[1]) << 16) |
+           (static_cast<uint32_t>(ip[2]) << 8) |
+           static_cast<uint32_t>(ip[3]);
+}
+
+static IPAddress u32ToIp(uint32_t value) {
+    return IPAddress((value >> 24) & 0xFF,
+                     (value >> 16) & 0xFF,
+                     (value >> 8) & 0xFF,
+                     value & 0xFF);
+}
+
 // ===================================================================
 // Shared SPI bus - SENS_SPI_BUS / SPI2_HOST
 //
@@ -1830,6 +1844,48 @@ bool hal_net_is_connected(void) {
 
 bool hal_net_detected(void) {
     return s_w5500_detected;
+}
+
+void hal_net_set_static_config(uint32_t ip, uint32_t gw, uint32_t subnet) {
+    s_local_ip = u32ToIp(ip);
+    s_gateway = u32ToIp(gw);
+    s_subnet = u32ToIp(subnet);
+}
+
+bool hal_net_restart(void) {
+    ethUDP_recv.stop();
+    ethUDP_send.stop();
+    ethUDP_rtcm.stop();
+    ETH.end();
+    s_eth_has_ip = false;
+    s_eth_link_up = false;
+    hal_net_init();
+    return s_eth_link_up || s_eth_has_ip;
+}
+
+uint32_t hal_net_get_ip(void) {
+    if (s_eth_has_ip) {
+        return ipToU32(ETH.localIP());
+    }
+    return ipToU32(s_local_ip);
+}
+
+uint32_t hal_net_get_gateway(void) {
+    if (s_eth_has_ip) {
+        return ipToU32(ETH.gatewayIP());
+    }
+    return ipToU32(s_gateway);
+}
+
+uint32_t hal_net_get_subnet(void) {
+    if (s_eth_has_ip) {
+        return ipToU32(ETH.subnetMask());
+    }
+    return ipToU32(s_subnet);
+}
+
+bool hal_net_link_up(void) {
+    return s_eth_link_up;
 }
 
 // ===================================================================

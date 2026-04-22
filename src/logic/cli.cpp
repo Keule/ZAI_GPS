@@ -11,6 +11,9 @@
 #include "nvs_config.h"
 #include "runtime_config.h"
 #include "ntrip.h"
+#include "control.h"
+#include "global_state.h"
+#include "hal/hal.h"
 
 #include <Arduino.h>
 #include <esp_system.h>
@@ -199,6 +202,157 @@ void cliCmdNtrip(int argc, char** argv) {
 #endif
 }
 
+void printIpU32(uint32_t ip) {
+    Serial.printf("%u.%u.%u.%u",
+                  static_cast<unsigned>((ip >> 24) & 0xFF),
+                  static_cast<unsigned>((ip >> 16) & 0xFF),
+                  static_cast<unsigned>((ip >> 8) & 0xFF),
+                  static_cast<unsigned>(ip & 0xFF));
+}
+
+bool parseIp4(const char* text, uint32_t* out_ip) {
+    if (!text || !out_ip) return false;
+    unsigned a = 0, b = 0, c = 0, d = 0;
+    if (std::sscanf(text, "%u.%u.%u.%u", &a, &b, &c, &d) != 4) return false;
+    if (a > 255 || b > 255 || c > 255 || d > 255) return false;
+    *out_ip = (a << 24) | (b << 16) | (c << 8) | d;
+    return true;
+}
+
+void cliCmdPid(int argc, char** argv) {
+    RuntimeConfig& cfg = softConfigGet();
+    if (argc < 2) {
+        Serial.println("usage: pid <show|set>");
+        return;
+    }
+
+    if (std::strcmp(argv[1], "show") == 0) {
+        float kp = 0.0f, ki = 0.0f, kd = 0.0f;
+        uint8_t min_pwm = 0;
+        uint8_t high_pwm = 0;
+        {
+            StateLock lock;
+            min_pwm = g_nav.pid.settings_min_pwm;
+            high_pwm = g_nav.pid.settings_high_pwm;
+        }
+        controlGetPidGains(&kp, &ki, &kd);
+        Serial.println("PID:");
+        Serial.printf("  Kp: %.3f\n", kp);
+        Serial.printf("  Ki: %.3f\n", ki);
+        Serial.printf("  Kd: %.3f\n", kd);
+        Serial.printf("  MinPWM: %u\n", static_cast<unsigned>(min_pwm));
+        Serial.printf("  HighPWM: %u\n", static_cast<unsigned>(high_pwm));
+        Serial.println("  Note: PGN 252 can overwrite runtime values.");
+        return;
+    }
+
+    if (std::strcmp(argv[1], "set") == 0) {
+        if (argc < 4) {
+            Serial.println("usage: pid set <kp|ki|kd|minpwm|highpwm> <value>");
+            return;
+        }
+
+        if (std::strcmp(argv[2], "kp") == 0) {
+            cfg.pid_kp = static_cast<float>(std::atof(argv[3]));
+        } else if (std::strcmp(argv[2], "ki") == 0) {
+            cfg.pid_ki = static_cast<float>(std::atof(argv[3]));
+        } else if (std::strcmp(argv[2], "kd") == 0) {
+            cfg.pid_kd = static_cast<float>(std::atof(argv[3]));
+        } else if (std::strcmp(argv[2], "minpwm") == 0) {
+            StateLock lock;
+            g_nav.pid.settings_min_pwm = static_cast<uint8_t>(std::atoi(argv[3]));
+        } else if (std::strcmp(argv[2], "highpwm") == 0) {
+            StateLock lock;
+            g_nav.pid.settings_high_pwm = static_cast<uint8_t>(std::atoi(argv[3]));
+        } else {
+            Serial.println("usage: pid set <kp|ki|kd|minpwm|highpwm> <value>");
+            return;
+        }
+
+        uint8_t min_pwm = 0;
+        uint8_t high_pwm = 0;
+        {
+            StateLock lock;
+            min_pwm = g_nav.pid.settings_min_pwm;
+            high_pwm = g_nav.pid.settings_high_pwm;
+        }
+        controlSetPidGains(cfg.pid_kp, cfg.pid_ki, cfg.pid_kd);
+        controlSetPidOutputLimits(static_cast<float>(min_pwm),
+                                  static_cast<float>(high_pwm));
+        Serial.println("PID updated.");
+        return;
+    }
+
+    Serial.println("usage: pid <show|set>");
+}
+
+void cliCmdNet(int argc, char** argv) {
+    RuntimeConfig& cfg = softConfigGet();
+    if (argc < 2) {
+        Serial.println("usage: net <show|mode|ip|gw|mask|restart>");
+        return;
+    }
+
+    if (std::strcmp(argv[1], "show") == 0) {
+        Serial.println("Network:");
+        Serial.printf("  Mode: %s\n", cfg.net_mode == 0 ? "DHCP" : "STATIC");
+        Serial.print("  IP: "); printIpU32(hal_net_get_ip()); Serial.println();
+        Serial.print("  Mask: "); printIpU32(hal_net_get_subnet()); Serial.println();
+        Serial.print("  Gateway: "); printIpU32(hal_net_get_gateway()); Serial.println();
+        Serial.printf("  Link: %s\n", hal_net_link_up() ? "UP" : "DOWN");
+        return;
+    }
+
+    if (std::strcmp(argv[1], "mode") == 0) {
+        if (argc < 3) {
+            Serial.println("usage: net mode <dhcp|static>");
+            return;
+        }
+        if (std::strcmp(argv[2], "dhcp") == 0) cfg.net_mode = 0;
+        else if (std::strcmp(argv[2], "static") == 0) cfg.net_mode = 1;
+        else {
+            Serial.println("usage: net mode <dhcp|static>");
+            return;
+        }
+        Serial.println("Network mode updated (apply with: net restart).");
+        return;
+    }
+
+    if (std::strcmp(argv[1], "ip") == 0 || std::strcmp(argv[1], "gw") == 0 || std::strcmp(argv[1], "mask") == 0) {
+        if (argc < 3) {
+            Serial.println("usage: net <ip|gw|mask> <a.b.c.d>");
+            return;
+        }
+        uint32_t ip = 0;
+        if (!parseIp4(argv[2], &ip)) {
+            Serial.println("ERROR: invalid IPv4 format.");
+            return;
+        }
+        if (std::strcmp(argv[1], "ip") == 0) cfg.net_ip = ip;
+        else if (std::strcmp(argv[1], "gw") == 0) cfg.net_gateway = ip;
+        else cfg.net_subnet = ip;
+        Serial.println("Network parameter updated (apply with: net restart).");
+        return;
+    }
+
+    if (std::strcmp(argv[1], "restart") == 0) {
+        if (cfg.net_mode == 1) {
+            hal_net_set_static_config(cfg.net_ip, cfg.net_gateway, cfg.net_subnet);
+        }
+        Serial.print("Restarting network");
+        for (int i = 0; i < 3; ++i) {
+            Serial.print(".");
+            delay(100);
+        }
+        Serial.println();
+        const bool ok = hal_net_restart();
+        Serial.printf("Network restart %s\n", ok ? "OK" : "DONE (link pending)");
+        return;
+    }
+
+    Serial.println("usage: net <show|mode|ip|gw|mask|restart>");
+}
+
 void cliCmdUnknown(const char* cmd) {
     Serial.printf("Unknown command: %s\n", cmd ? cmd : "");
     Serial.println("Type 'help' for available commands.");
@@ -233,6 +387,8 @@ void cliInit(void) {
     (void)cliRegisterCommand("load", &cliCmdLoad, "Load runtime config from NVS");
     (void)cliRegisterCommand("factory", &cliCmdFactory, "Factory reset (use: factory confirm)");
     (void)cliRegisterCommand("ntrip", &cliCmdNtrip, "NTRIP runtime config and status");
+    (void)cliRegisterCommand("pid", &cliCmdPid, "PID tuning and status");
+    (void)cliRegisterCommand("net", &cliCmdNet, "Network runtime config");
 }
 
 bool cliRegisterCommand(const char* cmd,
