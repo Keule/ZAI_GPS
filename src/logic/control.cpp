@@ -163,14 +163,14 @@ void controlUpdateSettings(uint8_t kp, uint8_t highPWM, uint8_t lowPWM,
     // Store all settings in global state for status reporting
     {
         StateLock lock;
-        g_nav.settings_kp           = kp;
-        g_nav.settings_high_pwm     = highPWM;
-        g_nav.settings_low_pwm      = lowPWM;
-        g_nav.settings_min_pwm      = minPWM;
-        g_nav.settings_counts       = countsPerDegree;
-        g_nav.settings_was_offset   = wasOffset;
-        g_nav.settings_ackerman     = ackerman;
-        g_nav.settings_received     = true;
+        g_nav.pid.settings_kp           = kp;
+        g_nav.pid.settings_high_pwm     = highPWM;
+        g_nav.pid.settings_low_pwm      = lowPWM;
+        g_nav.pid.settings_min_pwm      = minPWM;
+        g_nav.pid.settings_counts       = countsPerDegree;
+        g_nav.pid.settings_was_offset   = wasOffset;
+        g_nav.pid.settings_ackerman     = ackerman;
+        g_nav.pid.settings_received     = true;
     }
 }
 
@@ -213,10 +213,12 @@ void controlStep(void) {
     }
 
     if (ads_active) {
-        StateLock lock;
-        in.current_angle_deg = g_nav.steer_angle_deg;
+        in.current_angle_deg = wasGetAngleDeg();
+        in.steer_raw = wasGetRaw();
+    } else {
+        in.current_angle_deg = 0.0f;
+        in.steer_raw = 0;
     }
-    in.steer_raw = ads_active ? hal_steer_angle_read_raw() : 0;
     in.setpoint_deg = desiredSteerAngleDeg;
 
 #if LOG_WAS_DIAG_INTERVAL_MS > 0
@@ -231,9 +233,9 @@ void controlStep(void) {
 
     {
         StateLock lock;
-        in.auto_steer_enabled = g_nav.work_switch && g_nav.steer_switch;
-        in.gps_speed_kmh = g_nav.gps_speed_kmh;
-        in.watchdog_timer_ms = g_nav.watchdog_timer_ms;
+        in.auto_steer_enabled = g_nav.sw.work_switch && g_nav.sw.steer_switch;
+        in.gps_speed_kmh = g_nav.sw.gps_speed_kmh;
+        in.watchdog_timer_ms = g_nav.sw.watchdog_timer_ms;
     }
 
     // ----------------------------------------------------------
@@ -283,12 +285,14 @@ void controlStep(void) {
             dep_policy::isSteerAngleRawPlausible(in.steer_raw);
 
         StateLock lock;
-        g_nav.safety_ok = in.safety_ok;
-        g_nav.steer_angle_raw = in.steer_raw;
-        g_nav.steer_angle_timestamp_ms = in.now_ms;
-        g_nav.steer_angle_quality_ok = steer_quality_ok;
-        g_nav.watchdog_triggered = out.watchdog_triggered;
-        g_nav.timestamp_ms = in.now_ms;
-        g_nav.pid_output = out.actuator_cmd;
+        g_nav.safety.safety_ok = in.safety_ok;
+        g_nav.safety.watchdog_triggered = out.watchdog_triggered;
+
+        g_nav.steer.steer_angle_deg = in.current_angle_deg;
+        g_nav.steer.steer_angle_raw = in.steer_raw;
+        g_nav.steer.steer_angle_timestamp_ms = ads_active ? wasGetTimestampMs() : in.now_ms;
+        g_nav.steer.steer_angle_quality_ok = steer_quality_ok && wasGetQuality();
+
+        g_nav.pid.pid_output = out.actuator_cmd;
     }
 }

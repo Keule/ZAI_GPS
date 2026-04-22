@@ -6,7 +6,6 @@
 #include "was.h"
 
 #include "dependency_policy.h"
-#include "global_state.h"
 #include "hal/hal.h"
 
 #include "log_config.h"
@@ -16,6 +15,9 @@
 
 namespace {
 float s_last_was_angle_deg = 0.0f;
+int16_t s_last_was_raw = 0;
+uint32_t s_last_was_timestamp_ms = 0;
+bool s_last_was_quality = false;
 
 bool was_enabled_check() {
     return feat::ads();
@@ -32,27 +34,34 @@ void wasInit(void) {
 }
 
 bool wasUpdate(void) {
-    const float angle = hal_steer_angle_read_deg();
-    const uint32_t now_ms = hal_millis();
-    const bool plausible = dep_policy::isSteerAnglePlausible(angle);
-
-    {
-        StateLock lock;
-        g_nav.steer_angle_deg = angle;
-        g_nav.steer_angle_timestamp_ms = now_ms;
-        g_nav.steer_angle_quality_ok = plausible;
-    }
-
-    s_last_was_angle_deg = angle;
-    return plausible;
+    s_last_was_angle_deg = hal_steer_angle_read_deg();
+    s_last_was_raw = hal_steer_angle_read_raw();
+    s_last_was_timestamp_ms = hal_millis();
+    s_last_was_quality = dep_policy::isSteerAnglePlausible(s_last_was_angle_deg);
+    return s_last_was_quality;
 }
 
 bool wasIsHealthy(uint32_t now_ms) {
-    StateLock lock;
-    if (!g_nav.steer_angle_quality_ok) return false;
-    return dep_policy::isFresh(now_ms,
-                               g_nav.steer_angle_timestamp_ms,
+    return s_last_was_quality &&
+           dep_policy::isFresh(now_ms,
+                               s_last_was_timestamp_ms,
                                dep_policy::STEER_ANGLE_FRESHNESS_TIMEOUT_MS);
+}
+
+float wasGetAngleDeg(void) {
+    return s_last_was_angle_deg;
+}
+
+int16_t wasGetRaw(void) {
+    return s_last_was_raw;
+}
+
+uint32_t wasGetTimestampMs(void) {
+    return s_last_was_timestamp_ms;
+}
+
+bool wasGetQuality(void) {
+    return s_last_was_quality;
 }
 
 float steerAngleReadDeg(void) {

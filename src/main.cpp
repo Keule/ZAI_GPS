@@ -391,11 +391,11 @@ static void commTaskFunc(void* param) {
             uint32_t imu_ts_ms = 0;
             {
                 StateLock lock;
-                safety_ok = g_nav.safety_ok;
-                steer_quality_ok = g_nav.steer_angle_quality_ok;
-                steer_ts_ms = g_nav.steer_angle_timestamp_ms;
-                imu_quality_ok = g_nav.imu_quality_ok;
-                imu_ts_ms = g_nav.imu_timestamp_ms;
+                safety_ok = g_nav.safety.safety_ok;
+                steer_quality_ok = g_nav.steer.steer_angle_quality_ok;
+                steer_ts_ms = g_nav.steer.steer_angle_timestamp_ms;
+                imu_quality_ok = g_nav.imu.imu_quality_ok;
+                imu_ts_ms = g_nav.imu.imu_timestamp_ms;
             }
 
             const bool steer_angle_valid =
@@ -747,12 +747,12 @@ void loop() {
             uint32_t status_age_ms = 0;
             {
                 StateLock lock;
-                fix_type = g_nav.um980_fix_type;
-                rtcm_active = g_nav.um980_rtcm_active;
-                diff_age = g_nav.gps_diff_age_x100_ms;
-                status_age_ms = (g_nav.um980_status_timestamp_ms == 0)
+                fix_type = g_nav.gnss.um980_fix_type;
+                rtcm_active = g_nav.gnss.um980_rtcm_active;
+                diff_age = g_nav.gnss.gps_diff_age_x100_ms;
+                status_age_ms = (g_nav.gnss.um980_status_timestamp_ms == 0)
                     ? 0
-                    : (now - g_nav.um980_status_timestamp_ms);
+                    : (now - g_nav.gnss.um980_status_timestamp_ms);
             }
 
             hal_log("GNSS-BUILDUP: port_status net=%s rtcm_uart=%s drop=%lu | fix_status type=%u rtcm=%s diff_age_x100ms=%lu status_age_ms=%lu",
@@ -806,20 +806,20 @@ void loop() {
 
         {
             StateLock lock;
-            heading_deg = g_nav.heading_deg;
-            steer_angle_deg = g_nav.steer_angle_deg;
-            steer_angle_raw = (int)g_nav.steer_angle_raw;
-            safety_ok = g_nav.safety_ok;
-            work_switch = g_nav.work_switch;
-            steer_switch = g_nav.steer_switch;
-            gps_speed_kmh = g_nav.gps_speed_kmh;
-            watchdog_triggered = g_nav.watchdog_triggered;
-            pid_output = (int)g_nav.pid_output;
-            settings_received = g_nav.settings_received;
-            roll_deg = g_nav.roll_deg;
-            yaw_rate_dps = g_nav.yaw_rate_dps;
-            imu_quality_ok = g_nav.imu_quality_ok;
-            imu_timestamp_ms = g_nav.imu_timestamp_ms;
+            heading_deg = g_nav.imu.heading_deg;
+            steer_angle_deg = g_nav.steer.steer_angle_deg;
+            steer_angle_raw = (int)g_nav.steer.steer_angle_raw;
+            safety_ok = g_nav.safety.safety_ok;
+            work_switch = g_nav.sw.work_switch;
+            steer_switch = g_nav.sw.steer_switch;
+            gps_speed_kmh = g_nav.sw.gps_speed_kmh;
+            watchdog_triggered = g_nav.safety.watchdog_triggered;
+            pid_output = (int)g_nav.pid.pid_output;
+            settings_received = g_nav.pid.settings_received;
+            roll_deg = g_nav.imu.roll_deg;
+            yaw_rate_dps = g_nav.imu.yaw_rate_dps;
+            imu_quality_ok = g_nav.imu.imu_quality_ok;
+            imu_timestamp_ms = g_nav.imu.imu_timestamp_ms;
         }
 
         const uint32_t imu_age_ms =

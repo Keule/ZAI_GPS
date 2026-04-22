@@ -228,11 +228,11 @@ void netUpdateUm980Status(uint8_t um980_fix_type,
     const int16_t age_x100_ms = encodeDifferentialAgeX100Ms(differential_age_ms, rtcm_active);
 
     StateLock lock;
-    g_nav.um980_fix_type = um980_fix_type;
-    g_nav.um980_rtcm_active = rtcm_active;
-    g_nav.um980_status_timestamp_ms = now_ms;
-    g_nav.gps_fix_quality = fix_quality;
-    g_nav.gps_diff_age_x100_ms = age_x100_ms;
+    g_nav.gnss.um980_fix_type = um980_fix_type;
+    g_nav.gnss.um980_rtcm_active = rtcm_active;
+    g_nav.gnss.um980_status_timestamp_ms = now_ms;
+    g_nav.gnss.gps_fix_quality = fix_quality;
+    g_nav.gnss.gps_diff_age_x100_ms = age_x100_ms;
 }
 
 // ===================================================================
@@ -296,11 +296,11 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
                 desiredSteerAngleDeg = steer_setpoint_deg;
                 {
                     StateLock lock;
-                    g_nav.work_switch      = (msg.status & STATUS_BIT_WORK_SWITCH) != 0;
-                    g_nav.steer_switch     = (msg.status & STATUS_BIT_STEER_SWITCH) != 0;
-                    g_nav.last_status_byte = msg.status;
-                    g_nav.gps_speed_kmh     = speed_kmh;
-                    g_nav.watchdog_timer_ms = now_ms;
+                    g_nav.sw.work_switch      = (msg.status & STATUS_BIT_WORK_SWITCH) != 0;
+                    g_nav.sw.steer_switch     = (msg.status & STATUS_BIT_STEER_SWITCH) != 0;
+                    g_nav.sw.last_status_byte = msg.status;
+                    g_nav.sw.gps_speed_kmh     = speed_kmh;
+                    g_nav.sw.watchdog_timer_ms = now_ms;
                 }
             }
             break;
@@ -346,10 +346,10 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
                 // Store config in global state for future use
                 {
                     StateLock lock;
-                    g_nav.config_set0      = config.set0;
-                    g_nav.config_max_pulse = config.maxPulse;
-                    g_nav.config_min_speed = config.minSpeed;
-                    g_nav.config_received  = true;
+                    g_nav.pid.config_set0      = config.set0;
+                    g_nav.pid.config_max_pulse = config.maxPulse;
+                    g_nav.pid.config_min_speed = config.minSpeed;
+                    g_nav.pid.config_received  = true;
                 }
 
                 // TODO: apply hardware config bits (invert WAS, relay polarity,
@@ -454,21 +454,21 @@ void netSendAogFrames(void) {
     // Input phase: take one consistent state snapshot.
     {
         StateLock lock;
-        snap.steer_angle_deg = g_nav.steer_angle_deg;
-        snap.heading_deg = g_nav.heading_deg;
-        snap.roll_deg = g_nav.roll_deg;
-        snap.safety_ok = g_nav.safety_ok;
-        snap.work_switch = g_nav.work_switch;
-        snap.steer_switch = g_nav.steer_switch;
-        snap.pid_output = g_nav.pid_output;
-        snap.settings_received = g_nav.settings_received;
-        snap.imu_timestamp_ms = g_nav.imu_timestamp_ms;
-        snap.imu_quality_ok = g_nav.imu_quality_ok;
-        snap.heading_timestamp_ms = g_nav.heading_timestamp_ms;
-        snap.heading_quality_ok = g_nav.heading_quality_ok;
-        snap.gps_speed_kmh = g_nav.gps_speed_kmh;
-        snap.gps_fix_quality = g_nav.gps_fix_quality;
-        snap.gps_diff_age_x100_ms = g_nav.gps_diff_age_x100_ms;
+        snap.steer_angle_deg = g_nav.steer.steer_angle_deg;
+        snap.heading_deg = g_nav.imu.heading_deg;
+        snap.roll_deg = g_nav.imu.roll_deg;
+        snap.safety_ok = g_nav.safety.safety_ok;
+        snap.work_switch = g_nav.sw.work_switch;
+        snap.steer_switch = g_nav.sw.steer_switch;
+        snap.pid_output = g_nav.pid.pid_output;
+        snap.settings_received = g_nav.pid.settings_received;
+        snap.imu_timestamp_ms = g_nav.imu.imu_timestamp_ms;
+        snap.imu_quality_ok = g_nav.imu.imu_quality_ok;
+        snap.heading_timestamp_ms = g_nav.imu.heading_timestamp_ms;
+        snap.heading_quality_ok = g_nav.imu.heading_quality_ok;
+        snap.gps_speed_kmh = g_nav.sw.gps_speed_kmh;
+        snap.gps_fix_quality = g_nav.gnss.gps_fix_quality;
+        snap.gps_diff_age_x100_ms = g_nav.gnss.gps_diff_age_x100_ms;
     }
 
     // Processing phase: encode payloads from snapshot.

@@ -26,6 +26,12 @@ bool wasUpdate(void);
 /// Check if WAS data is fresh (within timeout).
 bool wasIsHealthy(uint32_t now_ms);
 
+/// Cached WAS outputs from most recent wasUpdate().
+float wasGetAngleDeg(void);
+int16_t wasGetRaw(void);
+uint32_t wasGetTimestampMs(void);
+bool wasGetQuality(void);
+
 /// Module registry entry for WAS.
 extern const ModuleOps was_ops;
 
