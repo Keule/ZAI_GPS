@@ -30,6 +30,7 @@ epics:
       - TASK-003
       - TASK-029
       - TASK-032
+      - TASK-044
 
   - id: EPIC-002
     title: Sensor and Safety Integration
@@ -673,3 +674,15 @@ tasks:
       - TASK-014
       - TASK-017
       - TASK-019F
+      
+  - id: TASK-044
+    title: Control-/Init-Pfade über Modulverfügbarkeit härten (fehlende Pins => kein Runtime-Zugriff)
+    file: backlog/tasks/TASK-044-runtime-gating-bei-fehlenden-pinzuweisungen.md
+    epic_id: EPIC-001
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: runtime_stability
+    dependencies:
+      - TASK-027
+      - TASK-036
