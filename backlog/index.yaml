@@ -606,6 +606,7 @@ tasks:
     delivery_mode: mixed
     task_category: platform_reuse
     dependencies:
+      - TASK-037
       - TASK-022
       - TASK-023
       - TASK-028
@@ -617,8 +618,10 @@ tasks:
     status: open
     priority: high
     delivery_mode: firmware_only
-    task_category: platform_reuse
+    task_category: feature_expansion
     dependencies:
+      - TASK-037
+      - TASK-038
       - TASK-028
       - TASK-030
 
@@ -635,16 +638,19 @@ tasks:
   - id: TASK-041
     title: Konfigurierbare GNSS-Datenausgabe (Typen, Raten/Profile, Zielpfade) im Konfigmodus spezifizieren
     file: backlog/tasks/TASK-041-gnss-datenkonfiguration-im-konfigmodus.md
-    epic_id: EPIC-003
+    epic_id: EPIC-004
     status: open
     priority: high
     delivery_mode: mixed
-    task_category: platform_reuse
+    task_category: feature_expansion
     dependencies:
+      - TASK-037
+      - TASK-038
       - TASK-009
       - TASK-016
       - TASK-017
       - TASK-019
+      - TASK-043
 
   - id: TASK-042
     title: NTRIP-Konfigurationspfad (Konsole/Runtime/Persistenz) funktional und sicher spezifizieren
@@ -653,11 +659,11 @@ tasks:
     status: open
     priority: high
     delivery_mode: firmware_only
-    task_category: feature_expansion
+    task_category: platform_reuse
     dependencies:
+      - TASK-037
+      - TASK-038
       - TASK-025
-      - TASK-030
-      - TASK-032
       - TASK-033
 
   - id: TASK-043
@@ -669,6 +675,8 @@ tasks:
     delivery_mode: firmware_only
     task_category: feature_expansion
     dependencies:
+      - TASK-037
+      - TASK-038
       - TASK-019A
       - TASK-019C
       - TASK-019D

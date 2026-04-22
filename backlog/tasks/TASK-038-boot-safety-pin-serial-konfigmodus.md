@@ -1,11 +1,11 @@
-# TASK-037 Boot-Safety-Pin und deterministischer Serial-Konfigmodus
+# TASK-038 Boot-Safety-Pin und deterministischer Serial-Konfigmodus
 
-- **ID**: TASK-037
+- **ID**: TASK-038
 - **Titel**: Boot-Pfad analysieren und deterministischen Serial-Konfigmodus bei Safety-Pin LOW spezifizieren
 - **Status**: open
 - **Priorität**: high
 - **Komponenten**: `src/main.cpp`, `src/logic/modules.*`, `src/logic/runtime_config.*`, `src/hal/hal.h`, `src/hal_esp32/hal_impl.cpp`, ggf. `src/hal_esp32/*serial*`
-- **Dependencies**: TASK-022, TASK-023, TASK-028
+- **Dependencies**: TASK-037, TASK-022, TASK-023, TASK-028
 - **delivery_mode**: mixed
 - **task_category**: platform_reuse
 - **Owner**: ki-planer
@@ -64,7 +64,7 @@
   6. `backlog/tasks/TASK-022-capabilities-compile-time-gating-und-onboarding-prompts.md`
   7. `backlog/tasks/TASK-023-capabilities-boot-init-gating-und-onboarding-prompts.md`
   8. `backlog/tasks/TASK-028-soft-config-mit-nutzer-defaults-und-runtime-konfiguration.md`
-  9. dieser Task (`TASK-037`)
+  9. dieser Task (`TASK-038`)
 
 - **files_read**:
   - `src/main.cpp`
@@ -84,7 +84,7 @@
   - `backlog/tasks/TASK-028-soft-config-mit-nutzer-defaults-und-runtime-konfiguration.md`
 
 - **files_write**:
-  - `backlog/tasks/TASK-037-boot-safety-pin-serial-konfigmodus.md`
+  - `backlog/tasks/TASK-038-boot-safety-pin-serial-konfigmodus.md`
   - `backlog/index.yaml`
   - ggf. betroffene Boot-/Serial-Dateien unter `src/main.cpp`, `src/logic/*`,
     `src/hal/*`, `src/hal_esp32/*` (nur falls Umsetzung im selben Task erfolgt)
