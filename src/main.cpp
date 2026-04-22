@@ -341,7 +341,7 @@ static void commTaskFunc(void* param) {
     for (;;) {
         // ---------------------------------- Input -----------------------------------
         netPollReceive();
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
         ntripReadRtcm();
 #endif
 
@@ -349,7 +349,7 @@ static void commTaskFunc(void* param) {
         if (!s_gnss_buildup_active) {
             modulesUpdateStatus();
         }
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
         // TASK-029: In normal mode, ntripTick() runs in maintTask (blocking
         // TCP connect is OK there). In GNSS buildup mode, maintTask is not
         // created, so we run ntripTick() here in the commTask.
@@ -361,7 +361,7 @@ static void commTaskFunc(void* param) {
         // ---------------------------------- Output ----------------------------------
         netSendAogFrames();
         gnssMirrorPoll();
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
         ntripForwardRtcm();
 #endif
 
@@ -402,6 +402,9 @@ static void commTaskFunc(void* param) {
             const bool imu_hw_detected = hw ? hw->imu_detected : false;
             const bool imu_data_valid =
                 imu_hw_detected && dep_policy::isImuInputValid(now, imu_ts_ms, imu_quality_ok);
+            const bool imu_active = moduleIsActive(MOD_IMU);
+            const bool ads_active = moduleIsActive(MOD_ADS);
+            const bool safety_active = moduleIsActive(MOD_SAFETY);
 
             // Hardware status monitoring via hw_status subsystem
             uint8_t err_count = hwStatusUpdate(
@@ -409,7 +412,10 @@ static void commTaskFunc(void* param) {
                 safety_ok,                  // Safety circuit OK
                 steer_angle_valid,          // steer angle freshness + plausibility
                 imu_hw_detected,            // IMU hardware presence; data quality remains in g_nav
-                moduleIsActive(MOD_NTRIP)   // NTRIP module active — TASK-030
+                moduleIsActive(MOD_NTRIP),  // NTRIP module active — TASK-030
+                imu_active,                 // do not treat inactive module as runtime error
+                ads_active,                 // do not treat inactive module as runtime error
+                safety_active               // do not treat inactive module as runtime error
             );
 
             (void)imu_data_valid;
@@ -492,7 +498,7 @@ void setup() {
         softConfigLoadDefaults(softConfigGet());
         softConfigLoadOverrides(softConfigGet());  // TASK-033: reads /ntrip.cfg from SD
 
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
         // -----------------------------------------------------------------
         // NTRIP Client initialisation — TASK-025 / TASK-028
         // Configuration is loaded from RuntimeConfig (cfg:: defaults at
@@ -556,7 +562,7 @@ void setup() {
         moduleDeactivate(MOD_SD);
         hal_log("Main: SD module disabled (no SD card detected at boot)");
     }
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
     moduleActivate(MOD_NTRIP);   // NTRIP: depends on ETH (must be after ETH)
 #endif
 
@@ -589,8 +595,15 @@ void setup() {
     // Initialise control system (PID controller with default gains).
     // NOTE: HAL-level init (imu, steer angle, actuator) was already done
     //       in hal_esp32_init_all().  controlInit() only sets up the PID.
-    if (feat::control()) {
+    char pipeline_reason[64] = {0};
+    const bool control_pipeline_ready =
+        moduleControlPipelineReady(pipeline_reason, sizeof(pipeline_reason));
+
+    if ((feat::act() && feat::safety()) && control_pipeline_ready) {
         controlInit();
+    } else if (feat::act() && feat::safety()) {
+        hal_log("Main: control pipeline not ready -> skip control init (%s)",
+                pipeline_reason[0] ? pipeline_reason : "unknown");
     } else {
         hal_log("Main: control loop feature disabled");
     }
@@ -605,7 +618,7 @@ void setup() {
     // The user is prompted via Serial to move steering to left/right
     // stops. Values are stored in NVS and survive reboots.
     // -----------------------------------------------------------------
-    if (feat::sensor()) {
+    if (feat::ads()) {
         bool need_cal = !hal_steer_angle_is_calibrated();
 
         if (!need_cal) {
@@ -657,10 +670,10 @@ void setup() {
     // so the control loop's sdLoggerRecord() call is ~1 µs with
     // no SD_SPI_BUS interaction.
     // -----------------------------------------------------------------
-    if (feat::control() && moduleIsActive(MOD_SD)) {
+    if (moduleIsActive(MOD_SD) || moduleIsActive(MOD_NTRIP)) {
         sdLoggerMaintInit();
-    } else if (feat::control()) {
-        hal_log("Main: SD module inactive -> SD maint logger not started");
+    } else {
+        hal_log("Main: maintenance task not started (MOD_SD and MOD_NTRIP inactive)");
     }
 
     // Report initial hardware errors
@@ -670,7 +683,7 @@ void setup() {
     modulesSendStartupErrors();
 
     // Create control task on Core 1
-    if (feat::control()) {
+    if ((feat::act() && feat::safety()) && control_pipeline_ready) {
         xTaskCreatePinnedToCore(
             controlTaskFunc,
             "ctrl",
@@ -681,7 +694,12 @@ void setup() {
             1   // Core 1
         );
     } else {
-        hal_log("Main: control task not started (feature disabled)");
+        if (!(feat::act() && feat::safety())) {
+            hal_log("Main: control task not started (feature disabled)");
+        } else {
+            hal_log("Main: control task not started (pipeline inactive: %s)",
+                    pipeline_reason[0] ? pipeline_reason : "unknown");
+        }
     }
 
     // Create communication task on Core 0

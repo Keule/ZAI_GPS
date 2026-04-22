@@ -5,7 +5,7 @@
 - **Status**: open
 - **Priorität**: high
 - **Komponenten**: `src/main.cpp`, `src/logic/`, `src/hal_esp32/`, GNSS-Statusaggregation, Umschaltregeln
-- **Dependencies**: TASK-019C, TASK-019D, TASK-017
+- **Dependencies**: TASK-019C, TASK-019D, TASK-017, TASK-043
 - **AC**:
   - Primär-/Sekundär-UM980-Rollen sind mit klaren Umschaltkriterien (Timeout, Fix-Qualität, Datenfrische) im Code abgebildet.
   - Failover-Entscheidungen werden mit Diagnose-Logs nachvollziehbar protokolliert (inkl. Ursache + aktiver Quelle).
@@ -17,5 +17,6 @@
   - `backlog/tasks/TASK-019C-gnss-bringup-modus.md`
   - `backlog/tasks/TASK-019D-uart1-uart2-console-mirror.md`
   - `backlog/tasks/TASK-017-rtcm-validierung-agiou-m980.md`
+  - `backlog/tasks/TASK-043-planungs-task-parametrisierung-beider-um980-uarts.md`
 - **delivery_mode**: mixed
 - **task_category**: feature_expansion

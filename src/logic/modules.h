@@ -178,3 +178,8 @@ ModState moduleGetState(FirmwareFeatureId id);
 /// Get feature module descriptor by index.
 /// Returns nullptr if index out of range.
 const FeatureModuleInfo* moduleGetInfo(FirmwareFeatureId id);
+
+/// Check whether the steering control pipeline is runtime-ready.
+/// A ready pipeline requires active IMU + ADS + ACT modules.
+/// If @p reason_buf is provided, a short diagnostic reason is written.
+bool moduleControlPipelineReady(char* reason_buf = nullptr, size_t reason_buf_len = 0);

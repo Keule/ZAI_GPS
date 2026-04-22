@@ -111,7 +111,10 @@ uint8_t hwStatusUpdate(bool connected,
                         bool safety_ok,
                         bool steer_angle_valid,
                         bool imu_valid,
-                        bool ntrip_active = true);
+                        bool ntrip_active = true,
+                        bool imu_monitored = true,
+                        bool steer_monitored = true,
+                        bool safety_monitored = true);
 
 // ===================================================================
 // Send a single hardware message immediately (for one-off notifications).

@@ -15,6 +15,13 @@ CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 # === FreeRTOS ===
 CONFIG_FREERTOS_HZ=1000
 
+# === Task Watchdog ===
+# TASK-045: raise timeout to reduce false-positive resets on ESP32 Classic
+# under RMII/comm load while keeping panic diagnostics enabled.
+CONFIG_ESP_TASK_WDT_EN=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=15
+CONFIG_ESP_TASK_WDT_PANIC=y
+
 # === Logging ===
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y

@@ -202,7 +202,10 @@ uint8_t hwStatusUpdate(bool connected,
                         bool safety_ok,
                         bool steer_angle_valid,
                         bool imu_valid,
-                        bool ntrip_active) {
+                        bool ntrip_active,
+                        bool imu_monitored,
+                        bool steer_monitored,
+                        bool safety_monitored) {
     uint32_t now = hal_millis();
 
     // --- Update subsystem flags based on actual status ---
@@ -215,21 +218,27 @@ uint8_t hwStatusUpdate(bool connected,
     }
 
     // IMU
-    if (!imu_valid) {
+    if (!imu_monitored) {
+        hwStatusClearFlag(HW_IMU);
+    } else if (!imu_valid) {
         hwStatusSetFlag(HW_IMU, HW_SEV_WARNING);
     } else {
         hwStatusClearFlag(HW_IMU);
     }
 
     // Steer Angle Sensor
-    if (!steer_angle_valid) {
+    if (!steer_monitored) {
+        hwStatusClearFlag(HW_WAS);
+    } else if (!steer_angle_valid) {
         hwStatusSetFlag(HW_WAS, HW_SEV_WARNING);
     } else {
         hwStatusClearFlag(HW_WAS);
     }
 
     // Safety circuit
-    if (!safety_ok) {
+    if (!safety_monitored) {
+        hwStatusClearFlag(HW_SAFETY);
+    } else if (!safety_ok) {
         hwStatusSetFlag(HW_SAFETY, HW_SEV_ERROR);
     } else {
         hwStatusClearFlag(HW_SAFETY);

@@ -19,7 +19,7 @@
 
 #include "ntrip.h"
 
-#if FEAT_ENABLED(FEAT_NTRIP)
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
 
 #include "hal/hal.h"
 #include "dependency_policy.h"
@@ -507,4 +507,4 @@ void ntripForwardRtcm(void) {
     }
 }
 
-#endif // FEAT_ENABLED(FEAT_NTRIP)
+#endif // FEAT_ENABLED(FEAT_COMPILED_NTRIP)

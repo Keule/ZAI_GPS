@@ -30,6 +30,7 @@ epics:
       - TASK-003
       - TASK-029
       - TASK-032
+      - TASK-044
 
   - id: EPIC-002
     title: Sensor and Safety Integration
@@ -61,6 +62,9 @@ epics:
       - TASK-035
       - TASK-036
       - TASK-037
+      - TASK-038
+      - TASK-040
+      - TASK-041
 
   - id: EPIC-004
     title: Feature Expansion
@@ -70,8 +74,6 @@ epics:
       - TASK-008
       - TASK-009
       - TASK-010
-      - TASK-013
-      - TASK-014
       - TASK-014A
       - TASK-015
       - TASK-016
@@ -83,8 +85,13 @@ epics:
       - TASK-019C
       - TASK-019D
       - TASK-019E
+      - TASK-019F
+      - TASK-019G
       - TASK-025
       - TASK-030
+      - TASK-039
+      - TASK-042
+      - TASK-043
 
 tasks:
   - id: TASK-001
@@ -215,15 +222,6 @@ tasks:
     dependencies: []
 
   - id: TASK-013
-    title: HAL-/Netzwerk-Schnittstellenänderungen mit expliziten Claims und Merge-Risikosteuerung planen
-    file: backlog/tasks/TASK-013-hal-net-interface-claims-und-parallelisierung.md
-    epic_id: EPIC-003
-    status: open
-    priority: high
-    delivery_mode: firmware_only
-    task_category: platform_reuse
-    dependencies:
-      - TASK-003
     title: RTCM-Weiterleitung AgIO → UM980 validieren und PGN-214-RTK-Verhalten verifizieren
     file: backlog/tasks/TASK-013-rtcm-zu-um980-validierung.md
     epic_id: EPIC-004
@@ -245,18 +243,6 @@ tasks:
     dependencies:
       - TASK-013
 
-    title: RTCM-Forwarder Architektur, Datenfluss und Schnittstellen spezifizieren
-    file: backlog/tasks/TASK-013-rtcm-forwarder-design-und-schnittstellen.md
-    epic_id: EPIC-004
-    status: open
-    priority: high
-    delivery_mode: firmware_only
-    task_category: feature_expansion
-    dependencies:
-      - TASK-006
-      - TASK-007
-
-  - id: TASK-014
   - id: TASK-014A
     title: RTCM-Forwarding über GNSS-UART in der HAL implementieren
     file: backlog/tasks/TASK-014-hal-gnss-rtcm-uart-forwarding.md
@@ -299,7 +285,6 @@ tasks:
     delivery_mode: hardware_required
     task_category: feature_expansion
     dependencies:
-      - TASK-014
       - TASK-014A
       - TASK-015
       - TASK-016
@@ -402,6 +387,7 @@ tasks:
       - TASK-019C
       - TASK-019D
       - TASK-017
+      - TASK-043
 
   - id: TASK-019G
     title: Labor- und Feldvalidierung für Dual-UM980 inklusive Smoke-/Langlauftests
@@ -469,6 +455,7 @@ tasks:
     task_category: platform_reuse
     dependencies:
       - TASK-023
+
   - id: TASK-025
     title: NTRIP-Client für Single-Base-Caster und konfigurierbare GNSS-Empfänger-Abstraktion implementieren
     file: backlog/tasks/TASK-025-ntrip-client-und-gnss-receiver-abstraktion.md
@@ -533,11 +520,6 @@ tasks:
     dependencies:
       - TASK-027
       - TASK-029
-
-  # ---------------------------------------------------------------------------
-  # Review-Nacharbeiten TASK-026..030 (KI-Planer, 2026-04-21)
-  # Ursprung: Kombinierter Review (Super Z + GPT-5.3-Codex)
-  # ---------------------------------------------------------------------------
 
   - id: TASK-031
     title: Legacy HAL Pin-Claims mit MOD_*-Tags harmonisieren (Review-F1)
@@ -606,11 +588,125 @@ tasks:
       - TASK-028
 
   - id: TASK-037
-    title: features.h aufräumen — Capabilities, Profile-Flags, Legacy-Aliase und Build-Modi streichen
-    file: backlog/tasks/TASK-037-features-h-aufraeumen-und-vereinfachen.md
+    title: Basis-Task für einheitlichen Konfig-Framework-Rahmen vor NTRIP/UART/GNSS/Ethernet
+    file: backlog/tasks/TASK-037-basis-konfig-framework-rahmen-vor-feature-tasks.md
     epic_id: EPIC-003
     status: open
     priority: high
     delivery_mode: firmware_only
     task_category: platform_reuse
+    dependencies: []
+
+  - id: TASK-038
+    title: Boot-Pfad analysieren und deterministischen Serial-Konfigmodus bei Safety-Pin LOW spezifizieren
+    file: backlog/tasks/TASK-038-boot-safety-pin-serial-konfigmodus.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: mixed
+    task_category: platform_reuse
+    dependencies:
+      - TASK-037
+      - TASK-022
+      - TASK-023
+      - TASK-028
+
+  - id: TASK-039
+    title: Ethernet-Netzwerkmodus und IP-Parameter im seriellen Konfigmodus konfigurierbar machen
+    file: backlog/tasks/TASK-039-ethernet-konfiguration-im-seriellen-konfigmodus.md
+    epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-037
+      - TASK-038
+      - TASK-028
+      - TASK-030
+
+  - id: TASK-040
+    title: features.h aufräumen — Capabilities, Profile-Flags, Legacy-Aliase und Build-Modi streichen
+    file: backlog/tasks/TASK-040-features-h-aufraeumen-und-vereinfachen.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies: []
+
+  - id: TASK-041
+    title: Konfigurierbare GNSS-Datenausgabe (Typen, Raten/Profile, Zielpfade) im Konfigmodus spezifizieren
+    file: backlog/tasks/TASK-041-gnss-datenkonfiguration-im-konfigmodus.md
+    epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: mixed
+    task_category: feature_expansion
+    dependencies:
+      - TASK-037
+      - TASK-038
+      - TASK-009
+      - TASK-016
+      - TASK-017
+      - TASK-019
+      - TASK-043
+
+  - id: TASK-042
+    title: NTRIP-Konfigurationspfad (Konsole/Runtime/Persistenz) funktional und sicher spezifizieren
+    file: backlog/tasks/TASK-042-ntrip-konfiguration-funktional-und-sicher-spezifizieren.md
+    epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-037
+      - TASK-038
+      - TASK-025
+      - TASK-033
+
+  - id: TASK-043
+    title: Planungs-Task für die Parametrisierung beider UM980-UARTs erstellen
+    file: backlog/tasks/TASK-043-planungs-task-parametrisierung-beider-um980-uarts.md
+    epic_id: EPIC-004
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: feature_expansion
+    dependencies:
+      - TASK-037
+      - TASK-038
+      - TASK-019A
+      - TASK-019C
+      - TASK-019D
+      - TASK-014
+      - TASK-017
+      
+  - id: TASK-044
+    title: Control-/Init-Pfade über Modulverfügbarkeit härten (fehlende Pins => kein Runtime-Zugriff)
+    file: backlog/tasks/TASK-044-runtime-gating-bei-fehlenden-pinzuweisungen.md
+    epic_id: EPIC-001
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: runtime_stability
+    dependencies:
+      - TASK-027
+      - TASK-036
+
+
+    # ---------------------------------------------------------------------------
+  # TASK-045: Task-Watchdog-Reset auf ESP32 Classic (2026-04-22)
+  # Ursprung: Beobachtung aus TASK-037 session — WDT nach ~30s
+  # ---------------------------------------------------------------------------
+
+  - id: TASK-045
+    title: Task-Watchdog-Reset auf ESP32 Classic (RMII Ethernet) analysieren und beheben
+    file: backlog/tasks/TASK-045-task-watchdog-reset-esp32-classic-analysieren-und-beheben.md
+    epic_id: EPIC-001
+    status: open
+    priority: high
+    delivery_mode: mixed
+    task_category: runtime_stability
     dependencies: []
