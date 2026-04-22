@@ -608,11 +608,6 @@ tasks:
       - TASK-028
 
   - id: TASK-037
-  ----------------------------------------
-    title: Ethernet-Netzwerkmodus und IP-Parameter im seriellen Konfigmodus konfigurierbar machen
-    file: backlog/tasks/TASK-037-ethernet-konfiguration-im-seriellen-konfigmodus.md
-    
-    --------------------------
     title: Konfigurierbare GNSS-Datenausgabe (Typen, Raten/Profile, Zielpfade) im Konfigmodus spezifizieren
     file: backlog/tasks/TASK-037-gnss-datenkonfiguration-im-konfigmodus.md
     epic_id: EPIC-004
@@ -662,3 +657,17 @@ tasks:
       - TASK-022
       - TASK-023
       - TASK-028
+    
+  - id: TASK-040 
+    title: NTRIP-Konfigurationspfad (Konsole/Runtime/Persistenz) funktional und sicher spezifizieren
+    file: backlog/tasks/TASK-037-ntrip-konfiguration-funktional-und-sicher-spezifizieren.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
+    dependencies:
+      - TASK-025
+      - TASK-030
+      - TASK-032
+      - TASK-033
