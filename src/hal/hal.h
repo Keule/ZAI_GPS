@@ -316,6 +316,20 @@ bool hal_net_is_connected(void);
 /// Check if W5500 chip was detected during init.
 bool hal_net_detected(void);
 
+/// Set static network parameters used for next restart.
+void hal_net_set_static_config(uint32_t ip, uint32_t gw, uint32_t subnet);
+
+/// Restart Ethernet stack (blocking).
+bool hal_net_restart(void);
+
+/// Current IPv4 values (big-endian u32: a.b.c.d => 0xAABBCCDD).
+uint32_t hal_net_get_ip(void);
+uint32_t hal_net_get_gateway(void);
+uint32_t hal_net_get_subnet(void);
+
+/// Ethernet link state (PHY/link only).
+bool hal_net_link_up(void);
+
 // ===================================================================
 // Pin Claim Arbitration — TASK-027
 // ===================================================================

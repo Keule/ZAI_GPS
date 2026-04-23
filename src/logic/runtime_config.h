@@ -18,6 +18,17 @@ struct RuntimeConfig {
     char     ntrip_user[32];
     char     ntrip_password[32];
     uint32_t ntrip_reconnect_ms;
+    // PID
+    float    pid_kp;
+    float    pid_ki;
+    float    pid_kd;
+    // Network
+    uint8_t  net_mode;      // 0=DHCP, 1=Static
+    uint32_t net_ip;
+    uint32_t net_gateway;
+    uint32_t net_subnet;
+    // Actuator
+    uint8_t  actuator_type; // 0=SPI, 1=Cytron, 2=IBT2
 
     // GNSS
     uint32_t gnss_baud;

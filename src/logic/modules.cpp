@@ -191,12 +191,12 @@ void modulesSendHellos(void) {
             // Steer hello: PGN=0x7E, Len=5
             // Payload: steerAngle×100(2) + sensorCounts(2) + switchByte(1)
             StateLock lock;
-            int16_t angle = static_cast<int16_t>(g_nav.steer_angle_deg * 100.0f);
-            uint16_t counts = static_cast<uint16_t>(g_nav.steer_angle_raw);
+            int16_t angle = static_cast<int16_t>(g_nav.steer.steer_angle_deg * 100.0f);
+            uint16_t counts = static_cast<uint16_t>(g_nav.steer.steer_angle_raw);
             uint8_t sw = 0;
-            if (!g_nav.safety_ok)   sw |= 0x80;  // bit 7 = safety
-            if (g_nav.work_switch) sw |= 0x01;  // bit 0 = work switch
-            if (g_nav.steer_switch) sw |= 0x02; // bit 1 = steer switch
+            if (!g_nav.safety.safety_ok)   sw |= 0x80;  // bit 7 = safety
+            if (g_nav.sw.work_switch) sw |= 0x01;  // bit 0 = work switch
+            if (g_nav.sw.steer_switch) sw |= 0x02; // bit 1 = steer switch
             len = pgnEncodeHelloReplySteer(buf, sizeof(buf), angle, counts, sw);
             label = "SteerHello";
         } else if (mod.hello_pgn == aog_pgn::HELLO_REPLY_GPS) {

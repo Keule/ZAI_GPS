@@ -125,8 +125,8 @@ bool imuUpdate(void) {
 
     if (!hal_imu_read(&yaw_rate, &roll, &heading)) {
         StateLock lock;
-        g_nav.imu_quality_ok = false;
-        g_nav.heading_quality_ok = false;
+        g_nav.imu.imu_quality_ok = false;
+        g_nav.imu.heading_quality_ok = false;
         return false;
     }
 
@@ -137,18 +137,25 @@ bool imuUpdate(void) {
     {
         StateLock lock;
         if (heading_plausible) {
-            g_nav.heading_deg = heading;
-            g_nav.heading_timestamp_ms = now_ms;
+            g_nav.imu.heading_deg = heading;
+            g_nav.imu.heading_timestamp_ms = now_ms;
         }
-        g_nav.yaw_rate_dps = yaw_rate;
-        g_nav.roll_deg = roll;
-        g_nav.imu_timestamp_ms = now_ms;
-        g_nav.imu_quality_ok = plausible;
-        g_nav.heading_quality_ok = heading_plausible;
-        g_nav.timestamp_ms = now_ms;
+        g_nav.imu.yaw_rate_dps = yaw_rate;
+        g_nav.imu.roll_deg = roll;
+        g_nav.imu.imu_timestamp_ms = now_ms;
+        g_nav.imu.imu_quality_ok = plausible;
+        g_nav.imu.heading_quality_ok = heading_plausible;
     }
 
     return plausible;
+}
+
+bool imuIsHealthy(uint32_t now_ms) {
+    StateLock lock;
+    if (!g_nav.imu.imu_quality_ok) return false;
+    return dep_policy::isFresh(now_ms,
+                               g_nav.imu.imu_timestamp_ms,
+                               dep_policy::IMU_FRESHNESS_TIMEOUT_MS);
 }
 
 void imuBringupInit(void) {
@@ -278,3 +285,21 @@ void imuBringupTick(void) {
                 s_last_detect_ok ? "OK" : "FAIL");
     }
 }
+
+namespace {
+bool imu_enabled_check() {
+    return feat::imu();
+}
+
+bool imu_health_check(uint32_t now_ms) {
+    return imuIsHealthy(now_ms);
+}
+}  // namespace
+
+const ModuleOps imu_ops = {
+    "IMU",
+    imu_enabled_check,
+    imuInit,
+    imuUpdate,
+    imu_health_check
+};
