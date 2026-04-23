@@ -86,8 +86,9 @@ static void runBootCliSession(void) {
     size_t line_len = 0;
 
     while (true) {
-        um980SetupConsoleTick();
+        bool handled_input = false;
         while (Serial.available()) {
+            handled_input = true;
             const int ch = Serial.read();
             if (ch == '\r' || ch == '\n') {
                 if (line_len == 0) {
@@ -115,6 +116,14 @@ static void runBootCliSession(void) {
             } else if (line_len + 1 < sizeof(line_buf)) {
                 line_buf[line_len++] = static_cast<char>(ch);
             }
+        }
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
+        ntripTick();
+        ntripReadRtcm();
+        ntripForwardRtcm();
+#endif
+        if (!handled_input && line_len == 0) {
+            um980SetupConsoleTick();
         }
         delay(10);
     }
@@ -668,6 +677,28 @@ void setup() {
         hal_log("Main: SD module inactive -> skip SD runtime config overrides");
     }
     hal_log("BOOT: config load ... %lu ms", (unsigned long)(hal_millis() - t_phase));
+
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
+    ntripInit();
+    {
+        RuntimeConfig& rcfg = softConfigGet();
+        ntripSetConfig(
+            rcfg.ntrip_host,
+            rcfg.ntrip_port,
+            rcfg.ntrip_mountpoint,
+            rcfg.ntrip_user,
+            rcfg.ntrip_password
+        );
+        if (rcfg.ntrip_host[0] == '\0' || rcfg.ntrip_mountpoint[0] == '\0') {
+            hal_log("Main: NTRIP not configured (host or mountpoint empty) — skipping");
+        } else {
+            hal_log("Main: NTRIP client configured (host=%s, port=%u, mp=%s)",
+                    g_ntrip_config.host,
+                    static_cast<unsigned>(g_ntrip_config.port),
+                    g_ntrip_config.mountpoint);
+        }
+    }
+#endif
 
     if (!nvsConfigHasData()) {
         hal_log("Main: no NVS config found -> setup wizard pending");
