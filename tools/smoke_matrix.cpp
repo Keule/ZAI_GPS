@@ -140,12 +140,12 @@ static bool smokeDiscoveryHelloSubnet() {
 static bool smokePgnIoPerProfile() {
     bool ok = true;
 
-    constexpr bool comm = FEAT_COMM;
-    constexpr bool sensor = FEAT_STEER_SENSOR;
-    constexpr bool actor = FEAT_STEER_ACTOR;
-    constexpr bool machine = FEAT_MACHINE_ACTOR;
+    constexpr bool eth = FEAT_COMPILED_ETH;
+    constexpr bool ads = FEAT_COMPILED_ADS;
+    constexpr bool act = FEAT_COMPILED_ACT;
+    constexpr bool safety = FEAT_COMPILED_SAFETY;
 
-    ok &= expect(comm, "FEAT_COMM must be active in all profiles");
+    ok &= expect(eth, "FEAT_ETH must be active");
 
     // outbound examples (always buildable)
     std::array<uint8_t, aog_frame::MAX_FRAME> tx{};
@@ -154,20 +154,20 @@ static bool smokePgnIoPerProfile() {
     ok &= expect(pgnEncodeSubnetReply(tx.data(), tx.size(), aog_src::STEER, ip, subnet) > 0,
                  "PGN 203 encode failed");
 
-    if (sensor) {
+    if (ads) {
         ok &= expect(pgnEncodeHelloReplySteer(tx.data(), tx.size(), 123, 456, 0x03) > 0,
                      "Steer hello encode failed");
         ok &= expect(pgnEncodeHelloReplyGps(tx.data(), tx.size()) > 0,
                      "GPS hello encode failed");
     }
 
-    if (actor || machine) {
+    if (act || safety) {
         ok &= expect(pgnEncodeFromAutosteer2(tx.data(), tx.size(), 0xD2) > 0,
                      "PGN 250 encode failed");
     }
 
     // inbound examples relevant for control-capable profiles
-    if (actor) {
+    if (act) {
         AogSteerDataIn steer_in{};
         steer_in.status = 0x03;
         steer_in.speed = 42;

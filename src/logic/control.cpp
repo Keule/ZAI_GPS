@@ -364,7 +364,7 @@ void controlStep(void) {
 
     // Phase 4: PID
     PidResult result;
-    if (feat::control()) {
+    if (feat::act() && feat::safety()) {
         controlComputePid(snap, agio, safety_ok, watchdog_triggered, now_ms, result);
     } else {
         result = {0, true};
