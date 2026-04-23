@@ -28,6 +28,8 @@
 #include <cstdlib>
 #include <cstring>
 
+static Stream* s_cli_out = &Serial;
+
 namespace {
 
 constexpr size_t CLI_MAX_COMMANDS = 32;
@@ -49,7 +51,7 @@ void cliCmdHelp(int, char**) {
 }
 
 void cliCmdVersion(int, char**) {
-    Serial.printf("AgSteer Build: %s %s\n", __DATE__, __TIME__);
+    s_cli_out->printf("AgSteer Build: %s %s\n", __DATE__, __TIME__);
 }
 
 void cliCmdUptime(int, char**) {
@@ -57,14 +59,14 @@ void cliCmdUptime(int, char**) {
     const uint32_t h = sec / 3600UL;
     const uint32_t m = (sec % 3600UL) / 60UL;
     const uint32_t s = sec % 60UL;
-    Serial.printf("Uptime: %luh %lum %lus\n",
+    s_cli_out->printf("Uptime: %luh %lum %lus\n",
                   static_cast<unsigned long>(h),
                   static_cast<unsigned long>(m),
                   static_cast<unsigned long>(s));
 }
 
 void cliCmdFree(int, char**) {
-    Serial.printf("Heap: %lu KB free (largest: %lu KB) PSRAM: %lu KB free\n",
+    s_cli_out->printf("Heap: %lu KB free (largest: %lu KB) PSRAM: %lu KB free\n",
                   static_cast<unsigned long>(ESP.getFreeHeap() / 1024UL),
                   static_cast<unsigned long>(ESP.getMaxAllocHeap() / 1024UL),
                   static_cast<unsigned long>(ESP.getFreePsram() / 1024UL));
@@ -75,46 +77,46 @@ void cliCmdTasks(int, char**) {
     static char task_list[1024];
     task_list[0] = '\0';
     vTaskList(task_list);
-    Serial.println("Task         State Prio Stack Num");
-    Serial.print(task_list);
+    s_cli_out->println("Task         State Prio Stack Num");
+    s_cli_out->print(task_list);
 #else
-    Serial.printf("Tasks: %lu\n", static_cast<unsigned long>(uxTaskGetNumberOfTasks()));
-    Serial.println("Task listing unavailable (configUSE_TRACE_FACILITY=0)");
+    s_cli_out->printf("Tasks: %lu\n", static_cast<unsigned long>(uxTaskGetNumberOfTasks()));
+    s_cli_out->println("Task listing unavailable (configUSE_TRACE_FACILITY=0)");
 #endif
 }
 
 void cliCmdRestart(int, char**) {
-    Serial.println("Restarting...");
-    Serial.flush();
+    s_cli_out->println("Restarting...");
+    s_cli_out->flush();
     ESP.restart();
 }
 
 void cliCmdSave(int, char**) {
     RuntimeConfig& cfg = softConfigGet();
     if (nvsConfigSave(cfg)) {
-        Serial.println("Config saved to NVS.");
-        Serial.println("WARNING: ntrip_password is stored in plaintext for now.");
+        s_cli_out->println("Config saved to NVS.");
+        s_cli_out->println("WARNING: ntrip_password is stored in plaintext for now.");
     } else {
-        Serial.println("ERROR: failed to save config to NVS.");
+        s_cli_out->println("ERROR: failed to save config to NVS.");
     }
 }
 
 void cliCmdLoad(int, char**) {
     RuntimeConfig& cfg = softConfigGet();
     nvsConfigLoad(cfg);
-    Serial.println("Config loaded from NVS.");
+    s_cli_out->println("Config loaded from NVS.");
 }
 
 void cliCmdFactory(int argc, char** argv) {
     if (argc < 2 || std::strcmp(argv[1], "confirm") != 0) {
-        Serial.println("WARNING: This will erase all saved configuration.");
-        Serial.println("Run: factory confirm");
+        s_cli_out->println("WARNING: This will erase all saved configuration.");
+        s_cli_out->println("Run: factory confirm");
         return;
     }
 
     nvsConfigFactoryReset();
-    Serial.println("NVS erased. Restarting with defaults...");
-    Serial.flush();
+    s_cli_out->println("NVS erased. Restarting with defaults...");
+    s_cli_out->flush();
     ESP.restart();
 }
 
@@ -136,27 +138,27 @@ void cliCmdNtrip(int argc, char** argv) {
 #if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
     RuntimeConfig& cfg = softConfigGet();
     if (argc < 2) {
-        Serial.println("usage: ntrip <show|status|set|connect|disconnect>");
+        s_cli_out->println("usage: ntrip <show|status|set|connect|disconnect>");
         return;
     }
 
     if (std::strcmp(argv[1], "show") == 0 || std::strcmp(argv[1], "status") == 0) {
         const NtripState state = ntripGetState();
-        Serial.println("NTRIP:");
-        Serial.printf("  Host:       %s\n", cfg.ntrip_host);
-        Serial.printf("  Port:       %u\n", static_cast<unsigned>(cfg.ntrip_port));
-        Serial.printf("  Mountpoint: %s\n", cfg.ntrip_mountpoint);
-        Serial.printf("  User:       %s\n", cfg.ntrip_user);
-        Serial.printf("  Password:   %s\n", cfg.ntrip_password[0] ? "********" : "(empty)");
-        Serial.printf("  State:      %s\n", ntripConnStateToStr(state.conn_state));
-        Serial.printf("  Bytes RX:   %lu\n", static_cast<unsigned long>(state.rx_bytes));
-        Serial.printf("  Fwd bytes:  %lu\n", static_cast<unsigned long>(state.forwarded_bytes));
+        s_cli_out->println("NTRIP:");
+        s_cli_out->printf("  Host:       %s\n", cfg.ntrip_host);
+        s_cli_out->printf("  Port:       %u\n", static_cast<unsigned>(cfg.ntrip_port));
+        s_cli_out->printf("  Mountpoint: %s\n", cfg.ntrip_mountpoint);
+        s_cli_out->printf("  User:       %s\n", cfg.ntrip_user);
+        s_cli_out->printf("  Password:   %s\n", cfg.ntrip_password[0] ? "********" : "(empty)");
+        s_cli_out->printf("  State:      %s\n", ntripConnStateToStr(state.conn_state));
+        s_cli_out->printf("  Bytes RX:   %lu\n", static_cast<unsigned long>(state.rx_bytes));
+        s_cli_out->printf("  Fwd bytes:  %lu\n", static_cast<unsigned long>(state.forwarded_bytes));
         return;
     }
 
     if (std::strcmp(argv[1], "set") == 0) {
         if (argc < 4) {
-            Serial.println("usage: ntrip set <host|port|mount|user|pass> <value>");
+            s_cli_out->println("usage: ntrip set <host|port|mount|user|pass> <value>");
             return;
         }
         if (std::strcmp(argv[2], "host") == 0) {
@@ -174,18 +176,18 @@ void cliCmdNtrip(int argc, char** argv) {
             std::strncpy(cfg.ntrip_password, argv[3], sizeof(cfg.ntrip_password) - 1);
             cfg.ntrip_password[sizeof(cfg.ntrip_password) - 1] = '\0';
         } else {
-            Serial.println("usage: ntrip set <host|port|mount|user|pass> <value>");
+            s_cli_out->println("usage: ntrip set <host|port|mount|user|pass> <value>");
             return;
         }
 
         ntripSetConfig(cfg.ntrip_host, cfg.ntrip_port, cfg.ntrip_mountpoint, cfg.ntrip_user, cfg.ntrip_password);
-        Serial.println("NTRIP config updated (runtime).");
+        s_cli_out->println("NTRIP config updated (runtime).");
         return;
     }
 
     if (std::strcmp(argv[1], "connect") == 0) {
         ntripSetConfig(cfg.ntrip_host, cfg.ntrip_port, cfg.ntrip_mountpoint, cfg.ntrip_user, cfg.ntrip_password);
-        Serial.println("NTRIP connect requested (state machine will connect).");
+        s_cli_out->println("NTRIP connect requested (state machine will connect).");
         return;
     }
 
@@ -194,20 +196,20 @@ void cliCmdNtrip(int argc, char** argv) {
         cfg.ntrip_host[0] = '\0';
         cfg.ntrip_mountpoint[0] = '\0';
         ntripSetConfig(cfg.ntrip_host, cfg.ntrip_port, cfg.ntrip_mountpoint, cfg.ntrip_user, cfg.ntrip_password);
-        Serial.println("NTRIP disconnected (runtime config cleared host/mount).");
+        s_cli_out->println("NTRIP disconnected (runtime config cleared host/mount).");
         return;
     }
 
-    Serial.println("usage: ntrip <show|status|set|connect|disconnect>");
+    s_cli_out->println("usage: ntrip <show|status|set|connect|disconnect>");
 #else
     (void)argc;
     (void)argv;
-    Serial.println("NTRIP not compiled in this profile.");
+    s_cli_out->println("NTRIP not compiled in this profile.");
 #endif
 }
 
 void printIpU32(uint32_t ip) {
-    Serial.printf("%u.%u.%u.%u",
+    s_cli_out->printf("%u.%u.%u.%u",
                   static_cast<unsigned>((ip >> 24) & 0xFF),
                   static_cast<unsigned>((ip >> 16) & 0xFF),
                   static_cast<unsigned>((ip >> 8) & 0xFF),
@@ -226,7 +228,7 @@ bool parseIp4(const char* text, uint32_t* out_ip) {
 void cliCmdPid(int argc, char** argv) {
     RuntimeConfig& cfg = softConfigGet();
     if (argc < 2) {
-        Serial.println("usage: pid <show|set>");
+        s_cli_out->println("usage: pid <show|set>");
         return;
     }
 
@@ -240,19 +242,19 @@ void cliCmdPid(int argc, char** argv) {
             high_pwm = g_nav.pid.settings_high_pwm;
         }
         controlGetPidGains(&kp, &ki, &kd);
-        Serial.println("PID:");
-        Serial.printf("  Kp: %.3f\n", kp);
-        Serial.printf("  Ki: %.3f\n", ki);
-        Serial.printf("  Kd: %.3f\n", kd);
-        Serial.printf("  MinPWM: %u\n", static_cast<unsigned>(min_pwm));
-        Serial.printf("  HighPWM: %u\n", static_cast<unsigned>(high_pwm));
-        Serial.println("  Note: PGN 252 can overwrite runtime values.");
+        s_cli_out->println("PID:");
+        s_cli_out->printf("  Kp: %.3f\n", kp);
+        s_cli_out->printf("  Ki: %.3f\n", ki);
+        s_cli_out->printf("  Kd: %.3f\n", kd);
+        s_cli_out->printf("  MinPWM: %u\n", static_cast<unsigned>(min_pwm));
+        s_cli_out->printf("  HighPWM: %u\n", static_cast<unsigned>(high_pwm));
+        s_cli_out->println("  Note: PGN 252 can overwrite runtime values.");
         return;
     }
 
     if (std::strcmp(argv[1], "set") == 0) {
         if (argc < 4) {
-            Serial.println("usage: pid set <kp|ki|kd|minpwm|highpwm> <value>");
+            s_cli_out->println("usage: pid set <kp|ki|kd|minpwm|highpwm> <value>");
             return;
         }
 
@@ -269,7 +271,7 @@ void cliCmdPid(int argc, char** argv) {
             StateLock lock;
             g_nav.pid.settings_high_pwm = static_cast<uint8_t>(std::atoi(argv[3]));
         } else {
-            Serial.println("usage: pid set <kp|ki|kd|minpwm|highpwm> <value>");
+            s_cli_out->println("usage: pid set <kp|ki|kd|minpwm|highpwm> <value>");
             return;
         }
 
@@ -283,59 +285,59 @@ void cliCmdPid(int argc, char** argv) {
         controlSetPidGains(cfg.pid_kp, cfg.pid_ki, cfg.pid_kd);
         controlSetPidOutputLimits(static_cast<float>(min_pwm),
                                   static_cast<float>(high_pwm));
-        Serial.println("PID updated.");
+        s_cli_out->println("PID updated.");
         return;
     }
 
-    Serial.println("usage: pid <show|set>");
+    s_cli_out->println("usage: pid <show|set>");
 }
 
 void cliCmdNet(int argc, char** argv) {
     RuntimeConfig& cfg = softConfigGet();
     if (argc < 2) {
-        Serial.println("usage: net <show|mode|ip|gw|mask|restart>");
+        s_cli_out->println("usage: net <show|mode|ip|gw|mask|restart>");
         return;
     }
 
     if (std::strcmp(argv[1], "show") == 0) {
-        Serial.println("Network:");
-        Serial.printf("  Mode: %s\n", cfg.net_mode == 0 ? "DHCP" : "STATIC");
-        Serial.print("  IP: "); printIpU32(hal_net_get_ip()); Serial.println();
-        Serial.print("  Mask: "); printIpU32(hal_net_get_subnet()); Serial.println();
-        Serial.print("  Gateway: "); printIpU32(hal_net_get_gateway()); Serial.println();
-        Serial.printf("  Link: %s\n", hal_net_link_up() ? "UP" : "DOWN");
+        s_cli_out->println("Network:");
+        s_cli_out->printf("  Mode: %s\n", cfg.net_mode == 0 ? "DHCP" : "STATIC");
+        s_cli_out->print("  IP: "); printIpU32(hal_net_get_ip()); s_cli_out->println();
+        s_cli_out->print("  Mask: "); printIpU32(hal_net_get_subnet()); s_cli_out->println();
+        s_cli_out->print("  Gateway: "); printIpU32(hal_net_get_gateway()); s_cli_out->println();
+        s_cli_out->printf("  Link: %s\n", hal_net_link_up() ? "UP" : "DOWN");
         return;
     }
 
     if (std::strcmp(argv[1], "mode") == 0) {
         if (argc < 3) {
-            Serial.println("usage: net mode <dhcp|static>");
+            s_cli_out->println("usage: net mode <dhcp|static>");
             return;
         }
         if (std::strcmp(argv[2], "dhcp") == 0) cfg.net_mode = 0;
         else if (std::strcmp(argv[2], "static") == 0) cfg.net_mode = 1;
         else {
-            Serial.println("usage: net mode <dhcp|static>");
+            s_cli_out->println("usage: net mode <dhcp|static>");
             return;
         }
-        Serial.println("Network mode updated (apply with: net restart).");
+        s_cli_out->println("Network mode updated (apply with: net restart).");
         return;
     }
 
     if (std::strcmp(argv[1], "ip") == 0 || std::strcmp(argv[1], "gw") == 0 || std::strcmp(argv[1], "mask") == 0) {
         if (argc < 3) {
-            Serial.println("usage: net <ip|gw|mask> <a.b.c.d>");
+            s_cli_out->println("usage: net <ip|gw|mask> <a.b.c.d>");
             return;
         }
         uint32_t ip = 0;
         if (!parseIp4(argv[2], &ip)) {
-            Serial.println("ERROR: invalid IPv4 format.");
+            s_cli_out->println("ERROR: invalid IPv4 format.");
             return;
         }
         if (std::strcmp(argv[1], "ip") == 0) cfg.net_ip = ip;
         else if (std::strcmp(argv[1], "gw") == 0) cfg.net_gateway = ip;
         else cfg.net_subnet = ip;
-        Serial.println("Network parameter updated (apply with: net restart).");
+        s_cli_out->println("Network parameter updated (apply with: net restart).");
         return;
     }
 
@@ -343,18 +345,18 @@ void cliCmdNet(int argc, char** argv) {
         if (cfg.net_mode == 1) {
             hal_net_set_static_config(cfg.net_ip, cfg.net_gateway, cfg.net_subnet);
         }
-        Serial.print("Restarting network");
+        s_cli_out->print("Restarting network");
         for (int i = 0; i < 3; ++i) {
-            Serial.print(".");
+            s_cli_out->print(".");
             delay(100);
         }
-        Serial.println();
+        s_cli_out->println();
         const bool ok = hal_net_restart();
-        Serial.printf("Network restart %s\n", ok ? "OK" : "DONE (link pending)");
+        s_cli_out->printf("Network restart %s\n", ok ? "OK" : "DONE (link pending)");
         return;
     }
 
-    Serial.println("usage: net <show|mode|ip|gw|mask|restart>");
+    s_cli_out->println("usage: net <show|mode|ip|gw|mask|restart>");
 }
 
 const char* modStateToStr(ModState s) {
@@ -385,16 +387,16 @@ bool parseModuleName(const char* name, FirmwareFeatureId* out_id) {
 
 void cliCmdModule(int argc, char** argv) {
     if (argc < 2) {
-        Serial.println("usage: module <list|enable|disable|pins> [name]");
+        s_cli_out->println("usage: module <list|enable|disable|pins> [name]");
         return;
     }
 
     if (std::strcmp(argv[1], "list") == 0) {
-        Serial.println("Module Status:");
+        s_cli_out->println("Module Status:");
         for (int i = 0; i < MOD_COUNT; ++i) {
             const auto* info = moduleGetInfo(static_cast<FirmwareFeatureId>(i));
             if (!info) continue;
-            Serial.printf("  %-6s (%d) = %-11s pins=%u deps=%s\n",
+            s_cli_out->printf("  %-6s (%d) = %-11s pins=%u deps=%s\n",
                           info->name ? info->name : "?",
                           i,
                           modStateToStr(moduleGetState(static_cast<FirmwareFeatureId>(i))),
@@ -405,74 +407,74 @@ void cliCmdModule(int argc, char** argv) {
     }
 
     if (argc < 3) {
-        Serial.println("usage: module <enable|disable|pins> <name>");
+        s_cli_out->println("usage: module <enable|disable|pins> <name>");
         return;
     }
 
     FirmwareFeatureId id = MOD_COUNT;
     if (!parseModuleName(argv[2], &id)) {
-        Serial.println("ERROR: unknown module name.");
+        s_cli_out->println("ERROR: unknown module name.");
         return;
     }
 
     if (std::strcmp(argv[1], "enable") == 0) {
         const bool ok = moduleActivate(id);
-        Serial.printf("module %s -> %s\n", argv[2], ok ? "ON" : "ERROR");
+        s_cli_out->printf("module %s -> %s\n", argv[2], ok ? "ON" : "ERROR");
         return;
     }
 
     if (std::strcmp(argv[1], "disable") == 0) {
         if (id == MOD_ETH) {
-            Serial.println("ERROR: ETH is mandatory and cannot be disabled.");
+            s_cli_out->println("ERROR: ETH is mandatory and cannot be disabled.");
             return;
         }
         const bool ok = moduleDeactivate(id);
-        Serial.printf("module %s -> %s\n", argv[2], ok ? "OFF" : "ERROR");
+        s_cli_out->printf("module %s -> %s\n", argv[2], ok ? "OFF" : "ERROR");
         return;
     }
 
     if (std::strcmp(argv[1], "pins") == 0) {
         const auto* info = moduleGetInfo(id);
         if (!info) {
-            Serial.println("ERROR: module not found.");
+            s_cli_out->println("ERROR: module not found.");
             return;
         }
-        Serial.printf("%s pins:", info->name ? info->name : argv[2]);
+        s_cli_out->printf("%s pins:", info->name ? info->name : argv[2]);
         if (!info->pins || info->pin_count == 0) {
-            Serial.println(" (none)");
+            s_cli_out->println(" (none)");
             return;
         }
         for (uint8_t i = 0; i < info->pin_count; ++i) {
-            Serial.printf(" %d", static_cast<int>(info->pins[i]));
+            s_cli_out->printf(" %d", static_cast<int>(info->pins[i]));
         }
-        Serial.println();
+        s_cli_out->println();
         return;
     }
 
-    Serial.println("usage: module <list|enable|disable|pins> [name]");
+    s_cli_out->println("usage: module <list|enable|disable|pins> [name]");
 }
 
 void cliCmdActuator(int argc, char** argv) {
     if (argc < 2) {
-        Serial.println("usage: actuator <status|test>");
+        s_cli_out->println("usage: actuator <status|test>");
         return;
     }
 
     if (std::strcmp(argv[1], "status") == 0) {
-        Serial.printf("Actuator manual mode: %s\n", controlManualActuatorMode() ? "ON" : "OFF");
-        Serial.printf("Safety: %s\n", hal_safety_ok() ? "OK" : "KICK");
+        s_cli_out->printf("Actuator manual mode: %s\n", controlManualActuatorMode() ? "ON" : "OFF");
+        s_cli_out->printf("Safety: %s\n", hal_safety_ok() ? "OK" : "KICK");
         return;
     }
 
     if (std::strcmp(argv[1], "test") == 0) {
         if (argc < 3) {
-            Serial.println("usage: actuator test <pwm|stop> [value]");
+            s_cli_out->println("usage: actuator test <pwm|stop> [value]");
             return;
         }
         if (std::strcmp(argv[2], "stop") == 0) {
             controlSetManualActuatorMode(false);
             hal_actuator_write(0);
-            Serial.println("Actuator stopped. Manual mode OFF.");
+            s_cli_out->println("Actuator stopped. Manual mode OFF.");
             return;
         }
         if (std::strcmp(argv[2], "pwm") == 0 && argc >= 4) {
@@ -481,20 +483,20 @@ void cliCmdActuator(int argc, char** argv) {
             if (value > 65535) value = 65535;
             controlSetManualActuatorMode(true);
             hal_actuator_write(static_cast<uint16_t>(value));
-            Serial.println("WARNING: manual actuator command active (PID paused).");
-            Serial.printf("Actuator PWM command: %d\n", value);
+            s_cli_out->println("WARNING: manual actuator command active (PID paused).");
+            s_cli_out->printf("Actuator PWM command: %d\n", value);
             return;
         }
-        Serial.println("usage: actuator test <pwm|stop> [value]");
+        s_cli_out->println("usage: actuator test <pwm|stop> [value]");
         return;
     }
 
-    Serial.println("usage: actuator <status|test>");
+    s_cli_out->println("usage: actuator <status|test>");
 }
 
 void cliCmdDiag(int argc, char** argv) {
     if (argc < 2) {
-        Serial.println("usage: diag <hw|mem|net>");
+        s_cli_out->println("usage: diag <hw|mem|net>");
         return;
     }
 
@@ -511,7 +513,7 @@ void cliCmdDiag(int argc, char** argv) {
         return;
     }
 
-    Serial.println("usage: diag <hw|mem|net>");
+    s_cli_out->println("usage: diag <hw|mem|net>");
 }
 
 static bool parseOnOff(const char* text, bool* out_value) {
@@ -542,18 +544,18 @@ static bool parseUartPort(const char* text, uint8_t* out_port) {
 
 void cliCmdUart(int argc, char** argv) {
     if (argc < 2) {
-        Serial.println("usage: uart <show|apply|set|console>");
+        s_cli_out->println("usage: uart <show|apply|set|console>");
         return;
     }
 
     if (std::strcmp(argv[1], "show") == 0) {
         const Um980UartSetup setup = um980SetupGet();
-        Serial.println("UM980 UART setup:");
-        Serial.printf("  A: baud=%lu swap=%s console=%s\n",
+        s_cli_out->println("UM980 UART setup:");
+        s_cli_out->printf("  A: baud=%lu swap=%s console=%s\n",
                       static_cast<unsigned long>(setup.baud_a),
                       setup.swap_a ? "ON" : "OFF",
                       setup.console_a ? "ON" : "OFF");
-        Serial.printf("  B: baud=%lu swap=%s console=%s\n",
+        s_cli_out->printf("  B: baud=%lu swap=%s console=%s\n",
                       static_cast<unsigned long>(setup.baud_b),
                       setup.swap_b ? "ON" : "OFF",
                       setup.console_b ? "ON" : "OFF");
@@ -563,37 +565,37 @@ void cliCmdUart(int argc, char** argv) {
     if (std::strcmp(argv[1], "apply") == 0) {
         if (argc < 3 || std::strcmp(argv[2], "all") == 0) {
             const bool ok = um980SetupApply();
-            Serial.printf("UM980 UART apply all -> %s\n", ok ? "OK" : "ERROR");
+            s_cli_out->printf("UM980 UART apply all -> %s\n", ok ? "OK" : "ERROR");
             return;
         }
         uint8_t port = 0;
         if (!parseUartPort(argv[2], &port)) {
-            Serial.println("usage: uart apply <a|b|all>");
+            s_cli_out->println("usage: uart apply <a|b|all>");
             return;
         }
         const bool ok = um980SetupApplyPort(port);
-        Serial.printf("UM980 UART apply %c -> %s\n", port == 0 ? 'A' : 'B', ok ? "OK" : "ERROR");
+        s_cli_out->printf("UM980 UART apply %c -> %s\n", port == 0 ? 'A' : 'B', ok ? "OK" : "ERROR");
         return;
     }
 
     if (std::strcmp(argv[1], "set") == 0) {
         if (argc < 5) {
-            Serial.println("usage: uart set <a|b> <baud|swap> <value>");
+            s_cli_out->println("usage: uart set <a|b> <baud|swap> <value>");
             return;
         }
         uint8_t port = 0;
         if (!parseUartPort(argv[2], &port)) {
-            Serial.println("usage: uart set <a|b> <baud|swap> <value>");
+            s_cli_out->println("usage: uart set <a|b> <baud|swap> <value>");
             return;
         }
         if (std::strcmp(argv[3], "baud") == 0) {
             const uint32_t baud = static_cast<uint32_t>(std::strtoul(argv[4], nullptr, 10));
             if (baud == 0) {
-                Serial.println("ERROR: invalid baud value.");
+                s_cli_out->println("ERROR: invalid baud value.");
                 return;
             }
             um980SetupSetBaud(port, baud);
-            Serial.printf("UM980 UART %c baud set to %lu (pending apply).\n",
+            s_cli_out->printf("UM980 UART %c baud set to %lu (pending apply).\n",
                           port == 0 ? 'A' : 'B',
                           static_cast<unsigned long>(baud));
             return;
@@ -601,54 +603,54 @@ void cliCmdUart(int argc, char** argv) {
         if (std::strcmp(argv[3], "swap") == 0) {
             bool enabled = false;
             if (!parseOnOff(argv[4], &enabled)) {
-                Serial.println("usage: uart set <a|b> swap <on|off>");
+                s_cli_out->println("usage: uart set <a|b> swap <on|off>");
                 return;
             }
             um980SetupSetSwap(port, enabled);
-            Serial.printf("UM980 UART %c swap set to %s (pending apply).\n",
+            s_cli_out->printf("UM980 UART %c swap set to %s (pending apply).\n",
                           port == 0 ? 'A' : 'B',
                           enabled ? "ON" : "OFF");
             return;
         }
-        Serial.println("usage: uart set <a|b> <baud|swap> <value>");
+        s_cli_out->println("usage: uart set <a|b> <baud|swap> <value>");
         return;
     }
 
     if (std::strcmp(argv[1], "console") == 0) {
         if (argc < 4) {
-            Serial.println("usage: uart console <a|b> <on|off>");
+            s_cli_out->println("usage: uart console <a|b> <on|off>");
             return;
         }
         uint8_t port = 0;
         if (!parseUartPort(argv[2], &port)) {
-            Serial.println("usage: uart console <a|b> <on|off>");
+            s_cli_out->println("usage: uart console <a|b> <on|off>");
             return;
         }
         bool enabled = false;
         if (!parseOnOff(argv[3], &enabled)) {
-            Serial.println("usage: uart console <a|b> <on|off>");
+            s_cli_out->println("usage: uart console <a|b> <on|off>");
             return;
         }
         um980SetupSetConsole(port, enabled);
-        Serial.printf("UM980 UART %c console -> %s\n",
+        s_cli_out->printf("UM980 UART %c console -> %s\n",
                       port == 0 ? 'A' : 'B',
                       enabled ? "ON" : "OFF");
         return;
     }
 
-    Serial.println("usage: uart <show|apply|set|console>");
+    s_cli_out->println("usage: uart <show|apply|set|console>");
 }
 
 void cliCmdSetup(int argc, char** argv) {
     (void)argc;
     (void)argv;
     setupWizardRequestStart();
-    Serial.println("Setup wizard requested. It will start in loop context.");
+    s_cli_out->println("Setup wizard requested. It will start in loop context.");
 }
 
 void cliCmdUnknown(const char* cmd) {
-    Serial.printf("Unknown command: %s\n", cmd ? cmd : "");
-    Serial.println("Type 'help' for available commands.");
+    s_cli_out->printf("Unknown command: %s\n", cmd ? cmd : "");
+    s_cli_out->println("Type 'help' for available commands.");
 }
 
 void cliDispatch(int argc, char* argv[]) {
@@ -667,6 +669,10 @@ void cliDispatch(int argc, char* argv[]) {
 }
 
 }  // namespace
+
+void cliSetOutput(Stream* out) {
+    s_cli_out = out ? out : &Serial;
+}
 
 void cliInit(void) {
     s_cli_cmd_count = 0;
@@ -711,12 +717,12 @@ bool cliRegisterCommand(const char* cmd,
 }
 
 void cliPrintHelp(void) {
-    Serial.println("Available commands:");
+    s_cli_out->println("Available commands:");
     for (size_t i = 0; i < s_cli_cmd_count; ++i) {
-        Serial.printf("  %-10s %s\n", s_cli_cmd_table[i].cmd, s_cli_cmd_table[i].help_short);
+        s_cli_out->printf("  %-10s %s\n", s_cli_cmd_table[i].cmd, s_cli_cmd_table[i].help_short);
     }
-    Serial.println("  log ...    Runtime log controls");
-    Serial.println("  filter ... Runtime log file:line filter");
+    s_cli_out->println("  log ...    Runtime log controls");
+    s_cli_out->println("  filter ... Runtime log file:line filter");
 }
 
 void cliProcessLine(const char* line) {

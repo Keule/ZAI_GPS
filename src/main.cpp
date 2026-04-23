@@ -146,7 +146,7 @@ static void runBootCliSession(void) {
 
     while (true) {
         bool handled_input = false;
-        auto processInput = [&](Stream& in, Print& out, bool mirror_to_serial, bool& consumed_any) -> bool {
+        auto processInput = [&](Stream& in, Stream& out, bool mirror_to_serial, bool& consumed_any) -> bool {
             while (in.available()) {
                 consumed_any = true;
                 const int ch = in.read();
@@ -167,7 +167,9 @@ static void runBootCliSession(void) {
                         return true;
                     }
 
+                    cliSetOutput(&out);
                     cliProcessLine(line_buf);
+                    cliSetOutput(&Serial);
                     line_len = 0;
                 } else if (ch == 3) {  // Ctrl+C
                     line_len = 0;

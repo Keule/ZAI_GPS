@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstddef>
+#include <Stream.h>
 
 /// Initialisiert das CLI-System. Einmalig aus setup() aufrufen.
 void cliInit(void);
@@ -16,6 +17,9 @@ void cliInit(void);
 /// Verarbeitet eine komplette Eingabezeile.
 /// Wird aus loop() aufgerufen wenn eine Zeile komplett empfangen wurde.
 void cliProcessLine(const char* line);
+
+/// Setzt das Ausgabemedium (Standard: Serial).
+void cliSetOutput(Stream* out);
 
 /// Registriert ein neues Kommando.
 /// Gibt true zurück bei Erfolg, false bei Duplikat oder voller Tabelle.
