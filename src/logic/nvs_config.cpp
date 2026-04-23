@@ -4,6 +4,7 @@
  */
 
 #include "nvs_config.h"
+#include "hal/hal.h"
 
 #include <cstring>
 
@@ -74,28 +75,40 @@ void nvsConfigLoad(RuntimeConfig& cfg) {
 bool nvsConfigSave(const RuntimeConfig& cfg) {
 #if defined(ARDUINO_ARCH_ESP32)
     nvs_handle_t handle = 0;
-    if (nvs_open(nvs_keys::NS, NVS_READWRITE, &handle) != ESP_OK) {
+    const esp_err_t open_err = nvs_open(nvs_keys::NS, NVS_READWRITE, &handle);
+    if (open_err != ESP_OK) {
+        hal_log("NVS: open(%s) failed: %s", nvs_keys::NS, esp_err_to_name(open_err));
         return false;
     }
 
     bool ok = true;
-    ok &= (nvs_set_str(handle, nvs_keys::NTRIP_HOST, cfg.ntrip_host) == ESP_OK);
-    ok &= (nvs_set_u16(handle, nvs_keys::NTRIP_PORT, cfg.ntrip_port) == ESP_OK);
-    ok &= (nvs_set_str(handle, nvs_keys::NTRIP_MOUNT, cfg.ntrip_mountpoint) == ESP_OK);
-    ok &= (nvs_set_str(handle, nvs_keys::NTRIP_USER, cfg.ntrip_user) == ESP_OK);
-    ok &= (nvs_set_str(handle, nvs_keys::NTRIP_PASS, cfg.ntrip_password) == ESP_OK);
+    auto check_set = [&](esp_err_t err, const char* key) {
+        if (err != ESP_OK) {
+            ok = false;
+            hal_log("NVS: set key '%s' failed: %s", key, esp_err_to_name(err));
+        }
+    };
 
-    ok &= (nvs_set_u32(handle, nvs_keys::PID_KP, floatToU32(cfg.pid_kp)) == ESP_OK);
-    ok &= (nvs_set_u32(handle, nvs_keys::PID_KI, floatToU32(cfg.pid_ki)) == ESP_OK);
-    ok &= (nvs_set_u32(handle, nvs_keys::PID_KD, floatToU32(cfg.pid_kd)) == ESP_OK);
+    check_set(nvs_set_str(handle, nvs_keys::NTRIP_HOST, cfg.ntrip_host), nvs_keys::NTRIP_HOST);
+    check_set(nvs_set_u16(handle, nvs_keys::NTRIP_PORT, cfg.ntrip_port), nvs_keys::NTRIP_PORT);
+    check_set(nvs_set_str(handle, nvs_keys::NTRIP_MOUNT, cfg.ntrip_mountpoint), nvs_keys::NTRIP_MOUNT);
+    check_set(nvs_set_str(handle, nvs_keys::NTRIP_USER, cfg.ntrip_user), nvs_keys::NTRIP_USER);
+    check_set(nvs_set_str(handle, nvs_keys::NTRIP_PASS, cfg.ntrip_password), nvs_keys::NTRIP_PASS);
 
-    ok &= (nvs_set_u8(handle, nvs_keys::NET_MODE, cfg.net_mode) == ESP_OK);
-    ok &= (nvs_set_u32(handle, nvs_keys::NET_IP, cfg.net_ip) == ESP_OK);
-    ok &= (nvs_set_u32(handle, nvs_keys::NET_GW, cfg.net_gateway) == ESP_OK);
-    ok &= (nvs_set_u32(handle, nvs_keys::NET_SUBNET, cfg.net_subnet) == ESP_OK);
-    ok &= (nvs_set_u8(handle, nvs_keys::ACT_TYPE, cfg.actuator_type) == ESP_OK);
+    check_set(nvs_set_u32(handle, nvs_keys::PID_KP, floatToU32(cfg.pid_kp)), nvs_keys::PID_KP);
+    check_set(nvs_set_u32(handle, nvs_keys::PID_KI, floatToU32(cfg.pid_ki)), nvs_keys::PID_KI);
+    check_set(nvs_set_u32(handle, nvs_keys::PID_KD, floatToU32(cfg.pid_kd)), nvs_keys::PID_KD);
+
+    check_set(nvs_set_u8(handle, nvs_keys::NET_MODE, cfg.net_mode), nvs_keys::NET_MODE);
+    check_set(nvs_set_u32(handle, nvs_keys::NET_IP, cfg.net_ip), nvs_keys::NET_IP);
+    check_set(nvs_set_u32(handle, nvs_keys::NET_GW, cfg.net_gateway), nvs_keys::NET_GW);
+    check_set(nvs_set_u32(handle, nvs_keys::NET_SUBNET, cfg.net_subnet), nvs_keys::NET_SUBNET);
+    check_set(nvs_set_u8(handle, nvs_keys::ACT_TYPE, cfg.actuator_type), nvs_keys::ACT_TYPE);
 
     const esp_err_t commit_err = nvs_commit(handle);
+    if (commit_err != ESP_OK) {
+        hal_log("NVS: commit failed: %s", esp_err_to_name(commit_err));
+    }
     nvs_close(handle);
     return ok && (commit_err == ESP_OK);
 #else

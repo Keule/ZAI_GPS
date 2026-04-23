@@ -217,9 +217,8 @@ static void runBootCliSession(void) {
         ntripReadRtcm();
         ntripForwardRtcm();
 #endif
-        if (!handled_input && line_len == 0) {
-            um980SetupConsoleTick();
-        }
+        (void)handled_input;
+        um980SetupConsoleTick();
         delay(10);
     }
 }
