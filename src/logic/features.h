@@ -76,5 +76,4 @@ inline constexpr bool ntrip()  { return FEAT_ENABLED(FEAT_COMPILED_NTRIP); }
 inline constexpr bool sd()     { return FEAT_ENABLED(FEAT_COMPILED_SD); }
 inline constexpr bool safety() { return FEAT_ENABLED(FEAT_COMPILED_SAFETY); }
 inline constexpr bool logsw()  { return FEAT_ENABLED(FEAT_COMPILED_LOGSW); }
-inline constexpr bool control(){ return act() && safety(); }  // compatibility alias
 }  // namespace feat

@@ -65,6 +65,7 @@ epics:
       - TASK-038
       - TASK-040
       - TASK-041
+      - TASK-046
 
   - id: EPIC-004
     title: Feature Expansion
@@ -709,4 +710,14 @@ tasks:
     priority: high
     delivery_mode: mixed
     task_category: runtime_stability
+    dependencies: []
+
+  - id: TASK-046
+    title: "[#process-hygiene] Post-hoc Review und Backlog-Konservierung der Refactor-Welle"
+    file: backlog/tasks/TASK-046-process-hygiene-post-hoc-review-und-backlog-konservierung-refactor-welle.md
+    epic_id: EPIC-003
+    status: open
+    priority: high
+    delivery_mode: firmware_only
+    task_category: platform_reuse
     dependencies: []

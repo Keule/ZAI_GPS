@@ -333,6 +333,221 @@ static void stopBootMaintenanceServices(void) {
 }
 
 // ===================================================================
+// GNSS UART mirror (diagnostic bring-up path)
+// ===================================================================
+#if FEAT_CAP_GNSS_UART_MIRROR
+static constexpr bool MAIN_GNSS_UART_MIRROR_ENABLED = true;
+#else
+static constexpr bool MAIN_GNSS_UART_MIRROR_ENABLED = false;
+#endif
+
+static void runBootCliSession(void) {
+    Serial.println();
+    Serial.println("=== Boot CLI ===");
+    Serial.println("System init complete. Type commands now.");
+    Serial.println("Type 'boot' or 'exit' to continue startup.");
+
+    char line_buf[MAIN_BOOT_CLI_BUF_CAP];
+    size_t line_len = 0;
+
+    while (true) {
+        bool handled_input = false;
+        auto processInput = [&](Stream& in, Stream& out, bool mirror_to_serial, bool& consumed_any) -> bool {
+            while (in.available()) {
+                consumed_any = true;
+                const int ch = in.read();
+                if (ch == '\r' || ch == '\n') {
+                    if (line_len == 0) {
+                        continue;
+                    }
+
+                    line_buf[line_len] = '\0';
+                    out.println();
+                    if (mirror_to_serial) Serial.println();
+
+                    if (std::strcmp(line_buf, "boot") == 0 || std::strcmp(line_buf, "exit") == 0) {
+                        out.println("Leaving Boot CLI, continuing startup...");
+                        if (mirror_to_serial) {
+                            Serial.println("Leaving Boot CLI, continuing startup...");
+                        }
+                        return true;
+                    }
+
+                    cliSetOutput(&out);
+                    cliProcessLine(line_buf);
+                    cliSetOutput(&Serial);
+                    line_len = 0;
+                } else if (ch == 3) {  // Ctrl+C
+                    line_len = 0;
+                    out.println("^C");
+                    if (mirror_to_serial) Serial.println("^C");
+                } else if (ch == 8 || ch == 127) {  // Backspace / DEL
+                    if (line_len > 0) {
+                        line_len--;
+                        out.print("\b \b");
+                        if (mirror_to_serial) Serial.print("\b \b");
+                    }
+                } else if (line_len + 1 < sizeof(line_buf)) {
+                    line_buf[line_len++] = static_cast<char>(ch);
+                    out.print(static_cast<char>(ch));
+                    if (mirror_to_serial) Serial.print(static_cast<char>(ch));
+                }
+            }
+            return false;
+        };
+
+        bool had_serial_input = false;
+        if (processInput(Serial, Serial, false, had_serial_input)) {
+            return;
+        }
+        handled_input |= had_serial_input;
+#if MAIN_BT_SPP_AVAILABLE
+        bool had_bt_input = false;
+        if (s_boot_bt_active && processInput(s_boot_bt_serial, s_boot_bt_serial, true, had_bt_input)) {
+            return;
+        }
+        handled_input |= had_bt_input;
+#endif
+
+        if (s_boot_web_ota_active) {
+            s_boot_web_server.handleClient();
+            if (!s_boot_eth_url_logged && hal_net_is_connected()) {
+                char ip_buf[20] = {0};
+                formatIpU32(hal_net_get_ip(), ip_buf, sizeof(ip_buf));
+                hal_log("BOOT: Web OTA also via ETH: http://%s/", ip_buf);
+                s_boot_eth_url_logged = true;
+            }
+        }
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
+        ntripTick();
+        ntripReadRtcm();
+        ntripForwardRtcm();
+#endif
+        (void)handled_input;
+        um980SetupConsoleTick();
+        delay(10);
+    }
+}
+
+static void bootWebHandleRoot(void) {
+    static const char kPage[] =
+        "<!doctype html><html><head><meta charset='utf-8'><title>AgSteer OTA</title></head>"
+        "<body><h2>AgSteer Boot OTA</h2>"
+        "<form method='POST' action='/update' enctype='multipart/form-data'>"
+        "<input type='file' name='firmware' accept='.bin' required>"
+        "<button type='submit'>Upload Firmware</button></form>"
+        "<p>Nach erfolgreichem Upload startet das Geraet neu.</p>"
+        "</body></html>";
+    s_boot_web_server.send(200, "text/html", kPage);
+}
+
+static void bootWebHandleUpdateDone(void) {
+    const bool ok = !Update.hasError();
+    s_boot_web_server.send(200, "text/plain", ok ? "OK - rebooting" : "FAIL");
+    if (ok) {
+        hal_log("BOOT: Web OTA successful -> reboot");
+        delay(500);
+        ESP.restart();
+    }
+}
+
+static void bootWebHandleUpdateUpload(void) {
+    HTTPUpload& upload = s_boot_web_server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+        hal_log("BOOT: Web OTA upload start: %s", upload.filename.c_str());
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+            hal_log("BOOT: Web OTA Update.begin failed");
+        }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+        const size_t written = Update.write(upload.buf, upload.currentSize);
+        if (written != upload.currentSize) {
+            hal_log("BOOT: Web OTA write failed (%u/%u)",
+                    (unsigned)written,
+                    (unsigned)upload.currentSize);
+        }
+    } else if (upload.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) {
+            hal_log("BOOT: Web OTA upload complete (%u bytes)", (unsigned)upload.totalSize);
+        } else {
+            hal_log("BOOT: Web OTA Update.end failed");
+        }
+    } else if (upload.status == UPLOAD_FILE_ABORTED) {
+        Update.abort();
+        hal_log("BOOT: Web OTA upload aborted");
+    }
+}
+
+static void startBootMaintenanceServices(void) {
+    WiFi.persistent(false);
+    WiFi.disconnect(true, true);
+    delay(100);
+    WiFi.mode(WIFI_AP);
+    if (!WiFi.softAPConfig(MAIN_BOOT_AP_IP, MAIN_BOOT_AP_GW, MAIN_BOOT_AP_MASK)) {
+        hal_log("BOOT: WiFi AP config failed, using stack defaults");
+    }
+
+    s_boot_ap_active = WiFi.softAP(MAIN_BOOT_AP_SSID, MAIN_BOOT_AP_PASS, 1, 0, 2);
+    if (!s_boot_ap_active) {
+        hal_log("BOOT: WiFi AP WPA2 start failed -> fallback OPEN AP");
+        s_boot_ap_active = WiFi.softAP(MAIN_BOOT_AP_SSID, nullptr, 1, 0, 2);
+    }
+    if (s_boot_ap_active) {
+        IPAddress ip = WiFi.softAPIP();
+        hal_log("BOOT: WiFi AP active SSID=%s IP=%s CH=%u",
+                MAIN_BOOT_AP_SSID,
+                ip.toString().c_str(),
+                (unsigned)WiFi.channel());
+    } else {
+        hal_log("BOOT: WiFi AP start failed (SSID=%s)", MAIN_BOOT_AP_SSID);
+    }
+
+    s_boot_web_server.on("/", HTTP_GET, bootWebHandleRoot);
+    s_boot_web_server.on("/update", HTTP_POST, bootWebHandleUpdateDone, bootWebHandleUpdateUpload);
+    s_boot_web_server.begin();
+    s_boot_web_ota_active = true;
+    hal_log("BOOT: Web OTA active at http://%s/", WiFi.softAPIP().toString().c_str());
+    if (hal_net_is_connected()) {
+        char ip_buf[20] = {0};
+        formatIpU32(hal_net_get_ip(), ip_buf, sizeof(ip_buf));
+        hal_log("BOOT: Web OTA via ETH available at http://%s/", ip_buf);
+        s_boot_eth_url_logged = true;
+    } else {
+        s_boot_eth_url_logged = false;
+        hal_log("BOOT: ETH link/IP not ready yet (Web OTA URL will be logged when available)");
+    }
+
+#if MAIN_BT_SPP_AVAILABLE
+    s_boot_bt_active = s_boot_bt_serial.begin("AgSteer-BootCLI");
+    hal_log("BOOT: BT SPP %s", s_boot_bt_active ? "active" : "start failed");
+    um980SetupSetConsoleMirror(s_boot_bt_active ? static_cast<Stream*>(&s_boot_bt_serial) : nullptr);
+#else
+    hal_log("BOOT: BT SPP unavailable on this target");
+    um980SetupSetConsoleMirror(nullptr);
+#endif
+}
+
+static void stopBootMaintenanceServices(void) {
+#if MAIN_BT_SPP_AVAILABLE
+    if (s_boot_bt_active) {
+        s_boot_bt_serial.end();
+        s_boot_bt_active = false;
+    }
+#endif
+    um980SetupSetConsoleMirror(nullptr);
+
+    if (s_boot_web_ota_active) {
+        s_boot_web_server.stop();
+        s_boot_web_ota_active = false;
+    }
+    s_boot_eth_url_logged = false;
+    if (s_boot_ap_active) {
+        WiFi.softAPdisconnect(true);
+        s_boot_ap_active = false;
+    }
+    WiFi.mode(WIFI_OFF);
+}
+
+// ===================================================================
 // Control Task – runs at 200 Hz on Core 1
 // ===================================================================
 static void controlTaskFunc(void* param) {
@@ -544,7 +759,6 @@ static void commTaskFunc(void* param) {
 void setup() {
     const uint32_t t_boot_start = hal_millis();
     uint32_t t_phase = t_boot_start;
-
     initNvsFlashStorage();
 
     hal_esp32_init_all();
