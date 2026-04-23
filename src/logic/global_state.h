@@ -47,7 +47,11 @@ extern NavigationState g_nav;
 // ---------------------------------------------------------------------------
 // Setpoint – written by commTask when steer data from AgIO arrives
 // ---------------------------------------------------------------------------
-extern volatile float desiredSteerAngleDeg;
+extern float desiredSteerAngleDeg;
+
+/// Thread-safe set/get helpers for steer setpoint.
+void setDesiredSteerAngleDeg(float angle_deg);
+float getDesiredSteerAngleDeg(void);
 
 // ---------------------------------------------------------------------------
 // RAII helper: lock mutex in ctor, unlock in dtor.

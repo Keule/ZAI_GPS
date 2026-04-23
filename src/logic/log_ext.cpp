@@ -30,7 +30,7 @@ char     log_filter_file[64] = "";
 // ===================================================================
 static const char* const kAllTags[] = {
     "MAIN", "NET", "CTL", "MOD", "HWS", "PGN",
-    "WAS",  "IMU", "ACT", "SDL", "OTA", "HAL"
+    "WAS",  "IMU", "ACT", "SDL", "OTA", "HAL", "NTRIP"
 };
 static constexpr size_t kTagCount = sizeof(kAllTags) / sizeof(kAllTags[0]);
 

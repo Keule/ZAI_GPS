@@ -18,6 +18,9 @@ void cliInit(void);
 /// Wird aus loop() aufgerufen wenn eine Zeile komplett empfangen wurde.
 void cliProcessLine(const char* line);
 
+/// Periodischer Safety-Tick für CLI-Hintergrundaufgaben.
+void cliSafetyTick(void);
+
 /// Setzt das Ausgabemedium (Standard: Serial).
 void cliSetOutput(Stream* out);
 

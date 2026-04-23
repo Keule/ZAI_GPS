@@ -137,13 +137,12 @@ void sdLoggerRecord(void) {
     // We read the state directly from g_nav to avoid
     // holding the mutex in the control loop.
     extern NavigationState g_nav;
-    extern volatile float desiredSteerAngleDeg;
 
     SdLogRecord rec;
     rec.timestamp_ms     = g_nav.imu.imu_timestamp_ms;
     rec.heading_deg      = g_nav.imu.heading_deg;
     rec.steer_angle_deg  = g_nav.steer.steer_angle_deg;
-    rec.desired_angle_deg = desiredSteerAngleDeg;
+    rec.desired_angle_deg = getDesiredSteerAngleDeg();
     rec.yaw_rate_dps     = g_nav.imu.yaw_rate_dps;
     rec.roll_deg         = g_nav.imu.roll_deg;
     rec.safety_ok        = g_nav.safety.safety_ok ? 1 : 0;

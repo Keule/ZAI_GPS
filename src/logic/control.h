@@ -134,4 +134,4 @@ bool controlManualActuatorMode(void);
 // ===================================================================
 
 /// Setpoint from AgIO steer data (degrees). Written by commTask.
-extern volatile float desiredSteerAngleDeg;
+extern float desiredSteerAngleDeg;
