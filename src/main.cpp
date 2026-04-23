@@ -24,7 +24,6 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Update.h>
-#include <soc/soc_caps.h>
 #include <cstdio>
 #include <cstring>
 
@@ -56,15 +55,12 @@
 #include "esp_log.h"
 #include "logic/log_ext.h"
 
-#if defined(__has_include) && __has_include(<BluetoothSerial.h>)
+#if defined(__has_include) && __has_include(<BluetoothSerial.h>) && \
+    (defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32S3) || \
+     (defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && \
+      !defined(CONFIG_IDF_TARGET_ESP32C6) && !defined(CONFIG_IDF_TARGET_ESP32H2)))
 #include <BluetoothSerial.h>
-#if defined(SOC_BT_CLASSIC_SUPPORTED) && SOC_BT_CLASSIC_SUPPORTED && \
-    defined(CONFIG_BT_ENABLED) && defined(CONFIG_BLUEDROID_ENABLED) && \
-    defined(CONFIG_BT_CLASSIC_ENABLED)
 #define MAIN_BT_SPP_AVAILABLE 1
-#else
-#define MAIN_BT_SPP_AVAILABLE 0
-#endif
 #else
 #define MAIN_BT_SPP_AVAILABLE 0
 #endif
