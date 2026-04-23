@@ -25,6 +25,8 @@ char     log_filter_file[64] = "";
 
 // ===================================================================
 // Bekannte Tags (fuer "log all" Kommando)
+// ADR-LOG-002: Liste muss vollstaendig sein und bei neuen Tags
+// obligatorisch im selben Change-Set aktualisiert werden.
 // ===================================================================
 static const char* const kAllTags[] = {
     "MAIN", "NET", "CTL", "MOD", "HWS", "PGN",
