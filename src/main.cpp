@@ -95,6 +95,7 @@ static const IPAddress MAIN_BOOT_AP_MASK(255, 255, 255, 0);
 static WebServer s_boot_web_server(80);
 static bool s_boot_web_ota_active = false;
 static bool s_boot_ap_active = false;
+static bool s_boot_eth_url_logged = false;
 #if MAIN_BT_SPP_AVAILABLE
 static BluetoothSerial s_boot_bt_serial;
 static bool s_boot_bt_active = false;
@@ -127,6 +128,15 @@ static inline bool shouldLogPeriodic(uint32_t now_ms, uint32_t* last_ms, uint32_
     if (now_ms - *last_ms < interval_ms) return false;
     *last_ms = now_ms;
     return true;
+}
+
+static void formatIpU32(uint32_t ip, char* out, size_t out_sz) {
+    if (!out || out_sz == 0) return;
+    std::snprintf(out, out_sz, "%u.%u.%u.%u",
+                  static_cast<unsigned>((ip >> 24) & 0xFF),
+                  static_cast<unsigned>((ip >> 16) & 0xFF),
+                  static_cast<unsigned>((ip >> 8) & 0xFF),
+                  static_cast<unsigned>(ip & 0xFF));
 }
 
 static void runBootCliSession(void) {
@@ -197,6 +207,12 @@ static void runBootCliSession(void) {
 
         if (s_boot_web_ota_active) {
             s_boot_web_server.handleClient();
+            if (!s_boot_eth_url_logged && hal_net_is_connected()) {
+                char ip_buf[20] = {0};
+                formatIpU32(hal_net_get_ip(), ip_buf, sizeof(ip_buf));
+                hal_log("BOOT: Web OTA also via ETH: http://%s/", ip_buf);
+                s_boot_eth_url_logged = true;
+            }
         }
 #if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
         ntripTick();
@@ -287,6 +303,15 @@ static void startBootMaintenanceServices(void) {
     s_boot_web_server.begin();
     s_boot_web_ota_active = true;
     hal_log("BOOT: Web OTA active at http://%s/", WiFi.softAPIP().toString().c_str());
+    if (hal_net_is_connected()) {
+        char ip_buf[20] = {0};
+        formatIpU32(hal_net_get_ip(), ip_buf, sizeof(ip_buf));
+        hal_log("BOOT: Web OTA via ETH available at http://%s/", ip_buf);
+        s_boot_eth_url_logged = true;
+    } else {
+        s_boot_eth_url_logged = false;
+        hal_log("BOOT: ETH link/IP not ready yet (Web OTA URL will be logged when available)");
+    }
 
 #if MAIN_BT_SPP_AVAILABLE
     s_boot_bt_active = s_boot_bt_serial.begin("AgSteer-BootCLI");
@@ -308,6 +333,7 @@ static void stopBootMaintenanceServices(void) {
         s_boot_web_server.stop();
         s_boot_web_ota_active = false;
     }
+    s_boot_eth_url_logged = false;
     if (s_boot_ap_active) {
         WiFi.softAPdisconnect(true);
         s_boot_ap_active = false;
