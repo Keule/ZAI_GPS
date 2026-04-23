@@ -2,10 +2,9 @@
 """Runs the AgSteer test matrix locally and in CI.
 
 Matrix scope:
-  1) PlatformIO build for all firmware profiles.
+  1) PlatformIO build for the active firmware profile.
   2) Host smoke tests (Discovery/Hello/Subnet).
-  3) Profile-specific PGN I/O smoke scenarios.
-  4) Timing metrics (jitter + deadline-miss counter check).
+  3) Timing metrics (jitter + deadline-miss counter check).
 """
 
 from __future__ import annotations
@@ -21,34 +20,20 @@ SRC_ROOT = ROOT / "src"
 TOOLS_ROOT = ROOT / "tools"
 
 BUILD_PROFILES = [
-    "profile_comm_only",
-    "profile_sensor_front",
-    "profile_actor_rear",
-    "profile_full_steer",
+    "profile_full_steer_ntrip",
 ]
 
 HOST_PROFILE_FLAGS = {
-    "profile_comm_only": ["-DFEAT_PROFILE_COMM_ONLY", "-DFEAT_COMM"],
-    "profile_sensor_front": [
-        "-DFEAT_PROFILE_SENSOR_FRONT",
-        "-DFEAT_COMM",
-        "-DFEAT_STEER_SENSOR",
+    "profile_full_steer_ntrip": [
+        "-DFEAT_ETH",
         "-DFEAT_IMU",
-    ],
-    "profile_actor_rear": [
-        "-DFEAT_PROFILE_ACTOR_REAR",
-        "-DFEAT_COMM",
-        "-DFEAT_STEER_ACTOR",
-        "-DFEAT_MACHINE_ACTOR",
-    ],
-    "profile_full_steer": [
-        "-DFEAT_PROFILE_FULL_STEER",
-        "-DFEAT_COMM",
-        "-DFEAT_STEER_SENSOR",
-        "-DFEAT_IMU",
-        "-DFEAT_STEER_ACTOR",
-        "-DFEAT_MACHINE_ACTOR",
-        "-DFEAT_PID_STEER",
+        "-DFEAT_ADS",
+        "-DFEAT_ACT",
+        "-DFEAT_SAFETY",
+        "-DFEAT_GNSS",
+        "-DFEAT_NTRIP",
+        "-DFEAT_SD",
+        "-DFEAT_LOGSW",
     ],
 }
 

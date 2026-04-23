@@ -2065,28 +2065,28 @@ void hal_esp32_init_all(void) {
         return;
     }
     hal_esp32_common_boot_init();
-    #if FEAT_CFG_MOD_NEEDS_SENSOR_SPI2
+    #if FEAT_ENABLED(FEAT_COMPILED_IMU) || FEAT_ENABLED(FEAT_COMPILED_ADS) || FEAT_ENABLED(FEAT_COMPILED_ACT)
     hal_sensor_spi_init();
     #else
-    hal_log("ESP32: sensor SPI init skipped (FEAT_CFG_MOD_NEEDS_SENSOR_SPI2=0)");
+    hal_log("ESP32: sensor SPI init skipped (no IMU/ADS/ACT feature active)");
     #endif
 
-    #if FEAT_IMU
+    #if FEAT_ENABLED(FEAT_COMPILED_IMU)
     hal_imu_begin();
     #else
     hal_log("ESP32: IMU init skipped (FEAT_IMU=0)");
     #endif
 
-    #if FEAT_STEER_SENSOR
+    #if FEAT_ENABLED(FEAT_COMPILED_ADS)
     hal_steer_angle_begin();
     #else
-    hal_log("ESP32: steer-angle init skipped (FEAT_STEER_SENSOR=0)");
+    hal_log("ESP32: steer-angle init skipped (FEAT_ADS=0)");
     #endif
 
-    #if FEAT_STEER_ACTOR
+    #if FEAT_ENABLED(FEAT_COMPILED_ACT)
     hal_actuator_begin();
     #else
-    hal_log("ESP32: actuator init skipped (FEAT_STEER_ACTOR=0)");
+    hal_log("ESP32: actuator init skipped (FEAT_ACT=0)");
     #endif
 
     // Network (W5500 via ETH driver)
