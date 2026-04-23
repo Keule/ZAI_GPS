@@ -89,6 +89,9 @@ static bool s_gnss_buildup_fallback_latched = false;
 static constexpr size_t MAIN_BOOT_CLI_BUF_CAP = 128;
 static constexpr char MAIN_BOOT_AP_SSID[] = "AgSteer-Boot";
 static constexpr char MAIN_BOOT_AP_PASS[] = "agsteer123";
+static const IPAddress MAIN_BOOT_AP_IP(192, 168, 4, 1);
+static const IPAddress MAIN_BOOT_AP_GW(192, 168, 4, 1);
+static const IPAddress MAIN_BOOT_AP_MASK(255, 255, 255, 0);
 static WebServer s_boot_web_server(80);
 static bool s_boot_web_ota_active = false;
 static bool s_boot_ap_active = false;
@@ -256,11 +259,25 @@ static void bootWebHandleUpdateUpload(void) {
 }
 
 static void startBootMaintenanceServices(void) {
-    WiFi.mode(WIFI_AP_STA);
-    s_boot_ap_active = WiFi.softAP(MAIN_BOOT_AP_SSID, MAIN_BOOT_AP_PASS);
+    WiFi.persistent(false);
+    WiFi.disconnect(true, true);
+    delay(100);
+    WiFi.mode(WIFI_AP);
+    if (!WiFi.softAPConfig(MAIN_BOOT_AP_IP, MAIN_BOOT_AP_GW, MAIN_BOOT_AP_MASK)) {
+        hal_log("BOOT: WiFi AP config failed, using stack defaults");
+    }
+
+    s_boot_ap_active = WiFi.softAP(MAIN_BOOT_AP_SSID, MAIN_BOOT_AP_PASS, 1, 0, 2);
+    if (!s_boot_ap_active) {
+        hal_log("BOOT: WiFi AP WPA2 start failed -> fallback OPEN AP");
+        s_boot_ap_active = WiFi.softAP(MAIN_BOOT_AP_SSID, nullptr, 1, 0, 2);
+    }
     if (s_boot_ap_active) {
         IPAddress ip = WiFi.softAPIP();
-        hal_log("BOOT: WiFi AP active SSID=%s IP=%s", MAIN_BOOT_AP_SSID, ip.toString().c_str());
+        hal_log("BOOT: WiFi AP active SSID=%s IP=%s CH=%u",
+                MAIN_BOOT_AP_SSID,
+                ip.toString().c_str(),
+                (unsigned)WiFi.channel());
     } else {
         hal_log("BOOT: WiFi AP start failed (SSID=%s)", MAIN_BOOT_AP_SSID);
     }
@@ -295,6 +312,7 @@ static void stopBootMaintenanceServices(void) {
         WiFi.softAPdisconnect(true);
         s_boot_ap_active = false;
     }
+    WiFi.mode(WIFI_OFF);
 }
 
 // ===================================================================
