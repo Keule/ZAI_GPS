@@ -58,6 +58,45 @@ bool imuIsHealthy(uint32_t now_ms) {
                                dep_policy::IMU_FRESHNESS_TIMEOUT_MS);
 }
 
+void imuBringupInit(void) {
+    HalImuSpiInfo spi = {};
+    hal_imu_get_spi_info(&spi);
+
+    hal_log("IMU-BRINGUP: mode=ON imu_spi pins[sck=%d miso=%d mosi=%d cs=%d int=%d] params[freq=%luHz mode=%u] intervals[detect=%lums read=%lums]",
+            spi.sck_pin, spi.miso_pin, spi.mosi_pin, spi.cs_pin, spi.int_pin,
+            (unsigned long)spi.freq_hz, (unsigned)spi.mode,
+            (unsigned long)k_detect_interval_ms, (unsigned long)k_read_interval_ms);
+
+    s_last_detect_ms = 0;
+    s_last_read_ms = 0;
+    s_last_ads_ms = 0;
+    s_last_stats_ms = 0;
+    s_read_ok = 0;
+    s_read_fail = 0;
+    s_last_detect_ok = false;
+    s_prev_detect_ok = false;
+    s_has_prev_detect = false;
+    s_phase_index = 0;
+    s_matrix_done = false;
+    applyCase(s_phase_index);
+
+    hal_log("IMU-BRINGUP: matrix cases=%u phase_ms=%lu detect_ms=%lu read_ms=%lu ads_ms=%lu",
+            (unsigned)(sizeof(k_cases) / sizeof(k_cases[0])),
+            (unsigned long)k_phase_duration_ms,
+            (unsigned long)k_detect_interval_ms,
+            (unsigned long)k_read_interval_ms,
+            (unsigned long)k_ads_interval_ms);
+}
+
+namespace {
+bool imu_enabled_check() {
+    return feat::imu();
+}
+
+bool imu_health_check(uint32_t now_ms) {
+    return imuIsHealthy(now_ms);
+}
+
 namespace {
 bool imu_enabled_check() {
     return feat::imu();
