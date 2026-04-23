@@ -9,10 +9,7 @@
  *   - maintTask  (Core 0): SD flush, NTRIP connect, ETH monitor [TASK-029]
  *   - controlTask (Core 1): 200 Hz control loop, PID, safety, actuators
  *
- * NOTE: Hardware init is done in setup():
- *       - normal mode: hal_esp32_init_all()
- *       - IMU bring-up mode: hal_esp32_init_imu_bringup()
- *       - GNSS buildup mode: hal_esp32_init_gnss_buildup()
+ * NOTE: Hardware init is done in setup() via hal_esp32_init_all().
  *       Tasks do NOT re-initialize anything.
  */
 
@@ -70,18 +67,12 @@
 // ===================================================================
 static TaskHandle_t s_control_task_handle = nullptr;
 static TaskHandle_t s_comm_task_handle = nullptr;
-static bool s_imu_bringup_active = false;
-static bool s_gnss_buildup_active = false;
 
 // ===================================================================
 // Runtime/Debug logging knobs
 // ===================================================================
 static constexpr bool MAIN_VERBOSE_TASK_DBG = false;  // true => print loop Hz heartbeats
 static constexpr uint32_t MAIN_HW_ERR_REMINDER_MS = 30000;
-static constexpr uint32_t MAIN_GNSS_BUILDUP_INIT_TIMEOUT_MS = 15000;
-static constexpr uint32_t MAIN_GNSS_BUILDUP_STATUS_INTERVAL_MS = 2000;
-static uint32_t s_gnss_buildup_start_ms = 0;
-static bool s_gnss_buildup_fallback_latched = false;
 static constexpr size_t MAIN_BOOT_CLI_BUF_CAP = 128;
 static constexpr char MAIN_BOOT_AP_SSID[] = "AgSteer-Boot";
 static constexpr char MAIN_BOOT_AP_PASS[] = "agsteer123";
@@ -342,164 +333,6 @@ static void stopBootMaintenanceServices(void) {
 }
 
 // ===================================================================
-// GNSS UART mirror (diagnostic bring-up path)
-// ===================================================================
-#if FEAT_CAP_GNSS_UART_MIRROR
-static constexpr bool MAIN_GNSS_UART_MIRROR_ENABLED = true;
-#else
-static constexpr bool MAIN_GNSS_UART_MIRROR_ENABLED = false;
-#endif
-
-static constexpr size_t MAIN_GNSS_MIRROR_LINE_CAP = 96;
-static constexpr size_t MAIN_GNSS_MIRROR_BINARY_CHUNK = 24;
-static constexpr int MAIN_GNSS_MIRROR_MAX_BYTES_PER_PORT_POLL = 64;
-static constexpr int MAIN_GNSS_MIRROR_MAX_FLUSH_PER_PORT_POLL = 2;
-
-struct GnssMirrorPortState {
-    HardwareSerial* uart = nullptr;
-    const char* prefix = "";
-    uint8_t line_buf[MAIN_GNSS_MIRROR_LINE_CAP] = {0};
-    size_t line_len = 0;
-    bool binary_mode = false;
-    uint32_t dropped_bytes = 0;
-    uint32_t last_drop_log_ms = 0;
-};
-
-static GnssMirrorPortState s_gnss_mirror_ports[] = {
-    {&Serial1, "[UM980-A]"},
-    {&Serial2, "[UM980-B]"},
-};
-
-static void gnssMirrorLogDropped(GnssMirrorPortState* port, uint32_t now_ms) {
-    if (port->dropped_bytes == 0) return;
-    if (now_ms - port->last_drop_log_ms < 2000) return;
-    port->last_drop_log_ms = now_ms;
-    hal_log("GNSS-MIRROR: %s dropped=%lu byte(s) due to local parser limits",
-            port->prefix,
-            (unsigned long)port->dropped_bytes);
-    port->dropped_bytes = 0;
-}
-
-static bool gnssMirrorLooksLikeNmea(const uint8_t* data, size_t len) {
-    return len > 0 && (data[0] == '$' || data[0] == '!');
-}
-
-static void gnssMirrorFlush(GnssMirrorPortState* port) {
-    if (port->line_len == 0) return;
-
-    if (!port->binary_mode) {
-        char text[MAIN_GNSS_MIRROR_LINE_CAP + 1];
-        size_t out = 0;
-        for (size_t i = 0; i < port->line_len && out < MAIN_GNSS_MIRROR_LINE_CAP; ++i) {
-            const uint8_t b = port->line_buf[i];
-            if (b == '\r' || b == '\n') continue;
-            if (b >= 32 && b <= 126) {
-                text[out++] = static_cast<char>(b);
-            }
-        }
-        text[out] = '\0';
-
-        if (out > 0) {
-            if (gnssMirrorLooksLikeNmea(port->line_buf, port->line_len)) {
-                hal_log("GNSS-MIRROR: %s %s", port->prefix, text);
-            } else {
-                hal_log("GNSS-MIRROR: %s [RAW] %s", port->prefix, text);
-            }
-        }
-    } else {
-        char hex_line[(MAIN_GNSS_MIRROR_BINARY_CHUNK * 3) + 1];
-        size_t pos = 0;
-        for (size_t i = 0; i < port->line_len && i < MAIN_GNSS_MIRROR_BINARY_CHUNK; ++i) {
-            const int n = std::snprintf(&hex_line[pos], sizeof(hex_line) - pos, "%02X",
-                                        (unsigned)port->line_buf[i]);
-            if (n <= 0) break;
-            pos += static_cast<size_t>(n);
-            if ((i + 1) < port->line_len && pos + 1 < sizeof(hex_line)) {
-                hex_line[pos++] = ' ';
-                hex_line[pos] = '\0';
-            }
-        }
-        if (pos > 0) {
-            hal_log("GNSS-MIRROR: %s [HEX] %s", port->prefix, hex_line);
-        }
-    }
-
-    port->line_len = 0;
-    port->binary_mode = false;
-}
-
-static void gnssMirrorPollPort(GnssMirrorPortState* port) {
-    if (!port || !port->uart) return;
-
-    int bytes_left = MAIN_GNSS_MIRROR_MAX_BYTES_PER_PORT_POLL;
-    int flush_budget = MAIN_GNSS_MIRROR_MAX_FLUSH_PER_PORT_POLL;
-
-    while (bytes_left-- > 0 && port->uart->available() > 0) {
-        const int value = port->uart->read();
-        if (value < 0) break;
-
-        const uint8_t b = static_cast<uint8_t>(value);
-        const bool is_newline = (b == '\n');
-        const bool is_ascii = (b == '\r' || b == '\n' || b == '\t' || (b >= 32 && b <= 126));
-
-        if (!is_ascii) {
-            port->binary_mode = true;
-        }
-
-        if (!is_newline) {
-            if (port->line_len < MAIN_GNSS_MIRROR_LINE_CAP) {
-                port->line_buf[port->line_len++] = b;
-            } else {
-                port->dropped_bytes++;
-                if (flush_budget > 0) {
-                    gnssMirrorFlush(port);
-                    flush_budget--;
-                }
-            }
-        }
-
-        const bool force_binary_flush = port->binary_mode &&
-                                        port->line_len >= MAIN_GNSS_MIRROR_BINARY_CHUNK;
-        if (is_newline || force_binary_flush) {
-            if (flush_budget > 0) {
-                gnssMirrorFlush(port);
-                flush_budget--;
-            } else {
-                break;
-            }
-        }
-    }
-
-    gnssMirrorLogDropped(port, hal_millis());
-}
-
-static void gnssMirrorPoll(void) {
-    if (!MAIN_GNSS_UART_MIRROR_ENABLED) return;
-    for (GnssMirrorPortState& port : s_gnss_mirror_ports) {
-        gnssMirrorPollPort(&port);
-    }
-}
-
-static void gnssMirrorInit(void) {
-    if (!MAIN_GNSS_UART_MIRROR_ENABLED) {
-        hal_log("GNSS-MIRROR: disabled (compile with FEAT_GNSS_UART_MIRROR to enable)");
-        return;
-    }
-
-    Serial1.begin(GNSS_MIRROR_BAUD, SERIAL_8N1, GNSS_MIRROR_UART1_RX_PIN, GNSS_MIRROR_UART1_TX_PIN);
-    Serial2.begin(GNSS_MIRROR_BAUD, SERIAL_8N1, GNSS_MIRROR_UART2_RX_PIN, GNSS_MIRROR_UART2_TX_PIN);
-
-    hal_log("GNSS-MIRROR: enabled baud=%lu UART1(rx=%d tx=%d)->%s UART2(rx=%d tx=%d)->%s",
-            (unsigned long)GNSS_MIRROR_BAUD,
-            (int)GNSS_MIRROR_UART1_RX_PIN,
-            (int)GNSS_MIRROR_UART1_TX_PIN,
-            s_gnss_mirror_ports[0].prefix,
-            (int)GNSS_MIRROR_UART2_RX_PIN,
-            (int)GNSS_MIRROR_UART2_TX_PIN,
-            s_gnss_mirror_ports[1].prefix);
-}
-
-// ===================================================================
 // Control Task – runs at 200 Hz on Core 1
 // ===================================================================
 static void controlTaskFunc(void* param) {
@@ -514,7 +347,7 @@ static void controlTaskFunc(void* param) {
     uint32_t ctrl_dbg_count = 0;
     uint32_t ctrl_freq_start = hal_millis();
     uint32_t log_divider = 0;
-#if FEAT_CAP_SENSOR_SPI2
+#if FEAT_ENABLED(FEAT_COMPILED_IMU) || FEAT_ENABLED(FEAT_COMPILED_ADS) || FEAT_ENABLED(FEAT_COMPILED_ACT)
     uint32_t last_spi_tm_ms = 0;
 #endif
 
@@ -546,7 +379,7 @@ static void controlTaskFunc(void* param) {
         }
 
         const uint32_t now_ms = hal_millis();
-#if FEAT_CAP_SENSOR_SPI2
+#if FEAT_ENABLED(FEAT_COMPILED_IMU) || FEAT_ENABLED(FEAT_COMPILED_ADS) || FEAT_ENABLED(FEAT_COMPILED_ACT)
         if (LOG_SPI_TIMING_INTERVAL_MS > 0 && now_ms - last_spi_tm_ms >= LOG_SPI_TIMING_INTERVAL_MS) {
             last_spi_tm_ms = now_ms;
             HalSpiTelemetry tm = {};
@@ -619,21 +452,13 @@ static void commTaskFunc(void* param) {
 #endif
 
         // -------------------------------- Processing --------------------------------
-        if (!s_gnss_buildup_active) {
-            modulesUpdateStatus();
-        }
+        modulesUpdateStatus();
 #if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
-        // TASK-029: In normal mode, ntripTick() runs in maintTask (blocking
-        // TCP connect is OK there). In GNSS buildup mode, maintTask is not
-        // created, so we run ntripTick() here in the commTask.
-        if (s_gnss_buildup_active) {
-            ntripTick();
-        }
+        // TASK-029: ntripTick() runs in maintTask (blocking TCP connect there is okay).
 #endif
 
         // ---------------------------------- Output ----------------------------------
         netSendAogFrames();
-        gnssMirrorPoll();
 #if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
         ntripForwardRtcm();
 #endif
@@ -652,7 +477,7 @@ static void commTaskFunc(void* param) {
 
         // Hardware status monitoring (~1 Hz)
         uint32_t now = hal_millis();
-        if (!s_gnss_buildup_active && now - s_last_hw_status_ms >= HW_STATUS_INTERVAL_MS) {
+        if (now - s_last_hw_status_ms >= HW_STATUS_INTERVAL_MS) {
             s_last_hw_status_ms = now;
 
             bool safety_ok = true;
@@ -722,40 +547,15 @@ void setup() {
 
     initNvsFlashStorage();
 
-#if defined(FEAT_IMU_BRINGUP) && defined(FEAT_GNSS_BUILDUP)
-#error "FEAT_IMU_BRINGUP and FEAT_GNSS_BUILDUP are mutually exclusive."
-#endif
+    hal_esp32_init_all();
+    hal_log("BOOT: hal_esp32_init_all ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
-    s_imu_bringup_active = imuBringupModeEnabled();
-    s_gnss_buildup_active =
-#if defined(FEAT_GNSS_BUILDUP)
-        true;
-#else
-        false;
-#endif
-
-    if (s_imu_bringup_active) {
-        // Explicit bring-up path: no actuator or network dependency.
-        hal_esp32_init_imu_bringup();
-        hal_log("BOOT: imu_bringup_init ... %lu ms", (unsigned long)(hal_millis() - t_phase));
-    } else if (s_gnss_buildup_active) {
-        // GNSS buildup path: communication + GNSS UART only.
-        hal_esp32_init_gnss_buildup();
-        hal_log("BOOT: gnss_buildup_init ... %lu ms", (unsigned long)(hal_millis() - t_phase));
-        s_gnss_buildup_start_ms = hal_millis();
-        hal_log("Main: GNSS buildup mode active (FEAT_GNSS_BUILDUP).");
-    } else {
-        // Normal operation path.
-        hal_esp32_init_all();
-        hal_log("BOOT: hal_esp32_init_all ... %lu ms", (unsigned long)(hal_millis() - t_phase));
-
-        // Module logic init (after HAL init, before module activation/state machine).
-        t_phase = hal_millis();
-        if (feat::imu()) { imuInit(); }
-        if (feat::ads()) { wasInit(); }
-        if (feat::act()) { actuatorInit(); }
-        hal_log("BOOT: logic module init ... %lu ms", (unsigned long)(hal_millis() - t_phase));
-    }
+    // Module logic init (after HAL init, before module activation/state machine).
+    t_phase = hal_millis();
+    if (feat::imu()) { imuInit(); }
+    if (feat::ads()) { wasInit(); }
+    if (feat::act()) { actuatorInit(); }
+    hal_log("BOOT: logic module init ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
     // -----------------------------------------------------------------
     // Firmware Version & Build Info (always printed)
@@ -771,62 +571,6 @@ void setup() {
         hal_log("  Flash: %d KB free", (int)(ESP.getFreeSketchSpace() / 1024));
         hal_log("========================================");
     }
-    if (s_imu_bringup_active) {
-        hal_log("Main: IMU bring-up mode active (FEAT_IMU_BRINGUP).");
-        imuBringupInit();
-        gnssMirrorInit();
-        hal_log("BOOT: total ... %lu ms", (unsigned long)(hal_millis() - t_boot_start));
-        return;
-    }
-
-    gnssMirrorInit();
-    if (s_gnss_buildup_active) {
-        // Reduced startup: no OTA, no module detection, no sensor/actuator stack.
-
-        // Initialise soft config from compile-time defaults — TASK-028
-        softConfigLoadDefaults(softConfigGet());
-        nvsConfigLoad(softConfigGet());
-        softConfigLoadOverrides(softConfigGet());  // TASK-033: reads /ntrip.cfg from SD
-
-#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
-        // -----------------------------------------------------------------
-        // NTRIP Client initialisation — TASK-025 / TASK-028
-        // Configuration is loaded from RuntimeConfig (cfg:: defaults at
-        // boot, overridable via Serial/SD/WebUI in future versions).
-        // -----------------------------------------------------------------
-        ntripInit();
-        RuntimeConfig& rcfg = softConfigGet();
-        ntripSetConfig(
-            rcfg.ntrip_host,
-            rcfg.ntrip_port,
-            rcfg.ntrip_mountpoint,
-            rcfg.ntrip_user,
-            rcfg.ntrip_password
-        );
-        if (rcfg.ntrip_host[0] == '\0' || rcfg.ntrip_mountpoint[0] == '\0') {
-            hal_log("Main: NTRIP not configured (host or mountpoint empty) — skipping");
-        } else {
-            hal_log("Main: NTRIP client configured (host=%s, port=%u, mp=%s)",
-                    g_ntrip_config.host,
-                    static_cast<unsigned>(g_ntrip_config.port),
-                    g_ntrip_config.mountpoint);
-        }
-#endif
-
-        xTaskCreatePinnedToCore(
-            commTaskFunc,
-            "comm",
-            4096,
-            nullptr,
-            configMAX_PRIORITIES - 3,
-            &s_comm_task_handle,
-            0
-        );
-        hal_log("Main: GNSS buildup reduced init done (comm task only).");
-        hal_log("BOOT: total ... %lu ms", (unsigned long)(hal_millis() - t_boot_start));
-        return;
-    }
-
     cliInit();
 
     // Initialise module system – detect hardware for all modules
@@ -1070,56 +814,6 @@ static constexpr uint32_t MAIN_CLI_QUIET_LOG_MS = 2000;
 void loop() {
     if (setupWizardConsumePending()) {
         setupWizardRun();
-    }
-
-    if (s_imu_bringup_active) {
-        imuBringupTick();
-        vTaskDelay(pdMS_TO_TICKS(20));
-        return;
-    }
-
-    if (s_gnss_buildup_active) {
-        const uint32_t now = hal_millis();
-        static uint32_t s_last_gnss_buildup_log_ms = 0;
-        if (now - s_last_gnss_buildup_log_ms >= MAIN_GNSS_BUILDUP_STATUS_INTERVAL_MS) {
-            s_last_gnss_buildup_log_ms = now;
-
-            uint8_t fix_type = 0;
-            bool rtcm_active = false;
-            uint32_t diff_age = 0;
-            uint32_t status_age_ms = 0;
-            {
-                StateLock lock;
-                fix_type = g_nav.gnss.um980_fix_type;
-                rtcm_active = g_nav.gnss.um980_rtcm_active;
-                diff_age = g_nav.gnss.gps_diff_age_x100_ms;
-                status_age_ms = (g_nav.gnss.um980_status_timestamp_ms == 0)
-                    ? 0
-                    : (now - g_nav.gnss.um980_status_timestamp_ms);
-            }
-
-            hal_log("GNSS-BUILDUP: port_status net=%s rtcm_uart=%s drop=%lu | fix_status type=%u rtcm=%s diff_age_x100ms=%lu status_age_ms=%lu",
-                    hal_net_is_connected() ? "UP" : "DOWN",
-                    hal_gnss_rtcm_is_ready() ? "READY" : "DOWN",
-                    static_cast<unsigned long>(hal_gnss_rtcm_drop_count()),
-                    static_cast<unsigned>(fix_type),
-                    rtcm_active ? "ON" : "OFF",
-                    static_cast<unsigned long>(diff_age),
-                    static_cast<unsigned long>(status_age_ms));
-        }
-
-        if (!s_gnss_buildup_fallback_latched &&
-            now - s_gnss_buildup_start_ms >= MAIN_GNSS_BUILDUP_INIT_TIMEOUT_MS) {
-            const bool ready = hal_net_is_connected() && hal_gnss_rtcm_is_ready();
-            if (!ready) {
-                s_gnss_buildup_fallback_latched = true;
-                hal_log("GNSS-BUILDUP: init timeout after %lums -> fallback=degraded-comm (no abort, keep running for diagnostics)",
-                        static_cast<unsigned long>(MAIN_GNSS_BUILDUP_INIT_TIMEOUT_MS));
-            }
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(20));
-        return;
     }
 
     // Feed watchdog to prevent trigger from this task

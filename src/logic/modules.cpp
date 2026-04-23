@@ -375,13 +375,13 @@ static void featureModulesInitCompiled(void) {
     // IMU: needs FEAT_IMU feature flag AND at least one valid pin
     g_features[MOD_IMU].compiled = feat::imu() && (g_features[MOD_IMU].pin_count > 0);
 
-    // ADS (steer angle sensor): needs FEAT_STEER_SENSOR AND valid pins
+    // ADS (steer angle sensor): needs FEAT_ADS AND valid pins
     g_features[MOD_ADS].compiled = feat::ads() && (g_features[MOD_ADS].pin_count > 0);
 
-    // ACT (actuator): needs FEAT_STEER_ACTOR AND valid pins
+    // ACT (actuator): needs FEAT_ACT AND valid pins
     g_features[MOD_ACT].compiled = feat::act() && (g_features[MOD_ACT].pin_count > 0);
 
-    // ETH: needs FEAT_COMM AND valid pins
+    // ETH: needs FEAT_ETH AND valid pins
     g_features[MOD_ETH].compiled = feat::eth() && (g_features[MOD_ETH].pin_count > 0);
 
     // GNSS: needs FEAT_GNSS AND valid pins
@@ -390,7 +390,7 @@ static void featureModulesInitCompiled(void) {
     // NTRIP: needs FEAT_NTRIP (no dedicated pins)
     g_features[MOD_NTRIP].compiled = feat::ntrip();
 
-    // SAFETY: needs FEAT_MACHINE_ACTOR (control loop) AND valid pins
+    // SAFETY: needs FEAT_SAFETY AND valid pins
     g_features[MOD_SAFETY].compiled = feat::safety() && (g_features[MOD_SAFETY].pin_count > 0);
 
     // LOGSW: always available if pins are populated (no feature flag needed)
