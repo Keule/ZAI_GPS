@@ -20,6 +20,7 @@
 
 #include "logic/sd_logger.h"
 #include "logic/global_state.h"
+#include <atomic>
 #include <cstring>
 
 // ===================================================================
@@ -54,24 +55,24 @@ static uint32_t s_ring_mask = LOG_RING_SIZE_DEFAULT - 1;
 /// Write index – only modified by the producer (control loop).
 /// After writing to s_ring_buf[s_write_idx], the producer does:
 ///   s_write_idx = (s_write_idx + 1) & s_ring_mask;
-static volatile uint32_t s_write_idx = 0;
+static std::atomic<uint32_t> s_write_idx{0};
 
 /// Read index – only modified by the consumer (maintTask).
 /// After reading from s_ring_buf[s_read_idx], the consumer does:
 ///   s_read_idx = (s_read_idx + 1) & s_ring_mask;
-static volatile uint32_t s_read_idx = 0;
+static std::atomic<uint32_t> s_read_idx{0};
 
 /// Overflow counter – incremented when the producer overwrites
 /// data that the consumer hasn't read yet.
-static volatile uint32_t s_overflow_count = 0;
+static std::atomic<uint32_t> s_overflow_count{0};
 
 /// Total records flushed to SD (incremented by consumer).
-static volatile uint32_t s_records_flushed = 0;
+static std::atomic<uint32_t> s_records_flushed{0};
 
 /// Call counter for subsampling – incremented each time
 /// sdLoggerRecord() is called. Only records when the counter
 /// is a multiple of LOG_RATE_DIVIDER.
-static volatile uint32_t s_call_counter = 0;
+static std::atomic<uint32_t> s_call_counter{0};
 
 // ===================================================================
 // Platform hooks – implemented in sd_logger_esp32.cpp
@@ -111,8 +112,10 @@ void sdLoggerSetExternalBuffer(SdLogRecord* buf, uint32_t capacity) {
     s_ring_mask = capacity - 1;
 
     // Clamp indices to new capacity (preserve as many records as possible).
-    s_write_idx = s_write_idx & s_ring_mask;
-    s_read_idx  = s_read_idx  & s_ring_mask;
+    const uint32_t w = s_write_idx.load(std::memory_order_relaxed) & s_ring_mask;
+    const uint32_t r = s_read_idx.load(std::memory_order_relaxed) & s_ring_mask;
+    s_write_idx.store(w, std::memory_order_relaxed);
+    s_read_idx.store(r, std::memory_order_relaxed);
 }
 
 // ===================================================================
@@ -121,8 +124,7 @@ void sdLoggerSetExternalBuffer(SdLogRecord* buf, uint32_t capacity) {
 
 void sdLoggerRecord(void) {
     // Only record every N-th call (subsample from 200 Hz to 10 Hz)
-    uint32_t count = s_call_counter;
-    s_call_counter = count + 1;
+    uint32_t count = s_call_counter.fetch_add(1, std::memory_order_relaxed);
 
     if ((count % LOG_RATE_DIVIDER) != 0) {
         return;  // skip – not our turn
@@ -148,18 +150,20 @@ void sdLoggerRecord(void) {
     rec.safety_ok        = g_nav.safety.safety_ok ? 1 : 0;
 
     // Write to ring buffer (no mutex needed – SPSC pattern)
-    uint32_t widx = s_write_idx;
+    const uint32_t widx = s_write_idx.load(std::memory_order_relaxed);
     uint32_t next_widx = (widx + 1) & s_ring_mask;
 
     // Check for overflow (consumer hasn't caught up)
-    if (next_widx == s_read_idx) {
+    const uint32_t ridx = s_read_idx.load(std::memory_order_acquire);
+    if (next_widx == ridx) {
         // Buffer full – advance read pointer (drop oldest)
-        s_read_idx = (s_read_idx + 1) & s_ring_mask;
-        s_overflow_count++;
+        s_read_idx.store((ridx + 1) & s_ring_mask, std::memory_order_release);
+        s_overflow_count.fetch_add(1, std::memory_order_relaxed);
     }
 
     s_ring_buf[widx] = rec;
-    s_write_idx = next_widx;
+    std::atomic_thread_fence(std::memory_order_release);
+    s_write_idx.store(next_widx, std::memory_order_release);
 }
 
 bool sdLoggerIsActive(void) {
@@ -167,12 +171,12 @@ bool sdLoggerIsActive(void) {
 }
 
 uint32_t sdLoggerGetRecordsFlushed(void) {
-    return s_records_flushed;
+    return s_records_flushed.load(std::memory_order_relaxed);
 }
 
 uint32_t sdLoggerGetBufferCount(void) {
-    uint32_t w = s_write_idx;
-    uint32_t r = s_read_idx;
+    uint32_t w = s_write_idx.load(std::memory_order_acquire);
+    uint32_t r = s_read_idx.load(std::memory_order_acquire);
     if (w >= r) return w - r;
     return s_ring_capacity - r + w;
 }
@@ -196,28 +200,31 @@ uint32_t sdLoggerPsramBufferCount(void) {
 
 /// Check if there are records waiting in the ring buffer.
 extern "C" bool sdLoggerHasRecords(void) {
-    return s_write_idx != s_read_idx;
+    return s_write_idx.load(std::memory_order_acquire) !=
+           s_read_idx.load(std::memory_order_acquire);
 }
 
 /// Read one record from the ring buffer (consumer side).
 /// Returns true if a record was read, false if buffer is empty.
 extern "C" bool sdLoggerReadRecord(SdLogRecord* out) {
-    uint32_t r = s_read_idx;
-    if (r == s_write_idx) {
+    const uint32_t r = s_read_idx.load(std::memory_order_relaxed);
+    const uint32_t w = s_write_idx.load(std::memory_order_acquire);
+    if (r == w) {
         return false;  // buffer empty
     }
 
+    std::atomic_thread_fence(std::memory_order_acquire);
     *out = s_ring_buf[r];
-    s_read_idx = (r + 1) & s_ring_mask;
+    s_read_idx.store((r + 1) & s_ring_mask, std::memory_order_release);
     return true;
 }
 
 /// Increment the flushed counter (called by the consumer after writing to SD).
 extern "C" void sdLoggerIncrementFlushed(uint32_t count) {
-    s_records_flushed += count;
+    s_records_flushed.fetch_add(count, std::memory_order_relaxed);
 }
 
 /// Get the overflow counter (for diagnostics).
 extern "C" uint32_t sdLoggerGetOverflowCount(void) {
-    return s_overflow_count;
+    return s_overflow_count.load(std::memory_order_relaxed);
 }

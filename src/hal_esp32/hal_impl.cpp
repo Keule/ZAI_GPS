@@ -180,6 +180,34 @@ static int16_t s_was_raw_cache = 0;
 static uint32_t s_was_last_poll_us = 0;
 static bool s_was_cache_valid = false;
 
+static void spiTelemetryReset(void) {
+    s_bus_tm.window_start_us = micros();
+    s_bus_tm.busy_us = 0;
+    s_bus_tm.transactions = 0;
+    s_poll_imu = {};
+    s_poll_was = {};
+    s_poll_act = {};
+    s_last_spi_client = SpiClient::NONE;
+    s_last_spi_end_us = 0;
+    s_last_sensor_spi_client = SpiClient::NONE;
+    s_last_sensor_spi_end_us = 0;
+    s_client_switches = 0;
+    s_was_to_imu_switches = 0;
+    s_imu_to_was_switches = 0;
+    s_other_switches = 0;
+    s_was_to_imu_gap_last_us = 0;
+    s_was_to_imu_gap_max_us = 0;
+    s_imu_to_was_gap_last_us = 0;
+    s_imu_to_was_gap_max_us = 0;
+    s_sensor_was_to_imu_switches = 0;
+    s_sensor_imu_to_was_switches = 0;
+    s_sensor_was_to_imu_gap_last_us = 0;
+    s_sensor_was_to_imu_gap_max_us = 0;
+    s_sensor_imu_to_was_gap_last_us = 0;
+    s_sensor_imu_to_was_gap_max_us = 0;
+    s_was_cache_valid = false;
+}
+
 static const SpiClientConfig& spiCfg(SpiClient client) {
     switch (client) {
     case SpiClient::ADS1118: return k_spi_cfg_ads;
@@ -1079,31 +1107,7 @@ void hal_sensor_spi_init(void) {
     if (!s_spi_bus_mutex) {
         s_spi_bus_mutex = xSemaphoreCreateMutex();
     }
-    s_bus_tm.window_start_us = micros();
-    s_bus_tm.busy_us = 0;
-    s_bus_tm.transactions = 0;
-    s_poll_imu = {};
-    s_poll_was = {};
-    s_poll_act = {};
-    s_last_spi_client = SpiClient::NONE;
-    s_last_spi_end_us = 0;
-    s_last_sensor_spi_client = SpiClient::NONE;
-    s_last_sensor_spi_end_us = 0;
-    s_client_switches = 0;
-    s_was_to_imu_switches = 0;
-    s_imu_to_was_switches = 0;
-    s_other_switches = 0;
-    s_was_to_imu_gap_last_us = 0;
-    s_was_to_imu_gap_max_us = 0;
-    s_imu_to_was_gap_last_us = 0;
-    s_imu_to_was_gap_max_us = 0;
-    s_sensor_was_to_imu_switches = 0;
-    s_sensor_imu_to_was_switches = 0;
-    s_sensor_was_to_imu_gap_last_us = 0;
-    s_sensor_was_to_imu_gap_max_us = 0;
-    s_sensor_imu_to_was_gap_last_us = 0;
-    s_sensor_imu_to_was_gap_max_us = 0;
-    s_was_cache_valid = false;
+    spiTelemetryReset();
     hal_log("ESP32: sensor SPI initialised on SENS_SPI_BUS/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",
             SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI);
 }
@@ -1125,31 +1129,7 @@ void hal_sensor_spi_reinit(void) {
     sensorSPI.end();
     delay(50);   // let SPI peripheral fully settle
     sensorSPI.begin(SENS_SPI_SCK, SENS_SPI_MISO, SENS_SPI_MOSI, -1);
-    s_bus_tm.window_start_us = micros();
-    s_bus_tm.busy_us = 0;
-    s_bus_tm.transactions = 0;
-    s_poll_imu = {};
-    s_poll_was = {};
-    s_poll_act = {};
-    s_last_spi_client = SpiClient::NONE;
-    s_last_spi_end_us = 0;
-    s_last_sensor_spi_client = SpiClient::NONE;
-    s_last_sensor_spi_end_us = 0;
-    s_client_switches = 0;
-    s_was_to_imu_switches = 0;
-    s_imu_to_was_switches = 0;
-    s_other_switches = 0;
-    s_was_to_imu_gap_last_us = 0;
-    s_was_to_imu_gap_max_us = 0;
-    s_imu_to_was_gap_last_us = 0;
-    s_imu_to_was_gap_max_us = 0;
-    s_sensor_was_to_imu_switches = 0;
-    s_sensor_imu_to_was_switches = 0;
-    s_sensor_was_to_imu_gap_last_us = 0;
-    s_sensor_was_to_imu_gap_max_us = 0;
-    s_sensor_imu_to_was_gap_last_us = 0;
-    s_sensor_imu_to_was_gap_max_us = 0;
-    s_was_cache_valid = false;
+    spiTelemetryReset();
     spiEndCritical();
     delay(10);   // let GPIO matrix reconfigure
     hal_log("ESP32: shared SPI re-initialised on SD_SPI_BUS/SPI2_HOST (SCK=%d MISO=%d MOSI=%d)",

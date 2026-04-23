@@ -54,11 +54,11 @@ void nvsConfigLoad(RuntimeConfig& cfg) {
     loadString(handle, nvs_keys::NTRIP_PASS, cfg.ntrip_password, sizeof(cfg.ntrip_password));
 
     uint16_t ntrip_port = 0;
+    uint32_t u32 = 0;
     if (nvs_get_u16(handle, nvs_keys::NTRIP_PORT, &ntrip_port) == ESP_OK) {
         cfg.ntrip_port = ntrip_port;
     }
-
-    uint32_t u32 = 0;
+    if (nvs_get_u32(handle, nvs_keys::NTRIP_RECONNECT_MS, &u32) == ESP_OK) cfg.ntrip_reconnect_ms = u32;
     if (nvs_get_u32(handle, nvs_keys::PID_KP, &u32) == ESP_OK) cfg.pid_kp = u32ToFloat(u32);
     if (nvs_get_u32(handle, nvs_keys::PID_KI, &u32) == ESP_OK) cfg.pid_ki = u32ToFloat(u32);
     if (nvs_get_u32(handle, nvs_keys::PID_KD, &u32) == ESP_OK) cfg.pid_kd = u32ToFloat(u32);
@@ -69,6 +69,7 @@ void nvsConfigLoad(RuntimeConfig& cfg) {
     if (nvs_get_u32(handle, nvs_keys::NET_GW, &u32) == ESP_OK) cfg.net_gateway = u32;
     if (nvs_get_u32(handle, nvs_keys::NET_SUBNET, &u32) == ESP_OK) cfg.net_subnet = u32;
     if (nvs_get_u8(handle, nvs_keys::ACT_TYPE, &u8) == ESP_OK) cfg.actuator_type = u8;
+    if (nvs_get_u32(handle, nvs_keys::LOG_INTERVAL_MS, &u32) == ESP_OK) cfg.log_interval_ms = u32;
 
     nvs_close(handle);
 #else
@@ -98,6 +99,7 @@ bool nvsConfigSave(const RuntimeConfig& cfg) {
     check_set(nvs_set_str(handle, nvs_keys::NTRIP_MOUNT, cfg.ntrip_mountpoint), nvs_keys::NTRIP_MOUNT);
     check_set(nvs_set_str(handle, nvs_keys::NTRIP_USER, cfg.ntrip_user), nvs_keys::NTRIP_USER);
     check_set(nvs_set_str(handle, nvs_keys::NTRIP_PASS, cfg.ntrip_password), nvs_keys::NTRIP_PASS);
+    check_set(nvs_set_u32(handle, nvs_keys::NTRIP_RECONNECT_MS, cfg.ntrip_reconnect_ms), nvs_keys::NTRIP_RECONNECT_MS);
 
     check_set(nvs_set_u32(handle, nvs_keys::PID_KP, floatToU32(cfg.pid_kp)), nvs_keys::PID_KP);
     check_set(nvs_set_u32(handle, nvs_keys::PID_KI, floatToU32(cfg.pid_ki)), nvs_keys::PID_KI);
@@ -108,6 +110,7 @@ bool nvsConfigSave(const RuntimeConfig& cfg) {
     check_set(nvs_set_u32(handle, nvs_keys::NET_GW, cfg.net_gateway), nvs_keys::NET_GW);
     check_set(nvs_set_u32(handle, nvs_keys::NET_SUBNET, cfg.net_subnet), nvs_keys::NET_SUBNET);
     check_set(nvs_set_u8(handle, nvs_keys::ACT_TYPE, cfg.actuator_type), nvs_keys::ACT_TYPE);
+    check_set(nvs_set_u32(handle, nvs_keys::LOG_INTERVAL_MS, cfg.log_interval_ms), nvs_keys::LOG_INTERVAL_MS);
 
     const esp_err_t commit_err = nvs_commit(handle);
     if (commit_err != ESP_OK) {
