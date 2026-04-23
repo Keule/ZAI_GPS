@@ -62,9 +62,14 @@ bool imuBringupModeEnabled(void) {
     return false;
 }
 
-void imuBringupInit(void) {}
+namespace {
+bool imu_enabled_check() {
+    return feat::imu();
+}
 
-void imuBringupTick(void) {}
+bool imu_health_check(uint32_t now_ms) {
+    return imuIsHealthy(now_ms);
+}
 
 static bool imu_module_enabled_check() {
     return feat::imu();
