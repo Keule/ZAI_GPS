@@ -20,7 +20,12 @@
 #include <freertos/FreeRTOS.h>
 #include <esp_task_wdt.h>
 #include <esp_ota_ops.h>
+#include <nvs_flash.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <Update.h>
 #include <cstdio>
+#include <cstring>
 
 #include "fw_config.h"
 #include "hal/hal.h"
@@ -31,18 +36,34 @@
 #include "logic/global_state.h"
 #include "logic/hw_status.h"
 #include "logic/imu.h"
+#include "logic/was.h"
+#include "logic/actuator.h"
 #include "logic/modules.h"
 #include "logic/net.h"
 #include "logic/ntrip.h"
+#include "logic/nvs_config.h"
 #include "logic/runtime_config.h"
 #include "logic/sd_ota.h"
 #include "logic/sd_logger.h"
+#include "logic/cli.h"
+#include "logic/setup_wizard.h"
+#include "logic/um980_uart_setup.h"
 
 #include "logic/log_config.h"
 #undef LOG_LOCAL_LEVEL          // Arduino.h already defined it via esp_log.h
 #define LOG_LOCAL_LEVEL LOG_LEVEL_MAIN
 #include "esp_log.h"
 #include "logic/log_ext.h"
+
+#if defined(__has_include) && __has_include(<BluetoothSerial.h>) && \
+    (defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32S3) || \
+     (defined(ARDUINO_ARCH_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32C3) && \
+      !defined(CONFIG_IDF_TARGET_ESP32C6) && !defined(CONFIG_IDF_TARGET_ESP32H2)))
+#include <BluetoothSerial.h>
+#define MAIN_BT_SPP_AVAILABLE 1
+#else
+#define MAIN_BT_SPP_AVAILABLE 0
+#endif
 
 // ===================================================================
 // Task handles
@@ -61,11 +82,263 @@ static constexpr uint32_t MAIN_GNSS_BUILDUP_INIT_TIMEOUT_MS = 15000;
 static constexpr uint32_t MAIN_GNSS_BUILDUP_STATUS_INTERVAL_MS = 2000;
 static uint32_t s_gnss_buildup_start_ms = 0;
 static bool s_gnss_buildup_fallback_latched = false;
+static constexpr size_t MAIN_BOOT_CLI_BUF_CAP = 128;
+static constexpr char MAIN_BOOT_AP_SSID[] = "AgSteer-Boot";
+static constexpr char MAIN_BOOT_AP_PASS[] = "agsteer123";
+static const IPAddress MAIN_BOOT_AP_IP(192, 168, 4, 1);
+static const IPAddress MAIN_BOOT_AP_GW(192, 168, 4, 1);
+static const IPAddress MAIN_BOOT_AP_MASK(255, 255, 255, 0);
+static WebServer s_boot_web_server(80);
+static bool s_boot_web_ota_active = false;
+static bool s_boot_ap_active = false;
+static bool s_boot_eth_url_logged = false;
+#if MAIN_BT_SPP_AVAILABLE
+static BluetoothSerial s_boot_bt_serial;
+static bool s_boot_bt_active = false;
+#endif
+
+static void initNvsFlashStorage(void) {
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_OK) {
+        return;
+    }
+
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        hal_log("BOOT: NVS init returned %s -> erasing NVS partition",
+                esp_err_to_name(err));
+        const esp_err_t erase_err = nvs_flash_erase();
+        if (erase_err != ESP_OK) {
+            hal_log("BOOT: NVS erase failed: %s", esp_err_to_name(erase_err));
+            return;
+        }
+
+        err = nvs_flash_init();
+    }
+
+    if (err != ESP_OK) {
+        hal_log("BOOT: NVS init failed: %s", esp_err_to_name(err));
+    }
+}
 
 static inline bool shouldLogPeriodic(uint32_t now_ms, uint32_t* last_ms, uint32_t interval_ms) {
     if (now_ms - *last_ms < interval_ms) return false;
     *last_ms = now_ms;
     return true;
+}
+
+static void formatIpU32(uint32_t ip, char* out, size_t out_sz) {
+    if (!out || out_sz == 0) return;
+    std::snprintf(out, out_sz, "%u.%u.%u.%u",
+                  static_cast<unsigned>((ip >> 24) & 0xFF),
+                  static_cast<unsigned>((ip >> 16) & 0xFF),
+                  static_cast<unsigned>((ip >> 8) & 0xFF),
+                  static_cast<unsigned>(ip & 0xFF));
+}
+
+static void runBootCliSession(void) {
+    Serial.println();
+    Serial.println("=== Boot CLI ===");
+    Serial.println("System init complete. Type commands now.");
+    Serial.println("Type 'boot' or 'exit' to continue startup.");
+
+    char line_buf[MAIN_BOOT_CLI_BUF_CAP];
+    size_t line_len = 0;
+
+    while (true) {
+        bool handled_input = false;
+        auto processInput = [&](Stream& in, Stream& out, bool mirror_to_serial, bool& consumed_any) -> bool {
+            while (in.available()) {
+                consumed_any = true;
+                const int ch = in.read();
+                if (ch == '\r' || ch == '\n') {
+                    if (line_len == 0) {
+                        continue;
+                    }
+
+                    line_buf[line_len] = '\0';
+                    out.println();
+                    if (mirror_to_serial) Serial.println();
+
+                    if (std::strcmp(line_buf, "boot") == 0 || std::strcmp(line_buf, "exit") == 0) {
+                        out.println("Leaving Boot CLI, continuing startup...");
+                        if (mirror_to_serial) {
+                            Serial.println("Leaving Boot CLI, continuing startup...");
+                        }
+                        return true;
+                    }
+
+                    cliSetOutput(&out);
+                    cliProcessLine(line_buf);
+                    cliSetOutput(&Serial);
+                    line_len = 0;
+                } else if (ch == 3) {  // Ctrl+C
+                    line_len = 0;
+                    out.println("^C");
+                    if (mirror_to_serial) Serial.println("^C");
+                } else if (ch == 8 || ch == 127) {  // Backspace / DEL
+                    if (line_len > 0) {
+                        line_len--;
+                        out.print("\b \b");
+                        if (mirror_to_serial) Serial.print("\b \b");
+                    }
+                } else if (line_len + 1 < sizeof(line_buf)) {
+                    line_buf[line_len++] = static_cast<char>(ch);
+                    out.print(static_cast<char>(ch));
+                    if (mirror_to_serial) Serial.print(static_cast<char>(ch));
+                }
+            }
+            return false;
+        };
+
+        bool had_serial_input = false;
+        if (processInput(Serial, Serial, false, had_serial_input)) {
+            return;
+        }
+        handled_input |= had_serial_input;
+#if MAIN_BT_SPP_AVAILABLE
+        bool had_bt_input = false;
+        if (s_boot_bt_active && processInput(s_boot_bt_serial, s_boot_bt_serial, true, had_bt_input)) {
+            return;
+        }
+        handled_input |= had_bt_input;
+#endif
+
+        if (s_boot_web_ota_active) {
+            s_boot_web_server.handleClient();
+            if (!s_boot_eth_url_logged && hal_net_is_connected()) {
+                char ip_buf[20] = {0};
+                formatIpU32(hal_net_get_ip(), ip_buf, sizeof(ip_buf));
+                hal_log("BOOT: Web OTA also via ETH: http://%s/", ip_buf);
+                s_boot_eth_url_logged = true;
+            }
+        }
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
+        ntripTick();
+        ntripReadRtcm();
+        ntripForwardRtcm();
+#endif
+        (void)handled_input;
+        um980SetupConsoleTick();
+        delay(10);
+    }
+}
+
+static void bootWebHandleRoot(void) {
+    static const char kPage[] =
+        "<!doctype html><html><head><meta charset='utf-8'><title>AgSteer OTA</title></head>"
+        "<body><h2>AgSteer Boot OTA</h2>"
+        "<form method='POST' action='/update' enctype='multipart/form-data'>"
+        "<input type='file' name='firmware' accept='.bin' required>"
+        "<button type='submit'>Upload Firmware</button></form>"
+        "<p>Nach erfolgreichem Upload startet das Geraet neu.</p>"
+        "</body></html>";
+    s_boot_web_server.send(200, "text/html", kPage);
+}
+
+static void bootWebHandleUpdateDone(void) {
+    const bool ok = !Update.hasError();
+    s_boot_web_server.send(200, "text/plain", ok ? "OK - rebooting" : "FAIL");
+    if (ok) {
+        hal_log("BOOT: Web OTA successful -> reboot");
+        delay(500);
+        ESP.restart();
+    }
+}
+
+static void bootWebHandleUpdateUpload(void) {
+    HTTPUpload& upload = s_boot_web_server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+        hal_log("BOOT: Web OTA upload start: %s", upload.filename.c_str());
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+            hal_log("BOOT: Web OTA Update.begin failed");
+        }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+        const size_t written = Update.write(upload.buf, upload.currentSize);
+        if (written != upload.currentSize) {
+            hal_log("BOOT: Web OTA write failed (%u/%u)",
+                    (unsigned)written,
+                    (unsigned)upload.currentSize);
+        }
+    } else if (upload.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) {
+            hal_log("BOOT: Web OTA upload complete (%u bytes)", (unsigned)upload.totalSize);
+        } else {
+            hal_log("BOOT: Web OTA Update.end failed");
+        }
+    } else if (upload.status == UPLOAD_FILE_ABORTED) {
+        Update.abort();
+        hal_log("BOOT: Web OTA upload aborted");
+    }
+}
+
+static void startBootMaintenanceServices(void) {
+    WiFi.persistent(false);
+    WiFi.disconnect(true, true);
+    delay(100);
+    WiFi.mode(WIFI_AP);
+    if (!WiFi.softAPConfig(MAIN_BOOT_AP_IP, MAIN_BOOT_AP_GW, MAIN_BOOT_AP_MASK)) {
+        hal_log("BOOT: WiFi AP config failed, using stack defaults");
+    }
+
+    s_boot_ap_active = WiFi.softAP(MAIN_BOOT_AP_SSID, MAIN_BOOT_AP_PASS, 1, 0, 2);
+    if (!s_boot_ap_active) {
+        hal_log("BOOT: WiFi AP WPA2 start failed -> fallback OPEN AP");
+        s_boot_ap_active = WiFi.softAP(MAIN_BOOT_AP_SSID, nullptr, 1, 0, 2);
+    }
+    if (s_boot_ap_active) {
+        IPAddress ip = WiFi.softAPIP();
+        hal_log("BOOT: WiFi AP active SSID=%s IP=%s CH=%u",
+                MAIN_BOOT_AP_SSID,
+                ip.toString().c_str(),
+                (unsigned)WiFi.channel());
+    } else {
+        hal_log("BOOT: WiFi AP start failed (SSID=%s)", MAIN_BOOT_AP_SSID);
+    }
+
+    s_boot_web_server.on("/", HTTP_GET, bootWebHandleRoot);
+    s_boot_web_server.on("/update", HTTP_POST, bootWebHandleUpdateDone, bootWebHandleUpdateUpload);
+    s_boot_web_server.begin();
+    s_boot_web_ota_active = true;
+    hal_log("BOOT: Web OTA active at http://%s/", WiFi.softAPIP().toString().c_str());
+    if (hal_net_is_connected()) {
+        char ip_buf[20] = {0};
+        formatIpU32(hal_net_get_ip(), ip_buf, sizeof(ip_buf));
+        hal_log("BOOT: Web OTA via ETH available at http://%s/", ip_buf);
+        s_boot_eth_url_logged = true;
+    } else {
+        s_boot_eth_url_logged = false;
+        hal_log("BOOT: ETH link/IP not ready yet (Web OTA URL will be logged when available)");
+    }
+
+#if MAIN_BT_SPP_AVAILABLE
+    s_boot_bt_active = s_boot_bt_serial.begin("AgSteer-BootCLI");
+    hal_log("BOOT: BT SPP %s", s_boot_bt_active ? "active" : "start failed");
+    um980SetupSetConsoleMirror(s_boot_bt_active ? static_cast<Stream*>(&s_boot_bt_serial) : nullptr);
+#else
+    hal_log("BOOT: BT SPP unavailable on this target");
+    um980SetupSetConsoleMirror(nullptr);
+#endif
+}
+
+static void stopBootMaintenanceServices(void) {
+#if MAIN_BT_SPP_AVAILABLE
+    if (s_boot_bt_active) {
+        s_boot_bt_serial.end();
+        s_boot_bt_active = false;
+    }
+#endif
+    um980SetupSetConsoleMirror(nullptr);
+
+    if (s_boot_web_ota_active) {
+        s_boot_web_server.stop();
+        s_boot_web_ota_active = false;
+    }
+    s_boot_eth_url_logged = false;
+    if (s_boot_ap_active) {
+        WiFi.softAPdisconnect(true);
+        s_boot_ap_active = false;
+    }
+    WiFi.mode(WIFI_OFF);
 }
 
 // ===================================================================
@@ -389,11 +662,11 @@ static void commTaskFunc(void* param) {
             uint32_t imu_ts_ms = 0;
             {
                 StateLock lock;
-                safety_ok = g_nav.safety_ok;
-                steer_quality_ok = g_nav.steer_angle_quality_ok;
-                steer_ts_ms = g_nav.steer_angle_timestamp_ms;
-                imu_quality_ok = g_nav.imu_quality_ok;
-                imu_ts_ms = g_nav.imu_timestamp_ms;
+                safety_ok = g_nav.safety.safety_ok;
+                steer_quality_ok = g_nav.steer.steer_angle_quality_ok;
+                steer_ts_ms = g_nav.steer.steer_angle_timestamp_ms;
+                imu_quality_ok = g_nav.imu.imu_quality_ok;
+                imu_ts_ms = g_nav.imu.imu_timestamp_ms;
             }
 
             const bool steer_angle_valid =
@@ -444,6 +717,11 @@ static void commTaskFunc(void* param) {
 // Arduino setup()
 // ===================================================================
 void setup() {
+    const uint32_t t_boot_start = hal_millis();
+    uint32_t t_phase = t_boot_start;
+
+    initNvsFlashStorage();
+
 #if defined(FEAT_IMU_BRINGUP) && defined(FEAT_GNSS_BUILDUP)
 #error "FEAT_IMU_BRINGUP and FEAT_GNSS_BUILDUP are mutually exclusive."
 #endif
@@ -459,14 +737,24 @@ void setup() {
     if (s_imu_bringup_active) {
         // Explicit bring-up path: no actuator or network dependency.
         hal_esp32_init_imu_bringup();
+        hal_log("BOOT: imu_bringup_init ... %lu ms", (unsigned long)(hal_millis() - t_phase));
     } else if (s_gnss_buildup_active) {
         // GNSS buildup path: communication + GNSS UART only.
         hal_esp32_init_gnss_buildup();
+        hal_log("BOOT: gnss_buildup_init ... %lu ms", (unsigned long)(hal_millis() - t_phase));
         s_gnss_buildup_start_ms = hal_millis();
         hal_log("Main: GNSS buildup mode active (FEAT_GNSS_BUILDUP).");
     } else {
         // Normal operation path.
         hal_esp32_init_all();
+        hal_log("BOOT: hal_esp32_init_all ... %lu ms", (unsigned long)(hal_millis() - t_phase));
+
+        // Module logic init (after HAL init, before module activation/state machine).
+        t_phase = hal_millis();
+        if (feat::imu()) { imuInit(); }
+        if (feat::ads()) { wasInit(); }
+        if (feat::act()) { actuatorInit(); }
+        hal_log("BOOT: logic module init ... %lu ms", (unsigned long)(hal_millis() - t_phase));
     }
 
     // -----------------------------------------------------------------
@@ -487,6 +775,7 @@ void setup() {
         hal_log("Main: IMU bring-up mode active (FEAT_IMU_BRINGUP).");
         imuBringupInit();
         gnssMirrorInit();
+        hal_log("BOOT: total ... %lu ms", (unsigned long)(hal_millis() - t_boot_start));
         return;
     }
 
@@ -496,6 +785,7 @@ void setup() {
 
         // Initialise soft config from compile-time defaults — TASK-028
         softConfigLoadDefaults(softConfigGet());
+        nvsConfigLoad(softConfigGet());
         softConfigLoadOverrides(softConfigGet());  // TASK-033: reads /ntrip.cfg from SD
 
 #if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
@@ -533,11 +823,16 @@ void setup() {
             0
         );
         hal_log("Main: GNSS buildup reduced init done (comm task only).");
+        hal_log("BOOT: total ... %lu ms", (unsigned long)(hal_millis() - t_boot_start));
         return;
     }
 
+    cliInit();
+
     // Initialise module system – detect hardware for all modules
+    t_phase = hal_millis();
     modulesInit();
+    hal_log("BOOT: modulesInit ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
     // -----------------------------------------------------------------
     // Activate default feature modules — TASK-027
@@ -549,6 +844,7 @@ void setup() {
     // Activation order matters: ACT depends on IMU+ADS, NTRIP depends
     // on ETH.  Activate dependencies first.
     // -----------------------------------------------------------------
+    t_phase = hal_millis();
     moduleActivate(MOD_IMU);     // IMU: no deps
     moduleActivate(MOD_ADS);     // ADS: no deps
     moduleActivate(MOD_ETH);     // ETH: no deps (pins already claimed by HAL init)
@@ -565,6 +861,7 @@ void setup() {
 #if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
     moduleActivate(MOD_NTRIP);   // NTRIP: depends on ETH (must be after ETH)
 #endif
+    hal_log("BOOT: module activation ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
     // -----------------------------------------------------------------
     // SD-Card OTA Firmware Update (hard-gated by MOD_SD)
@@ -585,11 +882,53 @@ void setup() {
     // RuntimeConfig is the mutable RAM copy; cfg:: namespace holds
     // the compile-time defaults defined in include/soft_config.h.
     // -----------------------------------------------------------------
+    t_phase = hal_millis();
     softConfigLoadDefaults(softConfigGet());
+    nvsConfigLoad(softConfigGet());
     if (moduleIsActive(MOD_SD)) {
         softConfigLoadOverrides(softConfigGet());  // TASK-033: reads /ntrip.cfg from SD
     } else {
         hal_log("Main: SD module inactive -> skip SD runtime config overrides");
+    }
+    hal_log("BOOT: config load ... %lu ms", (unsigned long)(hal_millis() - t_phase));
+
+#if FEAT_ENABLED(FEAT_COMPILED_NTRIP)
+    ntripInit();
+    {
+        RuntimeConfig& rcfg = softConfigGet();
+        ntripSetConfig(
+            rcfg.ntrip_host,
+            rcfg.ntrip_port,
+            rcfg.ntrip_mountpoint,
+            rcfg.ntrip_user,
+            rcfg.ntrip_password
+        );
+        if (rcfg.ntrip_host[0] == '\0' || rcfg.ntrip_mountpoint[0] == '\0') {
+            hal_log("Main: NTRIP not configured (host or mountpoint empty) — skipping");
+        } else {
+            hal_log("Main: NTRIP client configured (host=%s, port=%u, mp=%s)",
+                    g_ntrip_config.host,
+                    static_cast<unsigned>(g_ntrip_config.port),
+                    g_ntrip_config.mountpoint);
+        }
+    }
+#endif
+
+    if (!nvsConfigHasData()) {
+        hal_log("Main: no NVS config found -> setup wizard pending");
+        setupWizardRequestStart();
+    }
+
+    um980SetupLoadDefaults(softConfigGet().gnss_baud);
+    um980SetupApply();
+    const bool boot_maintenance_mode = !hal_safety_ok();
+    if (boot_maintenance_mode) {
+        hal_log("BOOT: maintenance mode active (safety LOW)");
+        startBootMaintenanceServices();
+        runBootCliSession();
+        stopBootMaintenanceServices();
+    } else {
+        hal_log("BOOT: maintenance mode skipped (safety not LOW)");
     }
 
     // Initialise control system (PID controller with default gains).
@@ -599,6 +938,7 @@ void setup() {
     const bool control_pipeline_ready =
         moduleControlPipelineReady(pipeline_reason, sizeof(pipeline_reason));
 
+    t_phase = hal_millis();
     if ((feat::act() && feat::safety()) && control_pipeline_ready) {
         controlInit();
     } else if (feat::act() && feat::safety()) {
@@ -607,6 +947,7 @@ void setup() {
     } else {
         hal_log("Main: control loop feature disabled");
     }
+    hal_log("BOOT: control init ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
     // -----------------------------------------------------------------
     // Steering Angle Calibration
@@ -618,6 +959,7 @@ void setup() {
     // The user is prompted via Serial to move steering to left/right
     // stops. Values are stored in NVS and survive reboots.
     // -----------------------------------------------------------------
+    t_phase = hal_millis();
     if (feat::ads()) {
         bool need_cal = !hal_steer_angle_is_calibrated();
 
@@ -650,6 +992,7 @@ void setup() {
     } else {
         hal_log("Main: steer angle calibration skipped (sensor feature disabled)");
     }
+    hal_log("BOOT: calibration ... %lu ms", (unsigned long)(hal_millis() - t_phase));
 
     // Initialise hardware status monitoring
     hwStatusInit();
@@ -714,14 +1057,21 @@ void setup() {
     );
 
     hal_log("Main: tasks created, entering main loop");
+    hal_log("BOOT: total ... %lu ms", (unsigned long)(hal_millis() - t_boot_start));
 }
 
 // ===================================================================
 // Arduino loop() – not used for real work (tasks handle everything)
 // ===================================================================
 static uint32_t s_loop_dbg_count = 0;
+static uint32_t s_cli_last_rx_ms = 0;
+static constexpr uint32_t MAIN_CLI_QUIET_LOG_MS = 2000;
 
 void loop() {
+    if (setupWizardConsumePending()) {
+        setupWizardRun();
+    }
+
     if (s_imu_bringup_active) {
         imuBringupTick();
         vTaskDelay(pdMS_TO_TICKS(20));
@@ -740,12 +1090,12 @@ void loop() {
             uint32_t status_age_ms = 0;
             {
                 StateLock lock;
-                fix_type = g_nav.um980_fix_type;
-                rtcm_active = g_nav.um980_rtcm_active;
-                diff_age = g_nav.gps_diff_age_x100_ms;
-                status_age_ms = (g_nav.um980_status_timestamp_ms == 0)
+                fix_type = g_nav.gnss.um980_fix_type;
+                rtcm_active = g_nav.gnss.um980_rtcm_active;
+                diff_age = g_nav.gnss.gps_diff_age_x100_ms;
+                status_age_ms = (g_nav.gnss.um980_status_timestamp_ms == 0)
                     ? 0
-                    : (now - g_nav.um980_status_timestamp_ms);
+                    : (now - g_nav.gnss.um980_status_timestamp_ms);
             }
 
             hal_log("GNSS-BUILDUP: port_status net=%s rtcm_uart=%s drop=%lu | fix_status type=%u rtcm=%s diff_age_x100ms=%lu status_age_ms=%lu",
@@ -781,59 +1131,64 @@ void loop() {
     static uint32_t s_last_status = 0;
     uint32_t now = hal_millis();
     if (now - s_last_status >= 5000) {
-        s_last_status = now;
-        float heading_deg = 0.0f;
-        float steer_angle_deg = 0.0f;
-        int steer_angle_raw = 0;
-        bool safety_ok = false;
-        bool work_switch = false;
-        bool steer_switch = false;
-        float gps_speed_kmh = 0.0f;
-        bool watchdog_triggered = false;
-        int pid_output = 0;
-        bool settings_received = false;
-        float roll_deg = 0.0f;
-        float yaw_rate_dps = 0.0f;
-        bool imu_quality_ok = false;
-        uint32_t imu_timestamp_ms = 0;
+        if (now - s_cli_last_rx_ms < MAIN_CLI_QUIET_LOG_MS) {
+            // Avoid mixing periodic telemetry into active CLI typing/output.
+            s_last_status = now;
+        } else {
+            s_last_status = now;
+            float heading_deg = 0.0f;
+            float steer_angle_deg = 0.0f;
+            int steer_angle_raw = 0;
+            bool safety_ok = false;
+            bool work_switch = false;
+            bool steer_switch = false;
+            float gps_speed_kmh = 0.0f;
+            bool watchdog_triggered = false;
+            int pid_output = 0;
+            bool settings_received = false;
+            float roll_deg = 0.0f;
+            float yaw_rate_dps = 0.0f;
+            bool imu_quality_ok = false;
+            uint32_t imu_timestamp_ms = 0;
 
-        {
-            StateLock lock;
-            heading_deg = g_nav.heading_deg;
-            steer_angle_deg = g_nav.steer_angle_deg;
-            steer_angle_raw = (int)g_nav.steer_angle_raw;
-            safety_ok = g_nav.safety_ok;
-            work_switch = g_nav.work_switch;
-            steer_switch = g_nav.steer_switch;
-            gps_speed_kmh = g_nav.gps_speed_kmh;
-            watchdog_triggered = g_nav.watchdog_triggered;
-            pid_output = (int)g_nav.pid_output;
-            settings_received = g_nav.settings_received;
-            roll_deg = g_nav.roll_deg;
-            yaw_rate_dps = g_nav.yaw_rate_dps;
-            imu_quality_ok = g_nav.imu_quality_ok;
-            imu_timestamp_ms = g_nav.imu_timestamp_ms;
+            {
+                StateLock lock;
+                heading_deg = g_nav.imu.heading_deg;
+                steer_angle_deg = g_nav.steer.steer_angle_deg;
+                steer_angle_raw = (int)g_nav.steer.steer_angle_raw;
+                safety_ok = g_nav.safety.safety_ok;
+                work_switch = g_nav.sw.work_switch;
+                steer_switch = g_nav.sw.steer_switch;
+                gps_speed_kmh = g_nav.sw.gps_speed_kmh;
+                watchdog_triggered = g_nav.safety.watchdog_triggered;
+                pid_output = (int)g_nav.pid.pid_output;
+                settings_received = g_nav.pid.settings_received;
+                roll_deg = g_nav.imu.roll_deg;
+                yaw_rate_dps = g_nav.imu.yaw_rate_dps;
+                imu_quality_ok = g_nav.imu.imu_quality_ok;
+                imu_timestamp_ms = g_nav.imu.imu_timestamp_ms;
+            }
+
+            const uint32_t imu_age_ms =
+                (imu_timestamp_ms == 0U) ? 0U : (uint32_t)(now - imu_timestamp_ms);
+            hal_log("STAT: hd=%.1f st=%.1f raw=%d safety=%s work=%s steer=%s spd=%.1f wdog=%s pid=%d tgt=%.1f roll_deg=%.2f yaw_rate_dps=%.2f imu_quality_ok=%s imu_age_ms=%lu net=%s cfg=%s",
+                    heading_deg,
+                    steer_angle_deg,
+                    steer_angle_raw,
+                    safety_ok ? "OK" : "KICK",
+                    work_switch ? "ON" : "OFF",
+                    steer_switch ? "ON" : "OFF",
+                    gps_speed_kmh,
+                    watchdog_triggered ? "TRIG" : "OK",
+                    pid_output,
+                    desiredSteerAngleDeg,
+                    roll_deg,
+                    yaw_rate_dps,
+                    imu_quality_ok ? "Y" : "N",
+                    (unsigned long)imu_age_ms,
+                    hal_net_is_connected() ? "UP" : "DOWN",
+                    settings_received ? "Y" : "N");
         }
-
-        const uint32_t imu_age_ms =
-            (imu_timestamp_ms == 0U) ? 0U : (uint32_t)(now - imu_timestamp_ms);
-        hal_log("STAT: hd=%.1f st=%.1f raw=%d safety=%s work=%s steer=%s spd=%.1f wdog=%s pid=%d tgt=%.1f roll_deg=%.2f yaw_rate_dps=%.2f imu_quality_ok=%s imu_age_ms=%lu net=%s cfg=%s",
-                heading_deg,
-                steer_angle_deg,
-                steer_angle_raw,
-                safety_ok ? "OK" : "KICK",
-                work_switch ? "ON" : "OFF",
-                steer_switch ? "ON" : "OFF",
-                gps_speed_kmh,
-                watchdog_triggered ? "TRIG" : "OK",
-                pid_output,
-                desiredSteerAngleDeg,
-                roll_deg,
-                yaw_rate_dps,
-                imu_quality_ok ? "Y" : "N",
-                (unsigned long)imu_age_ms,
-                hal_net_is_connected() ? "UP" : "DOWN",
-                settings_received ? "Y" : "N");
     }
 
     if (MAIN_VERBOSE_TASK_DBG) {
@@ -855,27 +1210,32 @@ void loop() {
         }
     }
 
-#if LOG_SERIAL_CMD
-    // Runtime logging control:
-    //   log <tag> <none|error|warn|info|debug|verbose>
-    //   log all <level>
-    //   log status
-    //   filter <file[:line]> | filter off
-    static char cmd_buf[96];
-    static size_t cmd_len = 0;
+    // --- Serial CLI ---
+    static char s_cli_buf[128];
+    static size_t s_cli_len = 0;
+
     while (Serial.available()) {
         const int ch = Serial.read();
+        s_cli_last_rx_ms = hal_millis();
         if (ch == '\r' || ch == '\n') {
-            if (cmd_len > 0) {
-                cmd_buf[cmd_len] = '\0';
-                logProcessSerialCmd(cmd_buf);
-                cmd_len = 0;
+            if (s_cli_len > 0) {
+                s_cli_buf[s_cli_len] = '\0';
+                Serial.println();
+                cliProcessLine(s_cli_buf);
+                s_cli_len = 0;
             }
-        } else if (cmd_len + 1 < sizeof(cmd_buf)) {
-            cmd_buf[cmd_len++] = static_cast<char>(ch);
+        } else if (ch == 3) {  // Ctrl+C
+            s_cli_len = 0;
+            Serial.println("^C");
+        } else if (ch == 8 || ch == 127) {  // Backspace / DEL
+            if (s_cli_len > 0) {
+                s_cli_len--;
+                Serial.print("\b \b");
+            }
+        } else if (s_cli_len + 1 < sizeof(s_cli_buf)) {
+            s_cli_buf[s_cli_len++] = static_cast<char>(ch);
         }
     }
-#endif
 
     vTaskDelay(pdMS_TO_TICKS(100));
 }

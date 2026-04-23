@@ -34,6 +34,13 @@ static constexpr const char* kNtripCfgPath = "/ntrip.cfg";
 /// Global runtime configuration instance (zero-initialised).
 static RuntimeConfig s_runtime_config = {};
 
+static uint32_t ip4ToU32(const uint8_t ip[4]) {
+    return (static_cast<uint32_t>(ip[0]) << 24) |
+           (static_cast<uint32_t>(ip[1]) << 16) |
+           (static_cast<uint32_t>(ip[2]) << 8) |
+           static_cast<uint32_t>(ip[3]);
+}
+
 void softConfigLoadDefaults(RuntimeConfig& cfg) {
     // NTRIP
     std::strncpy(cfg.ntrip_host, cfg::NTRIP_HOST, sizeof(cfg.ntrip_host) - 1);
@@ -46,6 +53,14 @@ void softConfigLoadDefaults(RuntimeConfig& cfg) {
     std::strncpy(cfg.ntrip_password, cfg::NTRIP_PASSWORD, sizeof(cfg.ntrip_password) - 1);
     cfg.ntrip_password[sizeof(cfg.ntrip_password) - 1] = '\0';
     cfg.ntrip_reconnect_ms = cfg::NTRIP_RECONNECT_MS;
+    cfg.pid_kp = 1.0f;
+    cfg.pid_ki = 0.0f;
+    cfg.pid_kd = 0.01f;
+    cfg.net_mode = cfg::NET_DHCP ? 0U : 1U;
+    cfg.net_ip = ip4ToU32(cfg::NET_IP);
+    cfg.net_gateway = ip4ToU32(cfg::NET_GATEWAY);
+    cfg.net_subnet = ip4ToU32(cfg::NET_SUBNET);
+    cfg.actuator_type = 0U;
 
     // GNSS
     cfg.gnss_baud = cfg::GNSS_BAUD;

@@ -66,16 +66,30 @@ bool s_geo_yaw_valid = false;
 bool s_geo_yaw_new = false;
 bool s_heading_ready = false;
 
-void prepareChipSelects() {
-    pinMode(CS_STEER_ANG, OUTPUT);
-    digitalWrite(CS_STEER_ANG, HIGH);
-    pinMode(CS_ACT, OUTPUT);
-    digitalWrite(CS_ACT, HIGH);
-    pinMode(CS_IMU, OUTPUT);
-    digitalWrite(CS_IMU, HIGH);
+inline bool pinValid(int pin) { return pin >= 0; }
 
-    pinMode(IMU_WAKE, OUTPUT);
-    digitalWrite(IMU_WAKE, HIGH);
+inline int safeDigitalRead(int pin, int fallback = 0) {
+    return pinValid(pin) ? digitalRead(pin) : fallback;
+}
+
+void prepareChipSelects() {
+    if (pinValid(CS_STEER_ANG)) {
+        pinMode(CS_STEER_ANG, OUTPUT);
+        digitalWrite(CS_STEER_ANG, HIGH);
+    }
+    if (pinValid(CS_ACT)) {
+        pinMode(CS_ACT, OUTPUT);
+        digitalWrite(CS_ACT, HIGH);
+    }
+    if (pinValid(CS_IMU)) {
+        pinMode(CS_IMU, OUTPUT);
+        digitalWrite(CS_IMU, HIGH);
+    }
+
+    if (pinValid(IMU_WAKE)) {
+        pinMode(IMU_WAKE, OUTPUT);
+        digitalWrite(IMU_WAKE, HIGH);
+    }
 }
 
 bool enableRuntimeReports() {
@@ -129,9 +143,9 @@ void recoverAfterSpiReinit() {
     hal_log("ESP32: 7Semi BNO085 SPI recovery #%lu begin %s (levels[int=%d rst=%d wake=%d])",
             (unsigned long)s_spi_recover_count,
             s_bno08x_ready ? "OK" : "FAIL",
-            digitalRead(IMU_INT),
-            digitalRead(IMU_RST),
-            digitalRead(IMU_WAKE));
+            safeDigitalRead(IMU_INT),
+            safeDigitalRead(IMU_RST),
+            safeDigitalRead(IMU_WAKE));
 
     if (s_bno08x_ready) {
         enableRuntimeReports();
@@ -240,9 +254,9 @@ void hal_imu_begin(void) {
             IMU_RST,
             IMU_WAKE,
             (unsigned long)kBno085SpiHz,
-            digitalRead(IMU_INT),
-            digitalRead(IMU_RST),
-            digitalRead(IMU_WAKE));
+            safeDigitalRead(IMU_INT),
+            safeDigitalRead(IMU_RST),
+            safeDigitalRead(IMU_WAKE));
 
     if (s_bno08x_ready) {
         enableRuntimeReports();
@@ -251,20 +265,24 @@ void hal_imu_begin(void) {
 
 void hal_imu_reset_pulse(uint32_t low_ms, uint32_t settle_ms) {
     prepareChipSelects();
+    if (!pinValid(IMU_RST) || !pinValid(IMU_INT)) {
+        hal_log("ESP32: IMU reset pulse skipped (IMU_RST or IMU_INT not mapped)");
+        return;
+    }
     pinMode(IMU_RST, OUTPUT);
     pinMode(IMU_INT, INPUT_PULLUP);
 
-    const int int_before = digitalRead(IMU_INT);
-    const int wake_before = digitalRead(IMU_WAKE);
+    const int int_before = safeDigitalRead(IMU_INT);
+    const int wake_before = safeDigitalRead(IMU_WAKE);
     digitalWrite(IMU_RST, LOW);
     delay(low_ms);
-    const int int_during = digitalRead(IMU_INT);
-    const int rst_during = digitalRead(IMU_RST);
+    const int int_during = safeDigitalRead(IMU_INT);
+    const int rst_during = safeDigitalRead(IMU_RST);
     digitalWrite(IMU_RST, HIGH);
     delay(settle_ms);
-    const int int_after = digitalRead(IMU_INT);
-    const int rst_after = digitalRead(IMU_RST);
-    const int wake_after = digitalRead(IMU_WAKE);
+    const int int_after = safeDigitalRead(IMU_INT);
+    const int rst_after = safeDigitalRead(IMU_RST);
+    const int wake_after = safeDigitalRead(IMU_WAKE);
     hal_log("ESP32: IMU reset pulse low=%lums settle=%lums INT(before=%d during=%d after=%d) RST(during=%d after=%d) WAKE/PS0(before=%d after=%d)",
             (unsigned long)low_ms,
             (unsigned long)settle_ms,
@@ -287,7 +305,7 @@ bool hal_imu_read(float* yaw_rate_dps, float* roll_deg, float* heading_deg) {
                     s_bno08x_ready ? "Y" : "N",
                     s_reports_enabled ? "Y" : "N",
                     s_bno08x ? "Y" : "N",
-                    digitalRead(IMU_INT),
+                    safeDigitalRead(IMU_INT),
                     (unsigned long)s_diag_packet_count,
                     (unsigned long)s_diag_read_ok,
                     (unsigned long)s_diag_read_wait);
@@ -298,9 +316,9 @@ bool hal_imu_read(float* yaw_rate_dps, float* roll_deg, float* heading_deg) {
     }
 
     bool got_update = false;
-    const bool int_asserted = digitalRead(IMU_INT) == LOW;
+    const bool int_asserted = pinValid(IMU_INT) ? (digitalRead(IMU_INT) == LOW) : false;
     if (int_asserted) {
-        for (uint8_t i = 0; i < 4 && digitalRead(IMU_INT) == LOW; i++) {
+        for (uint8_t i = 0; i < 4 && (pinValid(IMU_INT) ? (digitalRead(IMU_INT) == LOW) : false); i++) {
             uint8_t pkt[256] = {};
             const uint32_t request_us = hal_esp32_sensor_spi_timing_now_us();
             hal_esp32_sensor_spi_lock();
@@ -365,7 +383,7 @@ bool hal_imu_read(float* yaw_rate_dps, float* roll_deg, float* heading_deg) {
         // so bring-up and runtime troubleshooting still work offline.
         hal_log("IMU-DIAG: poll=%s int=%d data=%s age=%lums pkt=%lu game_yaw=%.1f geo_yaw=%.1f heading=%s%.1f yaw_rate=%.2f dps roll=%.2f deg boot=%u/%u ok=%lu wait=%lu",
                 s_reports_enabled ? "ON" : "OFF",
-                digitalRead(IMU_INT),
+                safeDigitalRead(IMU_INT),
                 got_update ? "NEW" : (s_imu_cache_valid ? "CACHE" : "WAIT"),
                 (unsigned long)age_ms,
                 (unsigned long)s_diag_packet_count,

@@ -27,7 +27,10 @@
 #include "modules.h"
 #include "control.h"
 #include "dependency_policy.h"
+#include "diag.h"
 #include "global_state.h"
+#include "runtime_config.h"
+#include "setup_wizard.h"
 #include "hal/hal.h"
 
 #include "log_config.h"
@@ -36,6 +39,7 @@
 #include "log_ext.h"
 
 #include <climits>
+#include <cctype>
 #include <cstring>
 
 // ===================================================================
@@ -44,6 +48,14 @@
 constexpr uint8_t STATUS_BIT_WORK_SWITCH   = 0x01;  // bit 0
 constexpr uint8_t STATUS_BIT_STEER_SWITCH  = 0x02;  // bit 1
 constexpr uint8_t STATUS_BIT_STEER_ON      = 0x04;  // bit 2
+constexpr uint8_t CONFIG_BIT_INVERT_WAS            = 0x01;  // PGN251 set0 bit0
+constexpr uint8_t CONFIG_BIT_RELAY_ACTIVE_HIGH     = 0x02;  // PGN251 set0 bit1
+constexpr uint8_t CONFIG_BIT_MOTOR_DIR_INVERT      = 0x04;  // PGN251 set0 bit2
+constexpr uint8_t CONFIG_BIT_SINGLE_INPUT_WAS      = 0x08;  // PGN251 set0 bit3
+constexpr uint8_t CONFIG_BIT_DRIVER_CYTRON         = 0x10;  // PGN251 set0 bit4
+constexpr uint8_t CONFIG_BIT_STEER_SWITCH_ENABLE   = 0x20;  // PGN251 set0 bit5
+constexpr uint8_t CONFIG_BIT_STEER_BUTTON_ENABLE   = 0x40;  // PGN251 set0 bit6
+constexpr uint8_t CONFIG_BIT_SHAFT_ENCODER_ENABLE  = 0x80;  // PGN251 set0 bit7
 constexpr int16_t STEER_STATUS_HEADING_INVALID_X10 = 9999;
 constexpr int16_t STEER_STATUS_ROLL_INVALID_X10 = 8888;
 
@@ -117,6 +129,61 @@ static uint16_t speedKmhToMmPerSec(float speed_kmh) {
     return static_cast<uint16_t>(mm_per_sec);
 }
 
+static bool startsWithIgnoreCase(const char* text, const char* prefix) {
+    if (!text || !prefix) return false;
+    while (*prefix) {
+        if (*text == '\0') return false;
+        if (std::tolower(static_cast<unsigned char>(*text)) !=
+            std::tolower(static_cast<unsigned char>(*prefix))) {
+            return false;
+        }
+        ++text;
+        ++prefix;
+    }
+    return true;
+}
+
+static void processHardwareMessageCommand(const char* msg_text) {
+    if (!msg_text || !*msg_text) return;
+
+    if (startsWithIgnoreCase(msg_text, "diag net")) {
+        diagPrintNet();
+        return;
+    }
+    if (startsWithIgnoreCase(msg_text, "diag mem")) {
+        diagPrintMem();
+        return;
+    }
+    if (startsWithIgnoreCase(msg_text, "diag hw")) {
+        diagPrintHw();
+        return;
+    }
+    if (startsWithIgnoreCase(msg_text, "setup start")) {
+        setupWizardRequestStart();
+        LOGI("NET", "HW message command accepted: setup wizard requested");
+        return;
+    }
+}
+
+static void applySteerConfigBits(const AogSteerConfigIn& config) {
+    // Mirror motor driver selection to runtime config:
+    // set0 bit4 = 1 -> Cytron, 0 -> IBT2 (legacy AOG semantics).
+    RuntimeConfig& rt_cfg = softConfigGet();
+    rt_cfg.actuator_type =
+        (config.set0 & CONFIG_BIT_DRIVER_CYTRON) ? 1U : 2U;
+
+    LOGI("NET",
+         "SteerConfig bits: invert_was=%u relay_active_high=%u motor_dir_invert=%u single_was=%u driver=%s steer_switch=%u steer_button=%u shaft_encoder=%u",
+         (unsigned)((config.set0 & CONFIG_BIT_INVERT_WAS) != 0),
+         (unsigned)((config.set0 & CONFIG_BIT_RELAY_ACTIVE_HIGH) != 0),
+         (unsigned)((config.set0 & CONFIG_BIT_MOTOR_DIR_INVERT) != 0),
+         (unsigned)((config.set0 & CONFIG_BIT_SINGLE_INPUT_WAS) != 0),
+         (config.set0 & CONFIG_BIT_DRIVER_CYTRON) ? "Cytron" : "IBT2",
+         (unsigned)((config.set0 & CONFIG_BIT_STEER_SWITCH_ENABLE) != 0),
+         (unsigned)((config.set0 & CONFIG_BIT_STEER_BUTTON_ENABLE) != 0),
+         (unsigned)((config.set0 & CONFIG_BIT_SHAFT_ENCODER_ENABLE) != 0));
+}
+
 // ===================================================================
 // Network config instance (defined here, declared in pgn_types.h)
 // ===================================================================
@@ -177,6 +244,7 @@ static void rtcmRingPop(size_t len) {
     s_rtcm_size -= len;
 }
 
+#if FEAT_GNSS
 static void netPollRtcmReceiveAndForward(void) {
     uint8_t rtcm_buf[aog_frame::MAX_FRAME];
 
@@ -217,6 +285,7 @@ static void netPollRtcmReceiveAndForward(void) {
         }
     }
 }
+#endif
 
 void netUpdateUm980Status(uint8_t um980_fix_type,
                           bool rtcm_active,
@@ -226,11 +295,11 @@ void netUpdateUm980Status(uint8_t um980_fix_type,
     const int16_t age_x100_ms = encodeDifferentialAgeX100Ms(differential_age_ms, rtcm_active);
 
     StateLock lock;
-    g_nav.um980_fix_type = um980_fix_type;
-    g_nav.um980_rtcm_active = rtcm_active;
-    g_nav.um980_status_timestamp_ms = now_ms;
-    g_nav.gps_fix_quality = fix_quality;
-    g_nav.gps_diff_age_x100_ms = age_x100_ms;
+    g_nav.gnss.um980_fix_type = um980_fix_type;
+    g_nav.gnss.um980_rtcm_active = rtcm_active;
+    g_nav.gnss.um980_status_timestamp_ms = now_ms;
+    g_nav.gnss.gps_fix_quality = fix_quality;
+    g_nav.gnss.gps_diff_age_x100_ms = age_x100_ms;
 }
 
 // ===================================================================
@@ -294,11 +363,11 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
                 desiredSteerAngleDeg = steer_setpoint_deg;
                 {
                     StateLock lock;
-                    g_nav.work_switch      = (msg.status & STATUS_BIT_WORK_SWITCH) != 0;
-                    g_nav.steer_switch     = (msg.status & STATUS_BIT_STEER_SWITCH) != 0;
-                    g_nav.last_status_byte = msg.status;
-                    g_nav.gps_speed_kmh     = speed_kmh;
-                    g_nav.watchdog_timer_ms = now_ms;
+                    g_nav.sw.work_switch      = (msg.status & STATUS_BIT_WORK_SWITCH) != 0;
+                    g_nav.sw.steer_switch     = (msg.status & STATUS_BIT_STEER_SWITCH) != 0;
+                    g_nav.sw.last_status_byte = msg.status;
+                    g_nav.sw.gps_speed_kmh     = speed_kmh;
+                    g_nav.sw.watchdog_timer_ms = now_ms;
                 }
             }
             break;
@@ -313,7 +382,7 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
                                          msg_text, sizeof(msg_text))) {
                 LOGI("NET", "HW message from AgIO: [%u] (col=%u) \"%s\"",
                         (unsigned)dur, (unsigned)color, msg_text);
-                // TODO: display on connected LCD, or process commands
+                processHardwareMessageCommand(msg_text);
             }
             break;
         }
@@ -344,15 +413,12 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
                 // Store config in global state for future use
                 {
                     StateLock lock;
-                    g_nav.config_set0      = config.set0;
-                    g_nav.config_max_pulse = config.maxPulse;
-                    g_nav.config_min_speed = config.minSpeed;
-                    g_nav.config_received  = true;
+                    g_nav.pid.config_set0      = config.set0;
+                    g_nav.pid.config_max_pulse = config.maxPulse;
+                    g_nav.pid.config_min_speed = config.minSpeed;
+                    g_nav.pid.config_received  = true;
                 }
-
-                // TODO: apply hardware config bits (invert WAS, relay polarity,
-                // motor direction, Cytron driver mode, etc.)
-                // Reference does a hard reset after config – we log only for now.
+                applySteerConfigBits(config);
             }
             break;
         }
@@ -377,7 +443,9 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
 // Poll for received UDP frames
 // ===================================================================
 void netPollReceive(void) {
+#if FEAT_GNSS
     netPollRtcmReceiveAndForward();
+#endif
 
     uint8_t rx_buf[aog_frame::MAX_FRAME];
 
@@ -450,21 +518,21 @@ void netSendAogFrames(void) {
     // Input phase: take one consistent state snapshot.
     {
         StateLock lock;
-        snap.steer_angle_deg = g_nav.steer_angle_deg;
-        snap.heading_deg = g_nav.heading_deg;
-        snap.roll_deg = g_nav.roll_deg;
-        snap.safety_ok = g_nav.safety_ok;
-        snap.work_switch = g_nav.work_switch;
-        snap.steer_switch = g_nav.steer_switch;
-        snap.pid_output = g_nav.pid_output;
-        snap.settings_received = g_nav.settings_received;
-        snap.imu_timestamp_ms = g_nav.imu_timestamp_ms;
-        snap.imu_quality_ok = g_nav.imu_quality_ok;
-        snap.heading_timestamp_ms = g_nav.heading_timestamp_ms;
-        snap.heading_quality_ok = g_nav.heading_quality_ok;
-        snap.gps_speed_kmh = g_nav.gps_speed_kmh;
-        snap.gps_fix_quality = g_nav.gps_fix_quality;
-        snap.gps_diff_age_x100_ms = g_nav.gps_diff_age_x100_ms;
+        snap.steer_angle_deg = g_nav.steer.steer_angle_deg;
+        snap.heading_deg = g_nav.imu.heading_deg;
+        snap.roll_deg = g_nav.imu.roll_deg;
+        snap.safety_ok = g_nav.safety.safety_ok;
+        snap.work_switch = g_nav.sw.work_switch;
+        snap.steer_switch = g_nav.sw.steer_switch;
+        snap.pid_output = g_nav.pid.pid_output;
+        snap.settings_received = g_nav.pid.settings_received;
+        snap.imu_timestamp_ms = g_nav.imu.imu_timestamp_ms;
+        snap.imu_quality_ok = g_nav.imu.imu_quality_ok;
+        snap.heading_timestamp_ms = g_nav.imu.heading_timestamp_ms;
+        snap.heading_quality_ok = g_nav.imu.heading_quality_ok;
+        snap.gps_speed_kmh = g_nav.sw.gps_speed_kmh;
+        snap.gps_fix_quality = g_nav.gnss.gps_fix_quality;
+        snap.gps_diff_age_x100_ms = g_nav.gnss.gps_diff_age_x100_ms;
     }
 
     // Processing phase: encode payloads from snapshot.

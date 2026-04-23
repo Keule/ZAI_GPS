@@ -86,6 +86,20 @@ static bool s_w5500_detected = false;   // true if ETH.begin() succeeded
 static bool s_eth_link_up    = false;   // true if ARDUINO_EVENT_ETH_CONNECTED
 static bool s_eth_has_ip     = false;   // true if ARDUINO_EVENT_ETH_GOT_IP
 
+static uint32_t ipToU32(const IPAddress& ip) {
+    return (static_cast<uint32_t>(ip[0]) << 24) |
+           (static_cast<uint32_t>(ip[1]) << 16) |
+           (static_cast<uint32_t>(ip[2]) << 8) |
+           static_cast<uint32_t>(ip[3]);
+}
+
+static IPAddress u32ToIp(uint32_t value) {
+    return IPAddress((value >> 24) & 0xFF,
+                     (value >> 16) & 0xFF,
+                     (value >> 8) & 0xFF,
+                     value & 0xFF);
+}
+
 // ===================================================================
 // Shared SPI bus - SENS_SPI_BUS / SPI2_HOST
 //
@@ -385,6 +399,11 @@ static bool pinClaimsAddBatch(const PinClaimEntry* entries, size_t count, const 
 
         const PinClaimEntry* existing = pinClaimFind(pin);
         if (existing) {
+            if (existing->owner && entries[i].owner &&
+                std::strcmp(existing->owner, entries[i].owner) == 0) {
+                // Idempotent re-claim by same owner is allowed.
+                continue;
+            }
             LOGE("HAL", "Pin claim conflict on GPIO %d (%s vs %s, init_path=%s)",
                  pin,
                  existing->owner,
@@ -407,6 +426,11 @@ static bool pinClaimsAddBatch(const PinClaimEntry* entries, size_t count, const 
     for (size_t i = 0; i < count; ++i) {
         const int pin = entries[i].pin;
         if (pin < 0) continue;
+        const PinClaimEntry* existing = pinClaimFind(pin);
+        if (existing && existing->owner && entries[i].owner &&
+            std::strcmp(existing->owner, entries[i].owner) == 0) {
+            continue;
+        }
         if (s_pin_claim_count >= HAL_PIN_CLAIM_CAPACITY) {
             LOGE("HAL", "Pin claim table overflow while claiming GPIO %d (%s, init_path=%s)",
                  pin,
@@ -455,8 +479,22 @@ static bool claimEthPins(void) {
 }
 
 static bool claimGnssUartPins(uint8_t uart_num, int rx_pin, int tx_pin) {
+    auto tx_pin_is_output_capable = [](int pin) -> bool {
+        if (pin < 0) return false;
+#if defined(CONFIG_IDF_TARGET_ESP32)
+        if (pin >= 34 && pin <= 39) return false;  // input-only on classic ESP32
+#endif
+        return true;
+    };
+
     if (tx_pin < 0) {
         LOGE("HAL", "GNSS RTCM claim failed: UART%u TX unresolved", static_cast<unsigned>(uart_num));
+        return false;
+    }
+    if (!tx_pin_is_output_capable(tx_pin)) {
+        LOGE("HAL", "GNSS RTCM claim failed: UART%u TX pin %d is input-only (cannot drive UART TX)",
+             static_cast<unsigned>(uart_num),
+             tx_pin);
         return false;
     }
     if (rx_pin >= 38 && rx_pin <= 42) {
@@ -571,6 +609,12 @@ bool hal_gnss_rtcm_begin(uint32_t baud, int8_t rx_pin, int8_t tx_pin) {
         LOGE("HAL", "GNSS RTCM begin failed: TX pin must be >= 0");
         return false;
     }
+#if defined(CONFIG_IDF_TARGET_ESP32)
+    if (tx_pin >= 34 && tx_pin <= 39) {
+        LOGE("HAL", "GNSS RTCM begin failed: TX pin %d is input-only on ESP32", tx_pin);
+        return false;
+    }
+#endif
 
     if (!s_gnss_rtcm_mutex) {
         s_gnss_rtcm_mutex = xSemaphoreCreateMutex();
@@ -699,6 +743,13 @@ bool hal_gnss_uart_begin(uint8_t inst, uint32_t baud, int8_t rx_pin, int8_t tx_p
         LOGE("HAL", "GNSS UART begin: inst %u TX pin must be >= 0", static_cast<unsigned>(inst));
         return false;
     }
+#if defined(CONFIG_IDF_TARGET_ESP32)
+    if (tx_pin >= 34 && tx_pin <= 39) {
+        LOGE("HAL", "GNSS UART begin: inst %u TX pin %d is input-only on ESP32",
+             static_cast<unsigned>(inst), tx_pin);
+        return false;
+    }
+#endif
     if (rx_pin >= 38 && rx_pin <= 42) {
         LOGE("HAL", "GNSS UART begin: inst %u RX pin %d is output-only on ESP32-S3",
              static_cast<unsigned>(inst), rx_pin);
@@ -1832,6 +1883,48 @@ bool hal_net_detected(void) {
     return s_w5500_detected;
 }
 
+void hal_net_set_static_config(uint32_t ip, uint32_t gw, uint32_t subnet) {
+    s_local_ip = u32ToIp(ip);
+    s_gateway = u32ToIp(gw);
+    s_subnet = u32ToIp(subnet);
+}
+
+bool hal_net_restart(void) {
+    ethUDP_recv.stop();
+    ethUDP_send.stop();
+    ethUDP_rtcm.stop();
+    ETH.end();
+    s_eth_has_ip = false;
+    s_eth_link_up = false;
+    hal_net_init();
+    return s_eth_link_up || s_eth_has_ip;
+}
+
+uint32_t hal_net_get_ip(void) {
+    if (s_eth_has_ip) {
+        return ipToU32(ETH.localIP());
+    }
+    return ipToU32(s_local_ip);
+}
+
+uint32_t hal_net_get_gateway(void) {
+    if (s_eth_has_ip) {
+        return ipToU32(ETH.gatewayIP());
+    }
+    return ipToU32(s_gateway);
+}
+
+uint32_t hal_net_get_subnet(void) {
+    if (s_eth_has_ip) {
+        return ipToU32(ETH.subnetMask());
+    }
+    return ipToU32(s_subnet);
+}
+
+bool hal_net_link_up(void) {
+    return s_eth_link_up;
+}
+
 // ===================================================================
 // ESP32 init all
 // ===================================================================
@@ -1859,28 +1952,6 @@ static void hal_esp32_common_boot_init(void) {
     pinMode(SAFETY_IN, INPUT_PULLUP);
     hal_log("ESP32 safety pin set.");
 
-}
-
-static void hal_esp32_init_sensor_bus_if_needed(void) {
-    const bool imu_available = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
-    const bool ads_available = feat::ads() && (FEAT_PINS_ADS_COUNT > 0);
-    const bool act_available = feat::act() && (FEAT_PINS_ACT_COUNT > 0);
-
-    if (imu_available || ads_available || act_available) {
-        #if FEAT_CAP_SENSOR_SPI2
-            hal_sensor_spi_init();
-            hal_log("ESP32: sensor SPI init enabled (imu=%s was=%s actor=%s)",
-                    imu_available ? "Y" : "N",
-                    ads_available ? "Y" : "N",
-                    act_available ? "Y" : "N");
-            return;
-        #else
-            hal_log("ESP32: sensor SPI capability disabled at compile time (FEAT_CAP_SENSOR_SPI2=0)");
-        #endif
-    }
-
-    hal_log("ESP32: sensor SPI init skipped (no active SPI-capable module)");
-    // SPI sensor bus (SD_SPI_BUS / SPI2_HOST) - nur wenn Compile-Time-Capability aktiv.
 }
 
 void hal_esp32_init_imu_bringup(void) {
@@ -1994,30 +2065,29 @@ void hal_esp32_init_all(void) {
         return;
     }
     hal_esp32_common_boot_init();
-    hal_esp32_init_sensor_bus_if_needed();
+    #if FEAT_CFG_MOD_NEEDS_SENSOR_SPI2
+    hal_sensor_spi_init();
+    #else
+    hal_log("ESP32: sensor SPI init skipped (FEAT_CFG_MOD_NEEDS_SENSOR_SPI2=0)");
+    #endif
 
-    const bool imu_available = feat::imu() && (FEAT_PINS_IMU_COUNT > 0);
-    const bool ads_available = feat::ads() && (FEAT_PINS_ADS_COUNT > 0);
-    const bool act_available = feat::act() && (FEAT_PINS_ACT_COUNT > 0);
+    #if FEAT_IMU
+    hal_imu_begin();
+    #else
+    hal_log("ESP32: IMU init skipped (FEAT_IMU=0)");
+    #endif
 
-    // Capability-driven boot init (only initialise subsystems required by active modules).
-    if (imu_available) {
-        hal_imu_begin();
-    } else {
-        hal_log("ESP32: IMU init skipped (module unavailable or capability inactive)");
-    }
+    #if FEAT_STEER_SENSOR
+    hal_steer_angle_begin();
+    #else
+    hal_log("ESP32: steer-angle init skipped (FEAT_STEER_SENSOR=0)");
+    #endif
 
-    if (ads_available) {
-        hal_steer_angle_begin();
-    } else {
-        hal_log("ESP32: steer-angle init skipped (module unavailable or capability inactive)");
-    }
-
-    if (act_available) {
-        hal_actuator_begin();
-    } else {
-        hal_log("ESP32: actuator init skipped (module unavailable or capability inactive)");
-    }
+    #if FEAT_STEER_ACTOR
+    hal_actuator_begin();
+    #else
+    hal_log("ESP32: actuator init skipped (FEAT_STEER_ACTOR=0)");
+    #endif
 
     // Network (W5500 via ETH driver)
     hal_net_init();

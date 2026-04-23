@@ -140,13 +140,13 @@ void sdLoggerRecord(void) {
     extern volatile float desiredSteerAngleDeg;
 
     SdLogRecord rec;
-    rec.timestamp_ms     = g_nav.timestamp_ms;
-    rec.heading_deg      = g_nav.heading_deg;
-    rec.steer_angle_deg  = g_nav.steer_angle_deg;
+    rec.timestamp_ms     = g_nav.imu.imu_timestamp_ms;
+    rec.heading_deg      = g_nav.imu.heading_deg;
+    rec.steer_angle_deg  = g_nav.steer.steer_angle_deg;
     rec.desired_angle_deg = desiredSteerAngleDeg;
-    rec.yaw_rate_dps     = g_nav.yaw_rate_dps;
-    rec.roll_deg         = g_nav.roll_deg;
-    rec.safety_ok        = g_nav.safety_ok ? 1 : 0;
+    rec.yaw_rate_dps     = g_nav.imu.yaw_rate_dps;
+    rec.roll_deg         = g_nav.imu.roll_deg;
+    rec.safety_ok        = g_nav.safety.safety_ok ? 1 : 0;
 
     // Write to ring buffer (no mutex needed – SPSC pattern)
     uint32_t widx = s_write_idx;
