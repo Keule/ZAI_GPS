@@ -25,14 +25,5 @@ bool imuUpdate(void);
 /// Check if IMU data is fresh.
 bool imuIsHealthy(uint32_t now_ms);
 
-/// True if IMU bring-up mode is enabled at compile time.
-bool imuBringupModeEnabled(void);
-
-/// Initialise IMU bring-up diagnostics.
-void imuBringupInit(void);
-
-/// Run periodic IMU bring-up diagnostics (non-blocking).
-void imuBringupTick(void);
-
 /// Module registry entry for IMU.
 extern const ModuleOps imu_ops;

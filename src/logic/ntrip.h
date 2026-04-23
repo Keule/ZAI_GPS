@@ -30,7 +30,6 @@ void ntripInit(void);
 /// State machine tick — call from maintTask (TASK-029).
 /// Handles state transitions, reconnect timing, and error recovery.
 /// Blocking TCP connect runs here (safe at lowest priority).
-/// In GNSS buildup mode (no maintTask), falls back to commTask.
 void ntripTick(void);
 
 // ===================================================================
