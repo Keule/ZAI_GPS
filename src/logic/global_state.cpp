@@ -5,13 +5,21 @@
 
 #include "global_state.h"
 
-#include <cstring>
-
 /// Global navigation state – single source of truth
 NavigationState g_nav = {};
 
 /// Setpoint from AgIO (written by commTask when steer data arrives)
-volatile float desiredSteerAngleDeg = 0.0f;
+float desiredSteerAngleDeg = 0.0f;
+
+void setDesiredSteerAngleDeg(float angle_deg) {
+    StateLock lock;
+    desiredSteerAngleDeg = angle_deg;
+}
+
+float getDesiredSteerAngleDeg(void) {
+    StateLock lock;
+    return desiredSteerAngleDeg;
+}
 
 // ---------------------------------------------------------------------------
 // NTRIP global state — TASK-025

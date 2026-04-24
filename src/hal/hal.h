@@ -305,11 +305,6 @@ int hal_net_receive(uint8_t* buf, size_t max_len, uint16_t* out_port);
 /// @return number of bytes received, or 0 if nothing available
 int hal_net_receive_rtcm(uint8_t* buf, size_t max_len, uint16_t* out_port);
 
-/// Forward RTCM correction bytes to the GNSS receiver transport.
-/// Implementations may accept partial writes for non-blocking behavior.
-/// @return number of bytes accepted for forwarding
-size_t hal_gnss_rtcm_write(const uint8_t* data, size_t len);
-
 /// Check if Ethernet link is up.
 bool hal_net_is_connected(void);
 

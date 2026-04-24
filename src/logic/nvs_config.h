@@ -15,6 +15,7 @@ constexpr const char* NTRIP_PORT = "ntrip_port";
 constexpr const char* NTRIP_MOUNT = "ntrip_mnt";
 constexpr const char* NTRIP_USER = "ntrip_user";
 constexpr const char* NTRIP_PASS = "ntrip_password";
+constexpr const char* NTRIP_RECONNECT_MS = "ntrip_reconnect";
 // PID
 constexpr const char* PID_KP = "pid_kp";
 constexpr const char* PID_KI = "pid_ki";
@@ -26,6 +27,8 @@ constexpr const char* NET_GW = "net_gateway";
 constexpr const char* NET_SUBNET = "net_subnet";
 // Actuator
 constexpr const char* ACT_TYPE = "actuator_type";
+// Logging
+constexpr const char* LOG_INTERVAL_MS = "log_interval_ms";
 }  // namespace nvs_keys
 
 /// Lädt alle gespeicherten Werte aus NVS in cfg.

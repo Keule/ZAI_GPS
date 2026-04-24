@@ -379,7 +379,7 @@ void controlStep(void) {
         agio.gps_speed_kmh = g_nav.sw.gps_speed_kmh;
         agio.watchdog_timer_ms = g_nav.sw.watchdog_timer_ms;
     }
-    agio.setpoint_deg = desiredSteerAngleDeg;
+    agio.setpoint_deg = getDesiredSteerAngleDeg();
 
     // Phase 3: watchdog
     const bool watchdog_triggered = controlCheckWatchdog(now_ms, agio.watchdog_timer_ms);

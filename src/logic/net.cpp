@@ -395,7 +395,7 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
                 const uint32_t now_ms = hal_millis();
 
                 // Output write phase: commit all command inputs consistently.
-                desiredSteerAngleDeg = steer_setpoint_deg;
+                setDesiredSteerAngleDeg(steer_setpoint_deg);
                 {
                     StateLock lock;
                     g_nav.sw.work_switch      = (msg.status & STATUS_BIT_WORK_SWITCH) != 0;

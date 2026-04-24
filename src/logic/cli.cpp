@@ -757,3 +757,7 @@ void cliProcessLine(const char* line) {
 
     cliDispatch(argc, argv);
 }
+
+void cliSafetyTick(void) {
+    // Reserved hook for periodic safety-related CLI housekeeping.
+}

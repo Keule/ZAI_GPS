@@ -39,6 +39,7 @@
 // ===================================================================
 extern uint16_t log_filter_line;       // 0 = kein Filter
 extern char     log_filter_file[64];   // Dateiname fuer Filter
+bool logLineAllowedThreadSafe(const char* file, int line);
 
 // ===================================================================
 // Intern: Dateiname aus Pfad extrahieren
@@ -58,12 +59,7 @@ static inline const char* _log_basename(const char* path) {
 // ===================================================================
 #if LOG_FILTER_ENABLED
 static inline bool _log_line_allowed(const char* file, int line) {
-    if (log_filter_line == 0) return true;
-    const char* base = _log_basename(file);
-    const char* fbase = _log_basename(log_filter_file);
-    if (std::strcmp(base, fbase) != 0) return false;
-    if (log_filter_line != 0xFFFF && line != (int)log_filter_line) return false;
-    return true;
+    return logLineAllowedThreadSafe(file, line);
 }
 #else
 static inline bool _log_line_allowed(const char*, int) { return true; }
