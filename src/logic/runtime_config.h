@@ -29,6 +29,12 @@ struct RuntimeConfig {
     uint32_t net_subnet;
     // Actuator
     uint8_t  actuator_type; // 0=SPI, 1=Cytron, 2=IBT2
+    bool     steer_stage_b_pending;
+    uint8_t  steer_pending_actuator_type;
+    uint8_t  steer_set0_last;
+    uint8_t  steer_max_pulse_last;
+    uint8_t  steer_min_speed_last;
+    uint8_t  steer_ackerman_fix_last;
 
     // GNSS
     uint32_t gnss_baud;

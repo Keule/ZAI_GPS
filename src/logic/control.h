@@ -10,6 +10,9 @@
 
 #include <cstdint>
 
+#include "features.h"
+#include "module_interface.h"
+
 /// PID controller state.
 struct PidState {
     float kp;               // Proportional gain
@@ -40,6 +43,15 @@ float pidCompute(PidState* pid, float error, uint32_t dt_ms);
 
 /// Initialise control subsystem (IMU, steer angle sensor, actuator).
 void controlInit(void);
+
+/// Compile-time check: is control pipeline compiled in?
+constexpr bool controlIsEnabled() { return feat::act() && feat::ads() && feat::imu(); }
+
+/// Periodic control update hook (contract wrapper around controlStep()).
+bool controlUpdate(void);
+
+/// Health check for control module.
+bool controlIsHealthy(uint32_t now_ms);
 
 /// Run one control step. Should be called at 200 Hz.
 /// Reads sensors, checks safety, computes PID, writes actuator.
@@ -135,3 +147,6 @@ bool controlManualActuatorMode(void);
 
 /// Setpoint from AgIO steer data (degrees). Written by commTask.
 extern volatile float desiredSteerAngleDeg;
+
+/// Module registry entry for control.
+extern const ModuleOps control_ops;

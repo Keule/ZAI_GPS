@@ -21,6 +21,9 @@ void actuatorInit(void);
 /// Write command to actuator via SPI. Returns true on success.
 bool actuatorUpdate(uint16_t cmd);
 
+/// Apply runtime-configurable PGN-251 bits to actuator path.
+void actuatorApplyConfigBits(uint8_t set0, uint8_t max_pulse);
+
 /// Actuator has no freshness concept — always healthy if enabled.
 bool actuatorIsHealthy(uint32_t now_ms);
 

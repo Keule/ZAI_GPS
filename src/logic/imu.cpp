@@ -13,9 +13,32 @@
 #include "esp_log.h"
 #include "log_ext.h"
 
+namespace {
+static constexpr uint32_t IMU_FRESHNESS_TIMEOUT_MS = dep_policy::IMU_FRESHNESS_TIMEOUT_MS;
+static struct {
+    bool detected = false;
+    bool quality_ok = false;
+    uint32_t last_update_ms = 0;
+    int32_t error_code = 0;
+} s_imu_state;
+
+bool imu_module_enabled_check() {
+    return feat::imu();
+}
+
+bool imu_module_health_check(uint32_t now_ms) {
+    return imuIsHealthy(now_ms);
+}
+}  // namespace
+
 void imuInit(void) {
     hal_imu_begin();
     LOGI("IMU", "initialised (BNO085 SPI)");
+
+    s_imu_state.detected = true;
+    s_imu_state.quality_ok = true;
+    s_imu_state.last_update_ms = hal_millis();
+    s_imu_state.error_code = 0;
 }
 
 bool imuUpdate(void) {
@@ -27,6 +50,8 @@ bool imuUpdate(void) {
         StateLock lock;
         g_nav.imu.imu_quality_ok = false;
         g_nav.imu.heading_quality_ok = false;
+        s_imu_state.quality_ok = false;
+        s_imu_state.error_code = 1;
         return false;
     }
 
@@ -47,37 +72,27 @@ bool imuUpdate(void) {
         g_nav.imu.heading_quality_ok = heading_plausible;
     }
 
+    s_imu_state.detected = true;
+    s_imu_state.quality_ok = plausible;
+    s_imu_state.last_update_ms = now_ms;
+    s_imu_state.error_code = plausible ? 0 : 2;
     return plausible;
 }
 
 bool imuIsHealthy(uint32_t now_ms) {
-    StateLock lock;
-    if (!g_nav.imu.imu_quality_ok) return false;
-    return dep_policy::isFresh(now_ms,
-                               g_nav.imu.imu_timestamp_ms,
-                               dep_policy::IMU_FRESHNESS_TIMEOUT_MS);
+    return s_imu_state.detected &&
+           s_imu_state.quality_ok &&
+           (now_ms - s_imu_state.last_update_ms <= IMU_FRESHNESS_TIMEOUT_MS) &&
+           (s_imu_state.error_code == 0);
 }
 
 bool imuBringupModeEnabled(void) {
     return false;
 }
 
-namespace {
-bool imu_enabled_check() {
-    return feat::imu();
-}
+void imuBringupInit(void) {}
 
-bool imu_health_check(uint32_t now_ms) {
-    return imuIsHealthy(now_ms);
-}
-
-static bool imu_module_enabled_check() {
-    return feat::imu();
-}
-
-static bool imu_module_health_check(uint32_t now_ms) {
-    return imuIsHealthy(now_ms);
-}
+void imuBringupTick(void) {}
 
 const ModuleOps imu_ops = {
     "IMU",
