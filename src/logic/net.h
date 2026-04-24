@@ -12,6 +12,8 @@
 #pragma once
 
 #include "pgn_types.h"
+#include "features.h"
+#include "module_interface.h"
 
 struct NetRtcmTelemetry {
     uint32_t rx_bytes = 0;
@@ -22,8 +24,16 @@ struct NetRtcmTelemetry {
     uint32_t overflow_bytes = 0;
 };
 
+constexpr bool netIsEnabled() { return feat::eth(); }
+
 /// Initialise network (W5500 Ethernet via HAL).
 void netInit(void);
+
+/// Contract update entry (poll receive + periodic send).
+bool netUpdate(void);
+
+/// Health check for NET module.
+bool netIsHealthy(uint32_t now_ms);
 
 /// Poll for received UDP frames and process them.
 /// Should be called frequently from commTask.
@@ -45,3 +55,5 @@ void netProcessFrame(uint8_t src, uint8_t pgn,
 
 /// Snapshot RTCM receive/forward telemetry counters.
 void netGetRtcmTelemetry(NetRtcmTelemetry* out);
+
+extern const ModuleOps net_ops;

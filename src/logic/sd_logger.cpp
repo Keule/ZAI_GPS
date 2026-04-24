@@ -20,6 +20,7 @@
 
 #include "logic/sd_logger.h"
 #include "logic/global_state.h"
+#include "hal/hal.h"
 #include <atomic>
 #include <cstring>
 
@@ -72,7 +73,14 @@ static std::atomic<uint32_t> s_records_flushed{0};
 /// Call counter for subsampling – incremented each time
 /// sdLoggerRecord() is called. Only records when the counter
 /// is a multiple of LOG_RATE_DIVIDER.
-static std::atomic<uint32_t> s_call_counter{0};
+static volatile uint32_t s_call_counter = 0;
+static constexpr uint32_t SD_LOGGER_FRESHNESS_TIMEOUT_MS = 3000;
+static struct {
+    bool detected = false;
+    bool quality_ok = false;
+    uint32_t last_update_ms = 0;
+    int32_t error_code = 0;
+} s_sd_state;
 
 // ===================================================================
 // Platform hooks – implemented in sd_logger_esp32.cpp
@@ -228,3 +236,41 @@ extern "C" void sdLoggerIncrementFlushed(uint32_t count) {
 extern "C" uint32_t sdLoggerGetOverflowCount(void) {
     return s_overflow_count.load(std::memory_order_relaxed);
 }
+
+void sdLoggerModuleInit(void) {
+    sdLoggerMaintInit();
+    s_sd_state.detected = true;
+    s_sd_state.quality_ok = true;
+    s_sd_state.last_update_ms = hal_millis();
+    s_sd_state.error_code = 0;
+}
+
+bool sdLoggerModuleUpdate(void) {
+    const bool active = sdLoggerIsActive();
+    s_sd_state.detected = true;
+    s_sd_state.quality_ok = active || (sdLoggerGetBufferCount() == 0);
+    s_sd_state.last_update_ms = hal_millis();
+    s_sd_state.error_code = s_sd_state.quality_ok ? 0 : 1;
+    return s_sd_state.error_code == 0;
+}
+
+bool sdLoggerModuleIsHealthy(uint32_t now_ms) {
+    return s_sd_state.detected &&
+           s_sd_state.quality_ok &&
+           (now_ms - s_sd_state.last_update_ms <= SD_LOGGER_FRESHNESS_TIMEOUT_MS) &&
+           (s_sd_state.error_code == 0);
+}
+
+namespace {
+bool sd_logger_enabled_check() {
+    return sdLoggerIsEnabled();
+}
+}  // namespace
+
+const ModuleOps sd_logger_ops = {
+    "SD_LOGGER",
+    sd_logger_enabled_check,
+    sdLoggerModuleInit,
+    sdLoggerModuleUpdate,
+    sdLoggerModuleIsHealthy
+};

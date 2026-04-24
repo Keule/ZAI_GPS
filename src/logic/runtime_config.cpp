@@ -61,6 +61,12 @@ void softConfigLoadDefaults(RuntimeConfig& cfg) {
     cfg.net_gateway = ip4ToU32(cfg::NET_GATEWAY);
     cfg.net_subnet = ip4ToU32(cfg::NET_SUBNET);
     cfg.actuator_type = 0U;
+    cfg.steer_stage_b_pending = false;
+    cfg.steer_pending_actuator_type = cfg.actuator_type;
+    cfg.steer_set0_last = 0;
+    cfg.steer_max_pulse_last = 0;
+    cfg.steer_min_speed_last = 0;
+    cfg.steer_ackerman_fix_last = 0;
 
     // GNSS
     cfg.gnss_baud = cfg::GNSS_BAUD;

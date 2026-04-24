@@ -31,6 +31,8 @@
 #include "global_state.h"
 #include "runtime_config.h"
 #include "setup_wizard.h"
+#include "actuator.h"
+#include "was.h"
 #include "hal/hal.h"
 
 #include "log_config.h"
@@ -40,6 +42,7 @@
 
 #include <climits>
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 
 // ===================================================================
@@ -76,6 +79,13 @@ static size_t s_rtcm_head = 0;
 static size_t s_rtcm_tail = 0;
 static size_t s_rtcm_size = 0;
 static NetRtcmTelemetry s_rtcm_tm;
+static constexpr uint32_t NET_FRESHNESS_TIMEOUT_MS = 5000;
+static struct {
+    bool detected = false;
+    bool quality_ok = false;
+    uint32_t last_update_ms = 0;
+    int32_t error_code = 0;
+} s_net_state;
 
 static int16_t scaleToInt16(float value, float scale) {
     const float scaled = value * scale;
@@ -143,6 +153,8 @@ static bool startsWithIgnoreCase(const char* text, const char* prefix) {
     return true;
 }
 
+static void applySteerConfigBits(const AogSteerConfigIn& config);
+
 static void processHardwareMessageCommand(const char* msg_text) {
     if (!msg_text || !*msg_text) return;
 
@@ -163,28 +175,41 @@ static void processHardwareMessageCommand(const char* msg_text) {
         LOGI("NET", "HW message command accepted: setup wizard requested");
         return;
     }
+    if (startsWithIgnoreCase(msg_text, "cfg set0 ")) {
+        const int value = atoi(msg_text + 9);
+        if (value >= 0 && value <= 255) {
+            AogSteerConfigIn cfg = {};
+            cfg.set0 = static_cast<uint8_t>(value);
+            applySteerConfigBits(cfg);
+            LOGI("NET", "HW command applied: cfg set0=%u", (unsigned)cfg.set0);
+        }
+        return;
+    }
 }
 
 static void applySteerConfigBits(const AogSteerConfigIn& config) {
-    // Ist-Zustand (TASK-003 / ADR-PGN-001):
-    // - Funktional angewendet wird derzeit nur set0 bit4 (Driver Cytron/IBT2)
-    //   via RuntimeConfig.actuator_type.
-    // - Weitere PGN-251-Bits werden aktuell geloggt/gespiegelt, aber nicht bis
-    //   in eine sichere Hardware-Rekonfiguration durchverdrahtet.
-    // TODO: Apply hardware config bits stufenweise:
-    //   A) laufzeitfähige Bits ohne Neustart in kontrolliertem Apply-Point,
-    //   B) Reinit-/Neustart-Bits nur über expliziten, sicheren Reconfig-Pfad.
+    // Stage A (runtime-safe): apply directly to software processing paths.
+    wasApplyConfigBits(config.set0);
+    actuatorApplyConfigBits(config.set0, config.maxPulse);
+
+    // Stage B (reinit required): record pending state only.
     RuntimeConfig& rt_cfg = softConfigGet();
-    rt_cfg.actuator_type =
-        (config.set0 & CONFIG_BIT_DRIVER_CYTRON) ? 1U : 2U;
+    const uint8_t desired_act_type = (config.set0 & CONFIG_BIT_DRIVER_CYTRON) ? 1U : 2U;
+    rt_cfg.steer_stage_b_pending = (rt_cfg.actuator_type != desired_act_type);
+    rt_cfg.steer_pending_actuator_type = desired_act_type;
+    rt_cfg.steer_set0_last = config.set0;
+    rt_cfg.steer_max_pulse_last = config.maxPulse;
+    rt_cfg.steer_min_speed_last = config.minSpeed;
+    rt_cfg.steer_ackerman_fix_last = config.ackermanFix;
 
     LOGI("NET",
-         "SteerConfig bits: invert_was=%u relay_active_high=%u motor_dir_invert=%u single_was=%u driver=%s steer_switch=%u steer_button=%u shaft_encoder=%u",
+         "SteerConfig bits: invert_was=%u relay_active_high=%u motor_dir_invert=%u single_was=%u driver=%s(pending=%u) steer_switch=%u steer_button=%u shaft_encoder=%u",
          (unsigned)((config.set0 & CONFIG_BIT_INVERT_WAS) != 0),
          (unsigned)((config.set0 & CONFIG_BIT_RELAY_ACTIVE_HIGH) != 0),
          (unsigned)((config.set0 & CONFIG_BIT_MOTOR_DIR_INVERT) != 0),
          (unsigned)((config.set0 & CONFIG_BIT_SINGLE_INPUT_WAS) != 0),
          (config.set0 & CONFIG_BIT_DRIVER_CYTRON) ? "Cytron" : "IBT2",
+         (unsigned)rt_cfg.steer_stage_b_pending,
          (unsigned)((config.set0 & CONFIG_BIT_STEER_SWITCH_ENABLE) != 0),
          (unsigned)((config.set0 & CONFIG_BIT_STEER_BUTTON_ENABLE) != 0),
          (unsigned)((config.set0 & CONFIG_BIT_SHAFT_ENCODER_ENABLE) != 0));
@@ -204,6 +229,10 @@ void netInit(void) {
     LOGI("NET", "dest IP = %u.%u.%u.%u",
             g_net_cfg.dest_ip[0], g_net_cfg.dest_ip[1],
             g_net_cfg.dest_ip[2], g_net_cfg.dest_ip[3]);
+    s_net_state.detected = true;
+    s_net_state.quality_ok = true;
+    s_net_state.last_update_ms = hal_millis();
+    s_net_state.error_code = 0;
 }
 
 static size_t rtcmRingWrite(const uint8_t* data, size_t len) {
@@ -475,6 +504,9 @@ void netPollReceive(void) {
                              &frame_src, &frame_pgn,
                              &payload, &payload_len)) {
             netProcessFrame(frame_src, frame_pgn, payload, payload_len);
+            s_net_state.last_update_ms = hal_millis();
+            s_net_state.quality_ok = true;
+            s_net_state.error_code = 0;
         } else {
             // Rate-limit invalid frame logs (max once per 10s)
             uint32_t now = hal_millis();
@@ -593,3 +625,31 @@ void netSendAogFrames(void) {
         hal_net_send(tx_buf, tx_len, aog_port::GPS);
     }
 }
+
+
+bool netUpdate(void) {
+    netPollReceive();
+    netSendAogFrames();
+    return s_net_state.error_code == 0;
+}
+
+bool netIsHealthy(uint32_t now_ms) {
+    return s_net_state.detected &&
+           s_net_state.quality_ok &&
+           (now_ms - s_net_state.last_update_ms <= NET_FRESHNESS_TIMEOUT_MS) &&
+           (s_net_state.error_code == 0);
+}
+
+namespace {
+bool net_enabled_check() {
+    return netIsEnabled();
+}
+}  // namespace
+
+const ModuleOps net_ops = {
+    "NET",
+    net_enabled_check,
+    netInit,
+    netUpdate,
+    netIsHealthy
+};

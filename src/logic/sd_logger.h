@@ -130,4 +130,13 @@ uint32_t sdLoggerPsramBufferCount(void);
 
 #ifdef __cplusplus
 }
+
+#include "features.h"
+#include "module_interface.h"
+
+constexpr bool sdLoggerIsEnabled() { return feat::sd(); }
+void sdLoggerModuleInit(void);
+bool sdLoggerModuleUpdate(void);
+bool sdLoggerModuleIsHealthy(uint32_t now_ms);
+extern const ModuleOps sd_logger_ops;
 #endif

@@ -22,6 +22,9 @@ void wasInit(void);
 /// Returns true if read was successful and plausible.
 bool wasUpdate(void);
 
+/// Apply runtime PGN-251 bits for steer-angle path.
+void wasApplyConfigBits(uint8_t set0);
+
 /// Check if WAS data is fresh (within timeout).
 bool wasIsHealthy(uint32_t now_ms);
 

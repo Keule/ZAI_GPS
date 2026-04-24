@@ -14,6 +14,7 @@
 #include "global_state.h"
 #include "module_interface.h"
 #include "modules.h"
+#include "runtime_config.h"
 #include "hal/hal.h"
 
 #include "log_config.h"
@@ -41,6 +42,13 @@ static uint32_t s_last_was_diag_ms = 0;
 static bool s_manual_actuator_mode = false;
 static bool s_last_safety_logged = true;
 static bool s_safety_log_init = false;
+static constexpr uint32_t CONTROL_FRESHNESS_TIMEOUT_MS = 250;
+static struct {
+    bool detected = false;
+    bool quality_ok = false;
+    uint32_t last_update_ms = 0;
+    int32_t error_code = 0;
+} s_control_state;
 
 // Sensor modules for control-loop input phase (keep IMU -> WAS order).
 static const ModuleOps* const s_sensor_modules[] = { &imu_ops, &was_ops };
@@ -129,6 +137,11 @@ void controlInit(void) {
 
     hal_log("Control: initialised (PID Kp=%.2f Ki=%.3f Kd=%.3f)",
             s_steer_pid.kp, s_steer_pid.ki, s_steer_pid.kd);
+
+    s_control_state.detected = true;
+    s_control_state.quality_ok = true;
+    s_control_state.last_update_ms = hal_millis();
+    s_control_state.error_code = 0;
 }
 
 void controlUpdateSettings(uint8_t kp, uint8_t highPWM, uint8_t lowPWM,
@@ -271,6 +284,15 @@ void controlComputePid(const SensorSnapshot& snap,
                        bool watchdog_triggered,
                        uint32_t now_ms,
                        PidResult& result) {
+    uint8_t config_min_speed = 0;
+    {
+        StateLock lock;
+        config_min_speed = g_nav.pid.config_min_speed;
+    }
+    const float min_steer_speed_kmh = (config_min_speed > 0)
+        ? (static_cast<float>(config_min_speed) * 0.1f)
+        : MIN_STEER_SPEED_KMH;
+
     const bool steer_possible =
         moduleIsActive(MOD_ACT) &&
         moduleIsActive(MOD_ADS) &&
@@ -279,7 +301,7 @@ void controlComputePid(const SensorSnapshot& snap,
         safety_ok &&
         agio.auto_steer_enabled &&
         !watchdog_triggered &&
-        agio.gps_speed_kmh >= MIN_STEER_SPEED_KMH;
+        agio.gps_speed_kmh >= min_steer_speed_kmh;
 
     if (!steer_possible) {
         result.actuator_cmd = 0;
@@ -373,6 +395,13 @@ void controlStep(void) {
     // Phase 5 + 6: actuator + state write
     controlWriteState(now_ms, safety_ok, watchdog_triggered, snap, result);
 
+    s_control_state.detected = moduleIsActive(MOD_ACT) &&
+                               moduleIsActive(MOD_ADS) &&
+                               moduleIsActive(MOD_IMU);
+    s_control_state.quality_ok = safety_ok && snap.was_quality && snap.imu_quality;
+    s_control_state.last_update_ms = now_ms;
+    s_control_state.error_code = (watchdog_triggered || !s_control_state.quality_ok) ? 1 : 0;
+
 #if LOG_WAS_DIAG_INTERVAL_MS > 0
     if (now_ms - s_last_was_diag_ms >= LOG_WAS_DIAG_INTERVAL_MS) {
         s_last_was_diag_ms = now_ms;
@@ -383,3 +412,29 @@ void controlStep(void) {
     }
 #endif
 }
+
+bool controlUpdate(void) {
+    controlStep();
+    return s_control_state.error_code == 0;
+}
+
+bool controlIsHealthy(uint32_t now_ms) {
+    return s_control_state.detected &&
+           s_control_state.quality_ok &&
+           (now_ms - s_control_state.last_update_ms <= CONTROL_FRESHNESS_TIMEOUT_MS) &&
+           (s_control_state.error_code == 0);
+}
+
+namespace {
+bool control_enabled_check() {
+    return controlIsEnabled();
+}
+}  // namespace
+
+const ModuleOps control_ops = {
+    "CONTROL",
+    control_enabled_check,
+    controlInit,
+    controlUpdate,
+    controlIsHealthy
+};
